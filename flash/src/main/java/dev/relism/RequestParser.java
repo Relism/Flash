@@ -10,25 +10,35 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 /**
- * Extreme Zero-Allocation Request Parser.
- * Scans raw bytes to identify paths, protocols, and headers without intermediate String objects.
- * Uses buffered reading and direct byte comparisons for maximum performance.
+ * One instance per connection — the buffer is allocated once and reused across keep-alive
+ * requests. Grows on demand (doubling, up to {@code maxHeaderBufferSize}). Zero String
+ * allocations during parsing; paths, headers and protocol are exposed as {@link dev.relism.fpr.core.ByteView} slices.
  */
 @Slf4j
 public class RequestParser {
-    private static final int MAX_HEADER_SIZE = 8192;
+    private static final int INITIAL_BUFFER_SIZE = 8192;
 
-    public static Request parse(InputStream in) throws IOException {
-        byte[] buffer = new byte[MAX_HEADER_SIZE];
+    private final int maxHeaderBufferSize;
+    private byte[] buffer;
 
-        // 1. Robust read loop — accumulate until \r\n\r\n found or buffer full.
-        // prevTotal tracked per iteration so findEndOfHeader starts from max(0, prevTotal-3),
-        // skipping already-scanned bytes. The -3 overlap catches \r\n\r\n split across two reads.
+    public RequestParser() { this(64 * 1024); }
+    public RequestParser(int maxHeaderBufferSize) {
+        this.maxHeaderBufferSize = maxHeaderBufferSize;
+        this.buffer = new byte[Math.min(INITIAL_BUFFER_SIZE, maxHeaderBufferSize)];
+    }
+
+    public Request parse(InputStream in) throws IOException {
         int totalRead = 0;
         int headerEndIdx = -1;
-        while (totalRead < buffer.length) {
+        while (true) {
+            if (totalRead == buffer.length) {
+                if (buffer.length >= maxHeaderBufferSize)
+                    throw new IOException("Request headers exceed " + maxHeaderBufferSize + " bytes");
+                buffer = Arrays.copyOf(buffer, Math.min(buffer.length * 2, maxHeaderBufferSize));
+            }
             int n = in.read(buffer, totalRead, buffer.length - totalRead);
             if (n <= 0) break;
             int prevTotal = totalRead;
@@ -38,10 +48,9 @@ public class RequestParser {
         }
         if (totalRead <= 0) return null;
         if (headerEndIdx == -1) {
-            throw new IOException("Headers too large: buffer exhausted without finding \\r\\n\\r\\n");
+            throw new IOException("Request headers exceed " + maxHeaderBufferSize + " bytes");
         }
 
-        // 2. Scan Request Line: METHOD PATH PROTOCOL
         int methodEnd = find(buffer, 0, headerEndIdx, (byte) ' ');
         if (methodEnd == -1) throw new IOException("Invalid request line (method)");
 
@@ -52,7 +61,6 @@ public class RequestParser {
         int pathEnd   = find(buffer, pathStart, headerEndIdx, (byte) ' ');
         if (pathEnd == -1) throw new IOException("Invalid request line (path)");
 
-        // Split path from query string at '?' — FPR only sees the clean path
         int queryMark = find(buffer, pathStart, pathEnd, (byte) '?');
         FastPathViews.RequestByteView pathView  = new FastPathViews.RequestByteView(buffer, pathStart,
                 queryMark != -1 ? queryMark - pathStart : pathEnd - pathStart);
@@ -66,7 +74,6 @@ public class RequestParser {
 
         FastPathViews.RequestByteView protocolView = new FastPathViews.RequestByteView(buffer, protocolStart, protocolEnd - protocolStart);
 
-        // 3. Scan Headers — store raw offsets into buffer, zero objects allocated per header
         HeaderMap headerMap = new HeaderMap(buffer);
         int current = find(buffer, protocolEnd, headerEndIdx, (byte) '\n') + 1;
         int contentLength = 0;
@@ -82,16 +89,13 @@ public class RequestParser {
 
                 headerMap.add(current, colon - current, valueStart, lineEnd - valueStart);
 
-                // Direct byte comparison to extract Content-Length without String allocation
                 if (equalsIgnoreCase(buffer, current, colon, "content-length")) {
                     contentLength = parseInt(buffer, valueStart, lineEnd);
                 }
             }
-            current = lineEnd + 2; // skip \r\n
+            current = lineEnd + 2;
         }
 
-        // Body is read lazily — only materialized if the handler calls req.getBody().
-        // Bytes already in the buffer past \r\n\r\n are handed off to LazyBody as read-ahead.
         int bodyStart = headerEndIdx + 4;
         int preBufLen = totalRead - bodyStart;
         return Request.forParsed(

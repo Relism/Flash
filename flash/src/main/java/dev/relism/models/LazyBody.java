@@ -5,14 +5,8 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 
 /**
- * Deferred request body reader.
- *
- * <p>On the first call to {@link #get()}, the body is materialized: any bytes already
- * buffered from the 8 KB header read-ahead are copied first, then the remainder is pulled
- * from the socket stream. The result is cached so subsequent calls are free.
- *
- * <p>When {@code contentLength} is zero the instance is pre-resolved to an empty array
- * and no stream access ever occurs.
+ * Deferred body reader. On the first {@link #get()} call, pre-buffered bytes from the header
+ * read-ahead are used first, then the remainder is pulled from the socket stream. Result is cached.
  */
 final class LazyBody {
     private static final byte[] EMPTY = new byte[0];
@@ -32,14 +26,12 @@ final class LazyBody {
         this.preBufLen     = preBufLen;
     }
 
-    /** Returns a pre-resolved {@code LazyBody} backed by an already-materialized byte array. */
     static LazyBody of(byte[] bytes) {
         LazyBody lb = new LazyBody(null, bytes.length, null, 0, 0);
         lb.resolved = bytes;
         return lb;
     }
 
-    /** Returns a pre-resolved empty {@code LazyBody}. */
     static LazyBody empty() {
         LazyBody lb = new LazyBody(null, 0, null, 0, 0);
         lb.resolved = EMPTY;

@@ -31,17 +31,10 @@ public class Request {
         this.queryParams = null;
     }
 
-    /** Convenience constructor for test mocks and pre-materialized bodies. */
     public Request(RequestLine requestLine, byte[] body) {
         this(requestLine, LazyBody.of(body));
     }
 
-    /**
-     * Factory used by {@link dev.relism.RequestParser}: creates a request whose body is read
-     * from {@code stream} on the first call to {@link #getBody()}.
-     *
-     * @param preBufLen bytes already buffered past the header end (from the 8 KB read-ahead)
-     */
     public static Request forParsed(RequestLine requestLine, InputStream stream,
                                     int contentLength, byte[] headerBuf,
                                     int bodyStart, int preBufLen) {
@@ -51,30 +44,21 @@ public class Request {
         return new Request(requestLine, lazy);
     }
 
-    /** Materializes and returns the request body, reading from the socket if not yet done. */
     public byte[] getBody() { return lazyBody.get(); }
-
-    // --- Header access (lazy: String allocated only on call) ---
 
     public String       getHeader(String name)  { return requestLine.getHeaders().getFirst(name); }
     public List<String> getHeaders(String name) { return requestLine.getHeaders().getAll(name); }
     public List<String> getHeaders()            { return requestLine.getHeaders().getAll(); }
+    public boolean      headerEquals(String name, String value) { return requestLine.getHeaders().headerValueEqualsIgnoreCase(name, value); }
 
-    // --- Path param access ---
-
-    /** Lazy: decodes the named path parameter to a {@code String}. */
     public String getPathParam(String name) {
         return pathParams != null ? pathParams.get(name) : null;
     }
 
-    // --- Query param access ---
-
-    /** Lazy: decodes the first value of {@code name}, or {@code null} if absent. */
     public String getQueryParam(String name) {
         return resolveQueryParams().get(name);
     }
 
-    /** Lazy: decodes all values of {@code name} (e.g. {@code ?tag=a&tag=b}). */
     public List<String> getQueryParams(String name) {
         return resolveQueryParams().getAll(name);
     }

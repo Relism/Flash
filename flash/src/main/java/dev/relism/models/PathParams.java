@@ -5,11 +5,8 @@ import dev.relism.fpr.core.ByteView;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Path parameters captured during routing.
- *
- * <p>Values are stored as byte offsets into the original path view. String conversion
- * is lazy and happens only on {@link #get}; {@link #view} is zero-copy.
- * Lookup is a linear scan — param counts are always small (typically 1–3).
+ * Path parameters captured during routing, stored as byte offsets into the path view.
+ * {@link #get} allocates a String on call; {@link #view} is zero-copy.
  */
 public class PathParams {
     private final ByteView source;
@@ -24,7 +21,6 @@ public class PathParams {
         this.lens   = lens;
     }
 
-    /** Lazy — allocates a {@code String} only on call. {@code null} if the param is absent. */
     public String get(String name) {
         int i = indexOf(name);
         if (i < 0) return null;
@@ -33,7 +29,6 @@ public class PathParams {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    /** Zero-copy — returns a {@link ByteView} slice over the raw path bytes. */
     ByteView view(String name) {
         int i = indexOf(name);
         if (i < 0) return null;

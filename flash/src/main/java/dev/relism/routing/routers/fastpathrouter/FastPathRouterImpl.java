@@ -12,30 +12,16 @@ import dev.relism.routing.AbstractRouter;
 import dev.relism.routing.PathUtils;
 
 /**
- * Router implementation backed by the {@code fpr-core} byte-level state machine.
- *
- * <p>Routes are compiled lazily: the internal {@code FastPathRouter} is built on the first
- * incoming request after one or more routes have been added. Adding a route after the server
- * has started is safe — the router is marked dirty and recompiled on the next request.
- *
- * <p>Matching is done on a virtual {@code METHOD + path} byte sequence to avoid a two-step
- * lookup. Captured path parameters are exposed via {@link dev.relism.models.PathParams} on
- * the request object, accessible through {@link dev.relism.models.Request#getPathParams()}.
- *
- * <p>Thread safety: {@code FastPathRouter.match()} is safe for concurrent calls as of
- * {@code fpr-core} 1.1.0 — traversal state ({@code RouteSearch}, {@code SegmentCursor}) is
- * held in method-local variables, making the compiled router instance fully immutable.
+ * Router backed by the {@code fpr-core} byte-level state machine. Routes are compiled lazily
+ * on the first request and recompiled when routes are added after startup. Matching runs on a
+ * virtual {@code METHOD + path} byte sequence in a single pass; {@link MatchResult} and
+ * {@link FastPathViews.MethodPathByteView} are reused per-thread to avoid hot-path allocations.
  */
 public class FastPathRouterImpl extends AbstractRouter {
     private final RouterBuilder<RequestHandler> builder = new RouterBuilder<>();
     private volatile FastPathRouter<ByteView, RequestHandler> router;
     private          String[]                                 cachedParamNames;
 
-    /**
-     * Thread-local holders for per-request reusable objects.
-     * Both {@link MatchResult} and {@link FastPathViews.MethodPathByteView} are reset before use,
-     * so no allocation occurs on the routing hot path.
-     */
     private static final class FastPathRouterContext {
         private static final ThreadLocal<MatchResult<RequestHandler>> RESULT_HOLDER =
                 ThreadLocal.withInitial(() -> new MatchResult<>(32, 128));
@@ -55,7 +41,7 @@ public class FastPathRouterImpl extends AbstractRouter {
     protected AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler) {
         String fullPath = PathUtils.join(namespace, path);
         builder.add(StringRouteParser.parse(method.name() + fullPath), handler);
-        this.router = null; // Mark dirty
+        this.router = null;
         return this;
     }
 
@@ -77,7 +63,6 @@ public class FastPathRouterImpl extends AbstractRouter {
             return null;
         }
 
-        // CAPTURE PARAMETERS
         int count = result.paramCount();
         if (count > 0) {
             int methodLen   = method.getBytes().length;
@@ -97,10 +82,6 @@ public class FastPathRouterImpl extends AbstractRouter {
         return result.handler();
     }
 
-    /**
-     * Ensures the FPR state machine is compiled. Uses double-checked locking on a {@code volatile}
-     * field so the fast path (already compiled) is a single null-check with no synchronization.
-     */
     private void ensureCompiled() {
         if (router == null) {
             synchronized (this) {

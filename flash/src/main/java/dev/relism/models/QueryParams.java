@@ -7,14 +7,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Lazy access to URL query parameters ({@code ?key=value&...}).
- * Backed by a zero-copy {@link ByteView} over the raw query string bytes from the request buffer.
- * No parsing happens at construction — values are decoded on demand.
- *
- * <p>{@link #view} is zero-copy; {@link #get} and {@link #getAll} allocate only the result String(s).
+ * Lazy query parameter access ({@code ?key=value&...}). Backed by a zero-copy {@link ByteView}
+ * over the raw query string bytes — no parsing at construction, values decoded on demand.
  */
 public class QueryParams {
-    /** Singleton returned when the request has no query string. All methods return empty/null. */
     public static final QueryParams EMPTY = new QueryParams(null);
 
     private final ByteView raw;
@@ -23,7 +19,6 @@ public class QueryParams {
         this.raw = raw;
     }
 
-    /** Lazy — decodes the first value for {@code name}, or {@code null} if absent. */
     public String get(String name) {
         long r = findFirst(name);
         if (r < 0) return null;
@@ -33,7 +28,6 @@ public class QueryParams {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    /** Zero-copy — returns a {@link ByteView} slice over the raw value bytes. */
     ByteView view(String name) {
         long r = findFirst(name);
         if (r < 0) return null;
@@ -44,7 +38,6 @@ public class QueryParams {
         };
     }
 
-    /** Lazy — returns all values for {@code name}, or an empty list if absent. */
     public List<String> getAll(String name) {
         if (raw == null) return List.of();
         List<String> result = null;
@@ -70,10 +63,7 @@ public class QueryParams {
         return result != null ? result : List.of();
     }
 
-    /**
-     * Scans for the first occurrence of {@code name=value}.
-     * Returns {@code (valStart << 32) | valLen}, or {@code -1} if not found. Zero allocations.
-     */
+    /** Returns (valStart << 32) | valLen, or -1 if not found. */
     private long findFirst(String name) {
         if (raw == null) return -1L;
         int i = 0, len = raw.length();

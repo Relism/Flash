@@ -14,16 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Top-level dispatcher owned by {@link dev.relism.HttpServer}.
- *
- * <p>Routing order on each request:
- * <ol>
- *   <li>Iterates mounted sub-routers in descending namespace length order (longest prefix first)
- *       and delegates to the first one whose namespace is a prefix of the request path.</li>
- *   <li>If no sub-router matches, falls through to the internal {@link FastPathRouterImpl}.</li>
- * </ol>
- *
- * <p>Not intended to be instantiated or subclassed directly — use {@link dev.relism.HttpServer}.
+ * Top-level dispatcher. Routes to the longest-matching mounted sub-router first,
+ * falling back to the internal {@link FastPathRouterImpl}.
  */
 public class GlobalRouter extends AbstractRouter {
     private final Map<String, AbstractRouter> subRoutersMap = new HashMap<>();
@@ -53,7 +45,6 @@ public class GlobalRouter extends AbstractRouter {
         return h != null ? h : notFoundHandler;
     }
 
-    /** Resolves the scoped exception handler for the router that owns the request path. */
     public ExceptionHandler resolveExceptionHandler(Request request) {
         ByteView path = request.getRequestLine().getPath();
         for (AbstractRouter sub : sortedSubRouters) {
