@@ -41,9 +41,6 @@ public class RequestParser {
             throw new IOException("Headers too large: buffer exhausted without finding \\r\\n\\r\\n");
         }
 
-        // Timer starts here — after I/O, measuring only CPU parse time
-        long start = System.nanoTime();
-
         // 2. Scan Request Line: METHOD PATH PROTOCOL
         int methodEnd = find(buffer, 0, headerEndIdx, (byte) ' ');
         if (methodEnd == -1) throw new IOException("Invalid request line (method)");
@@ -92,9 +89,6 @@ public class RequestParser {
             }
             current = lineEnd + 2; // skip \r\n
         }
-
-        long elapsed = System.nanoTime() - start;
-        log.debug("Request parsed in {}ns: {} {} {}", elapsed, method, pathView, protocolView);
 
         // Body is read lazily — only materialized if the handler calls req.getBody().
         // Bytes already in the buffer past \r\n\r\n are handed off to LazyBody as read-ahead.

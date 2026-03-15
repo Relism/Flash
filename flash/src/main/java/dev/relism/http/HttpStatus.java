@@ -1,12 +1,10 @@
 package dev.relism.http;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
- * Pre-compiled byte representations of standard HTTP status lines (e.g. {@code "200 OK"}).
- * {@link #bytesForCode(int)} returns the cached array for known codes, {@code null} otherwise.
+ * Pre-compiled byte representations of standard HTTP status lines.
+ * Uses a direct-access array for O(1) lookup with zero allocation.
  */
 public enum HttpStatus {
 
@@ -51,21 +49,30 @@ public enum HttpStatus {
     SERVICE_UNAVAILABLE             (503, "Service Unavailable"),
     GATEWAY_TIMEOUT                 (504, "Gateway Timeout");
 
+    private static final int MAX_STATUS_CODE = 504;
+    private static final byte[][] INDEX = new byte[MAX_STATUS_CODE + 1][];
+
+    static {
+        for (HttpStatus s : values()) {
+            INDEX[s.code] = s.bytes;
+        }
+    }
+
     private final int code;
     private final byte[] bytes;
-
-    private static final Map<Integer, byte[]> INDEX = new HashMap<>();
-    static {
-        for (HttpStatus s : values()) INDEX.put(s.code, s.bytes);
-    }
 
     HttpStatus(int code, String reason) {
         this.code  = code;
         this.bytes = (code + " " + reason).getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Returns pre-compiled {@code "CODE Reason"} bytes for the given code, or {@code null} if unknown. */
+    /** * Returns pre-compiled status bytes for the given code.
+     * Access is O(1) and generates zero garbage.
+     */
     public static byte[] bytesForCode(int code) {
-        return INDEX.get(code);
+        if (code >= 0 && code <= MAX_STATUS_CODE) {
+            return INDEX[code];
+        }
+        return null;
     }
 }

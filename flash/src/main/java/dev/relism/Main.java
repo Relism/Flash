@@ -40,6 +40,8 @@ public class Main {
             throw new RuntimeException(req.getQueryParam("test"));
         });
 
+
+
         server.start().thenRun(() -> log.info("Server started on port: " + PORT));
     }
 }
