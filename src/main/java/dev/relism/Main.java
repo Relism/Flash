@@ -4,10 +4,14 @@ import dev.relism.http.ContentType;
 import dev.relism.models.*;
 import dev.relism.routing.Route;
 import dev.relism.routing.routers.fastpathrouter.FastPathRouterImpl;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 
+@Slf4j
 public class Main {
+
+    private static final int PORT = 8080;
 
     /*
     @Route(method = "GET", path = "/profile")
@@ -21,7 +25,7 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         HttpServerConfiguration config = HttpServerConfiguration.builder()
-                .port(8080)
+                .port(PORT)
                 .host("localhost")
                 .build();
 
@@ -36,6 +40,6 @@ public class Main {
             throw new RuntimeException(req.getQueryParam("test"));
         });
 
-        server.start().thenRun(() -> System.out.println("Flash running on :" + config.getPort()));
+        server.start().thenRun(() -> log.info("Server started on port: " + PORT));
     }
 }
