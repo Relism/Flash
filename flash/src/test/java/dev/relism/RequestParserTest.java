@@ -16,7 +16,7 @@ class RequestParserTest {
 
     private static Request parse(String raw) throws IOException {
         byte[] bytes = raw.replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
-        return RequestParser.parse(new ByteArrayInputStream(bytes));
+        return new RequestParser().parse(new ByteArrayInputStream(bytes));
     }
 
     private static String req(String requestLine, String... headers) {
@@ -70,7 +70,7 @@ class RequestParserTest {
     void body_parsed() throws IOException {
         String body = "hello body";
         String raw  = "POST / HTTP/1.1\r\nContent-Length: " + body.length() + "\r\n\r\n" + body;
-        Request r   = RequestParser.parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+        Request r   = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
         assertEquals(body, new String(r.getBody(), StandardCharsets.UTF_8));
     }
@@ -85,14 +85,14 @@ class RequestParserTest {
 
     @Test
     void emptyInputStream_returnsNull() throws IOException {
-        assertNull(RequestParser.parse(new ByteArrayInputStream(new byte[0])));
+        assertNull(new RequestParser().parse(new ByteArrayInputStream(new byte[0])));
     }
 
     @Test
     void missingHeaderTerminator_throwsIOException() {
         // Valid request line but stream ends before \r\n\r\n
         byte[] raw = "GET / HTTP/1.1\r\nHost: localhost\r\n".getBytes(StandardCharsets.UTF_8);
-        assertThrows(IOException.class, () -> RequestParser.parse(new ByteArrayInputStream(raw)));
+        assertThrows(IOException.class, () -> new RequestParser().parse(new ByteArrayInputStream(raw)));
     }
 
     @Test
@@ -107,11 +107,12 @@ class RequestParserTest {
     }
 
     @Test
-    void headersOverBufferSize_throwsIOException() {
-        // 9 KB of data with no \r\n\r\n exhausts the 8 KB buffer
-        byte[] giant = new byte[9000];
+    void headers_exceedingMaxBufferSize_throwsIOException() {
+        // Feed more bytes than the configured cap with no \r\n\r\n — must throw
+        int cap = 16 * 1024;
+        byte[] giant = new byte[cap + 1];
         Arrays.fill(giant, (byte) 'A');
-        assertThrows(IOException.class, () -> RequestParser.parse(new ByteArrayInputStream(giant)));
+        assertThrows(IOException.class, () -> new RequestParser(cap).parse(new ByteArrayInputStream(giant)));
     }
 
     @Test
@@ -119,7 +120,7 @@ class RequestParserTest {
         // Content-Length claims 50 but stream ends after 5 bytes
         String body = "hello";
         String raw  = "POST / HTTP/1.1\r\nContent-Length: 50\r\n\r\n" + body;
-        Request r   = RequestParser.parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+        Request r   = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
         assertEquals(50, r.getBody().length);
         assertEquals(body, new String(r.getBody(), 0, body.length(), StandardCharsets.UTF_8));

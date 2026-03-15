@@ -8,4 +8,6 @@ import lombok.Data;
 public class HttpServerConfiguration {
     private int port;
     private String host;
+    @Builder.Default
+    private int maxHeaderBufferSize = 64 * 1024;
 }

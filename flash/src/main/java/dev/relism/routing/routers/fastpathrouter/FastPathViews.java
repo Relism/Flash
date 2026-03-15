@@ -5,17 +5,10 @@ import lombok.NoArgsConstructor;
 
 import java.nio.charset.StandardCharsets;
 
-/**
- * Container class for various {@link ByteView} implementations used by the FastPathRouter.
- * Consolidating these views reduces package clutter while maintaining high-performance byte access.
- */
+/** {@link dev.relism.fpr.core.ByteView} implementations used on the router and parser hot paths. */
 @NoArgsConstructor
 public final class FastPathViews {
 
-    /**
-     * High-performance, zero-copy ByteView that points to a shared request buffer.
-     * Used by the {@link dev.relism.RequestParser} to scan for paths without allocations.
-     */
     public static final class RequestByteView implements ByteView {
         private final byte[] buffer;
         private final int start;
@@ -41,24 +34,17 @@ public final class FastPathViews {
         }
 
         @Override
-        public String toString() { // CHANGED: decode slice directly; avoids full-buffer String copy
+        public String toString() {
             return new String(buffer, start, length, StandardCharsets.UTF_8);
         }
     }
 
-    /**
-     * A composite ByteView that prefixes a method's bytes to a path view.
-     * Enables method+path routing in a single pass with no allocation.
-     *
-     * <p>Mutable by design — reused across requests via {@code ThreadLocal}.
-     * Call {@link #reset} before each use.
-     */
+    /** Mutable composite view: method bytes + path. Reused via ThreadLocal — call reset() before use. */
     public static final class MethodPathByteView implements ByteView {
         private byte[] method;
         private ByteView path;
         private int totalLength;
 
-        /** Binds this view to a new method+path pair. Must be called before each use. */
         public void reset(byte[] method, ByteView path) {
             this.method = method;
             this.path = path;
@@ -76,9 +62,6 @@ public final class FastPathViews {
         }
     }
 
-    /**
-     * ByteView implementation for raw byte arrays, typically from a socket.
-     */
     public static class SocketByteView implements ByteView {
         private final byte[] data;
 
@@ -97,9 +80,6 @@ public final class FastPathViews {
         }
     }
 
-    /**
-     * ByteView implementation for Java Strings.
-     */
     public static class StringByteView implements ByteView {
         private final byte[] bytes;
 

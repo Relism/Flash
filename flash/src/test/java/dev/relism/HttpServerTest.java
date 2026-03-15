@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
@@ -62,17 +63,32 @@ class HttpServerTest {
         try (Socket socket = new Socket("127.0.0.1", port);
              OutputStream out = socket.getOutputStream();
              InputStream in = socket.getInputStream()) {
-             
+
             out.write(rawHttp.getBytes(StandardCharsets.UTF_8));
             out.flush();
 
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                baos.write(buffer, 0, read);
+            // Read until \r\n\r\n to get the full header block
+            ByteArrayOutputStream headerBuf = new ByteArrayOutputStream();
+            int b, prev3 = -1, prev2 = -1, prev1 = -1;
+            while ((b = in.read()) != -1) {
+                headerBuf.write(b);
+                if (prev3 == '\r' && prev2 == '\n' && prev1 == '\r' && b == '\n') break;
+                prev3 = prev2; prev2 = prev1; prev1 = b;
             }
-            return baos.toString(StandardCharsets.UTF_8);
+            String headers = headerBuf.toString(StandardCharsets.UTF_8);
+
+            // Parse Content-Length
+            int contentLength = 0;
+            for (String line : headers.split("\r\n")) {
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+                    break;
+                }
+            }
+
+            // Read exactly Content-Length bytes for the body
+            byte[] body = in.readNBytes(contentLength);
+            return headers + new String(body, StandardCharsets.UTF_8);
         }
     }
 

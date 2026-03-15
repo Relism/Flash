@@ -4,70 +4,24 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="pre-module refactor">
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/flash-bench/pom.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/flash-bench/src/main/java/dev/relism/bench/Main.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/flash-bench/src/main/resources/simplelogger.properties" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/flash/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/encodings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/Flash.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Flash.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/HttpServer.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/HttpServerConfiguration.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/RequestParser.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/RequestParser.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/exceptions/DuplicateNamespaceException.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/exceptions/DuplicateNamespaceException.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/http/ContentType.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/ContentType.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/http/HttpMethod.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/HttpMethod.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/http/HttpStatus.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/HttpStatus.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/HeaderMap.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/HeaderMap.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/LazyBody.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/LazyBody.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/PathParams.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/PathParams.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/QueryParams.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/QueryParams.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/Request.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Request.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/RequestHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/RequestHandler.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/RequestLine.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/RequestLine.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/Response.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Response.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/models/SimpleHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/SimpleHandler.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/AbstractRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/GlobalRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/GlobalRouter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/PathUtils.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/PathUtils.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/Route.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/Route.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/routing/routers/radix/RadixPathRouterImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/radix/RadixPathRouterImpl.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/template/ByteTemplate.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/template/ByteTemplate.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/dev/relism/template/ErrorPages.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/template/ErrorPages.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/assets/html/default_404.html" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_404.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/assets/html/default_exception.html" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_exception.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/assets/logo.png" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/resources/assets/logo.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/HttpServerConcurrencyTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerConcurrencyTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/HttpServerTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/RequestParserTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/RequestParserTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/http/ContentTypeTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/http/ContentTypeTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/http/HttpMethodTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/http/HttpMethodTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/http/HttpStatusTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/http/HttpStatusTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/HeaderMapTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/HeaderMapTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/PathParamsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/PathParamsTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/QueryParamsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/QueryParamsTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/RequestLineTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestLineTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/RequestTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/ResponseTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/ResponseTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/models/SimpleHandlerTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/SimpleHandlerTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/routing/AbstractRouterTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/AbstractRouterTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/routing/GlobalRouterTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/GlobalRouterTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/routing/PathUtilsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/PathUtilsTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImplTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImplTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathViewsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathViewsTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/template/ByteTemplateTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/template/ByteTemplateTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/dev/relism/template/ErrorPagesTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/template/ErrorPagesTest.java" afterDir="false" />
+    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="refactored, pre-buffer reuse">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-bench/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-bench/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-bench/src/main/java/dev/relism/bench/Main.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/RequestParser.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/RequestParser.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/HeaderMap.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/HeaderMap.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/LazyBody.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/LazyBody.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/PathParams.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/PathParams.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/QueryParams.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/QueryParams.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Request.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Request.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/GlobalRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/GlobalRouter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/RequestParserTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/RequestParserTest.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -119,55 +73,59 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Application.ExternalBenchmark.executor&quot;: &quot;Run&quot;,
-    &quot;Application.Main.executor&quot;: &quot;Run&quot;,
-    &quot;Application.dev.relism.bench.Main.executor&quot;: &quot;Run&quot;,
-    &quot;JUnit.RequestParserTest.executor&quot;: &quot;Run&quot;,
-    &quot;JUnit.RequestParserTest.headers_caseInsensitive.executor&quot;: &quot;Debug&quot;,
-    &quot;Maven.FlashPractice [test].executor&quot;: &quot;Run&quot;,
-    &quot;Maven.flash [compile].executor&quot;: &quot;Run&quot;,
-    &quot;Maven.flash [install].executor&quot;: &quot;Run&quot;,
-    &quot;Maven.flash-bench [clean].executor&quot;: &quot;Run&quot;,
-    &quot;Maven.flash-bench [install].executor&quot;: &quot;Run&quot;,
-    &quot;Maven.flash-bench [validate].executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/elorc/Documents/Coding/Java/practice/Flash&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;onboarding.tips.debug.path&quot;: &quot;C:/Users/elorc/Documents/Coding/Java/practice/FlashPractice/flash-bench/src/main/java/dev/relism/Main.java&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.1150748&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMThirdPartyAiProvidersConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.ExternalBenchmark.executor": "Run",
+    "Application.Main.executor": "Run",
+    "Application.dev.relism.bench.Main.executor": "Run",
+    "JUnit.RequestParserTest.executor": "Run",
+    "JUnit.RequestParserTest.headers_caseInsensitive.executor": "Debug",
+    "Maven.FlashPractice [test].executor": "Run",
+    "Maven.flash [compile].executor": "Run",
+    "Maven.flash [install].executor": "Run",
+    "Maven.flash [test].executor": "Run",
+    "Maven.flash-bench [clean].executor": "Run",
+    "Maven.flash-bench [install].executor": "Run",
+    "Maven.flash-bench [validate].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "C:/Users/elorc/Documents/Coding/Java/practice/Flash",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "onboarding.tips.debug.path": "C:/Users/elorc/Documents/Coding/Java/practice/FlashPractice/flash-bench/src/main/java/dev/relism/Main.java",
+    "project.structure.last.edited": "Modules",
+    "project.structure.proportion": "0.15",
+    "project.structure.side.proportion": "0.1150748",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\elorc\Documents\Coding\Java\practice\Flash" />
     </key>
+    <key name="MoveClassesOrPackagesDialog.RECENTS_KEY">
+      <recent name="dev.relism" />
+    </key>
   </component>
   <component name="RunManager" selected="Application.ExternalBenchmark">
     <configuration name="ExternalBenchmark" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
-      <option name="MAIN_CLASS_NAME" value="dev.relism.bench.ExternalBenchmark" />
+      <option name="MAIN_CLASS_NAME" value="dev.relism.ExternalBenchmark" />
       <module name="flash-bench" />
       <extension name="coverage">
         <pattern>
-          <option name="PATTERN" value="dev.relism.bench.*" />
+          <option name="PATTERN" value="dev.relism.*" />
           <option name="ENABLED" value="true" />
         </pattern>
       </extension>
@@ -193,7 +151,7 @@
       <module name="flash-bench" />
       <extension name="coverage">
         <pattern>
-          <option name="PATTERN" value="dev.relism.bench.*" />
+          <option name="PATTERN" value="dev.relism.*" />
           <option name="ENABLED" value="true" />
         </pattern>
       </extension>
@@ -235,7 +193,7 @@
       <workItem from="1773536904928" duration="395000" />
       <workItem from="1773537302622" duration="150000" />
       <workItem from="1773537489622" duration="5048000" />
-      <workItem from="1773576241900" duration="5173000" />
+      <workItem from="1773576241900" duration="14674000" />
     </task>
     <task id="LOCAL-00001" summary="Initial">
       <option name="closed" value="true" />
@@ -253,7 +211,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773536678416</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="refactored, pre-buffer reuse">
+      <option name="closed" value="true" />
+      <created>1773581516834</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1773581516834</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -273,7 +239,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Initial" />
     <MESSAGE value="pre-module refactor" />
-    <option name="LAST_COMMIT_MESSAGE" value="pre-module refactor" />
+    <MESSAGE value="refactored, pre-buffer reuse" />
+    <option name="LAST_COMMIT_MESSAGE" value="refactored, pre-buffer reuse" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

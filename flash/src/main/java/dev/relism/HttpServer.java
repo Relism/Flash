@@ -13,32 +13,17 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Entry point for the Flash HTTP server.
- *
- * <p>
- * Internally, the server owns a {@link GlobalRouter} with two tiers of routing:
- * <ol>
- * <li><b>Mounted sub-routers</b> — registered via {@link #mount}. Each owns a
- * namespace
- * prefix (e.g. {@code /api}) and handles all paths under it. Matched by longest
- * prefix first.</li>
- * <li><b>Internal router</b> — the fallback used when no sub-router claims the
- * path.
- * Routes registered directly on the server ({@link #get}, {@link #post}, etc.)
- * go here.</li>
- * </ol>
- *
- * <p>
- * Error handlers ({@link #onNotFound}, {@link #onException}) registered on the
- * server
- * apply only to the internal router. Each mounted sub-router has its own
- * independent handlers.
+ * Flash HTTP server. Owns a {@link GlobalRouter} with two routing tiers:
+ * mounted sub-routers (matched by longest namespace prefix) and an internal
+ * router as fallback. Error handlers are scoped to their respective router.
  */
 @Slf4j
 public class HttpServer {
@@ -46,6 +31,7 @@ public class HttpServer {
     private final ServerSocket serverSocket;
     private final GlobalRouter globalRouter = new GlobalRouter();
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
+    private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     private volatile boolean stopped = false;
     private final CompletableFuture<Void> readyFuture = new CompletableFuture<>();
 
@@ -69,11 +55,7 @@ public class HttpServer {
         this.serverSocket = new ServerSocket(configuration.getPort());
     }
 
-    /**
-     * Starts the server on a new non-daemon virtual thread and returns a future
-     * that completes
-     * when the accept loop is running and the server is ready to serve requests.
-     */
+    /** Returns a future that completes once the accept loop is running and the server is ready. */
     public CompletableFuture<Void> start() {
         Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run);
         return readyFuture;
@@ -94,10 +76,7 @@ public class HttpServer {
         }
     }
 
-    /**
-     * Stops the server and waits for in-flight requests to complete.
-     * The returned future is already completed when this method returns.
-     */
+    /** Closes all active connections and shuts down the executor. Returns when complete. */
     public CompletableFuture<Void> stop() {
         stopped = true;
         try {
@@ -105,6 +84,7 @@ public class HttpServer {
         } catch (IOException e) {
             log.error("Error closing server socket", e);
         }
+        activeSockets.forEach(s -> { try { s.close(); } catch (IOException ignored) {} });
         executorService.shutdown();
         try {
             if (!executorService.awaitTermination(30, TimeUnit.SECONDS))
@@ -116,104 +96,66 @@ public class HttpServer {
         return CompletableFuture.completedFuture(null);
     }
 
-    // --- Routing ---
-
     /**
-     * Mounts a sub-router under the given namespace prefix.
+     * Mounts a sub-router under {@code namespace}. Requests whose path starts with the
+     * namespace are dispatched to {@code router}; longest prefix wins.
      *
-     * <p>
-     * Any request whose path starts with {@code namespace} will be dispatched to
-     * {@code router}
-     * instead of the internal router. When multiple namespaces match, the longest
-     * prefix wins.
-     * The router's own {@code onNotFound} and {@code onException} handlers are used
-     * for its paths —
-     * the server-level handlers do not apply.
-     *
-     * @throws dev.relism.exceptions.DuplicateNamespaceException if
-     *                                                           {@code namespace}
-     *                                                           is already mounted
+     * @throws dev.relism.exceptions.DuplicateNamespaceException if {@code namespace} is already mounted
      */
     public HttpServer mount(String namespace, AbstractRouter router) {
         globalRouter.mount(namespace, router);
         return this;
     }
 
-    // --- Global error handlers ---
-
-    /**
-     * Sets the 404 handler for routes registered directly on this server.
-     * Does not affect mounted sub-routers, which each carry their own not-found
-     * handler.
-     */
     public HttpServer onNotFound(SimpleHandler.FunctionalHandler handler) {
         globalRouter.onNotFound(handler);
         return this;
     }
 
-    /**
-     * Sets the exception handler for routes registered directly on this server.
-     * Does not affect mounted sub-routers, which each carry their own exception
-     * handler.
-     */
     public HttpServer onException(AbstractRouter.ExceptionHandler handler) {
         globalRouter.onException(handler);
         return this;
     }
 
-    // --- DSL ---
-
-    /**
-     * Registers an annotation-based handler on the internal router.
-     * The handler's class must carry a {@link dev.relism.routing.Route @Route}
-     * annotation
-     * declaring the HTTP method and path. To register on a specific sub-router,
-     * call
-     * {@link AbstractRouter#register} on that router directly.
-     */
     public HttpServer register(RequestHandler handler) {
         globalRouter.register(handler);
         return this;
     }
 
     /**
-     * Registers a route on the internal router (not on any mounted sub-router).
-     * The handler's return value is used as the response body; returning a
-     * {@link dev.relism.models.Response}
-     * instance replaces the entire response object.
+     * Registers a route on the internal router. The handler return value drives the response:
+     * return a {@link dev.relism.models.Response} to replace it entirely, any other non-null
+     * value to set it as the body, or {@code null} to leave the response object unchanged.
      */
     public HttpServer get(String path, SimpleHandler.FunctionalHandler h) {
         globalRouter.get(path, h);
         return this;
     }
 
-    /** @see #get(String, SimpleHandler.FunctionalHandler) */
     public HttpServer post(String path, SimpleHandler.FunctionalHandler h) {
         globalRouter.post(path, h);
         return this;
     }
 
-    /** @see #get(String, SimpleHandler.FunctionalHandler) */
     public HttpServer put(String path, SimpleHandler.FunctionalHandler h) {
         globalRouter.put(path, h);
         return this;
     }
 
-    /** @see #get(String, SimpleHandler.FunctionalHandler) */
     public HttpServer delete(String path, SimpleHandler.FunctionalHandler h) {
         globalRouter.delete(path, h);
         return this;
     }
 
-    // --- Request processing ---
-
     private void process(Socket socket) {
+        activeSockets.add(socket);
         executorService.submit(() -> {
             try (socket;
                     InputStream in = socket.getInputStream();
                     OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
+                RequestParser parser = new RequestParser(configuration.getMaxHeaderBufferSize());
                 while (!stopped) {
-                    Request request = RequestParser.parse(in);
+                    Request request = parser.parse(in);
                     if (request == null)
                         break;
 
@@ -236,7 +178,6 @@ public class HttpServer {
                             response.setBody(result);
                     }
 
-                    // Drain any unread body bytes so the stream is positioned at the next request.
                     request.getBody();
 
                     out.write(HTTP_1_1);
@@ -260,24 +201,18 @@ public class HttpServer {
             } catch (IOException e) {
                 if (!stopped)
                     log.error("I/O error handling request", e);
+            } finally {
+                activeSockets.remove(socket);
             }
         });
     }
 
-    /**
-     * Returns true if the connection should be kept alive after this request.
-     * HTTP/1.1 default: keep-alive. HTTP/1.0 default: close.
-     * Explicit {@code Connection} header overrides the default.
-     */
     private static boolean isKeepAlive(Request request) {
-        String connection = request.getHeader("Connection");
-        if (connection != null) {
-            return !"close".equalsIgnoreCase(connection);
-        }
-        // Detect HTTP version from last byte of protocol field: "HTTP/1.1" → '1',
-        // "HTTP/1.0" → '0'
+        if (request.headerEquals("Connection", "close")) return false;
+        // Detect HTTP version from last byte of protocol field: "HTTP/1.1" → '1', "HTTP/1.0" → '0'
         ByteView protocol = request.getRequestLine().getProtocol();
-        return protocol.length() == 8 && protocol.byteAt(7) == '1';
+        return protocol.length() == 8 && protocol.byteAt(7) == '1'
+                || request.headerEquals("Connection", "keep-alive");
     }
 
     private static void writeStatusPhrase(OutputStream out, int statusCode) throws IOException {
