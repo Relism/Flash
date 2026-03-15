@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>404 — Flash</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box }
+
+    :root {
+      --bg:           #0c0c0c;
+      --text:         #a0a0a0;
+      --muted:        #555;
+      --faint:        #333;
+      --surface:      #1a1a1a;
+      --border:       #2a2a2a;
+      --token-path:   #7ab0ff;
+      --token-method: #c4b5fd;
+      --heading:      #e8e8e8;
+      --divider-bg:   #333;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg:           #f5f5f5;
+        --text:         #555;
+        --muted:        #999;
+        --faint:        #bbb;
+        --surface:      #efefef;
+        --border:       #ddd;
+        --token-path:   #2563eb;
+        --token-method: #7c3aed;
+        --heading:      #111;
+        --divider-bg:   #ccc;
+      }
+    }
+
+    html { height: 100% }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font: 15px/1.5 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      padding: 40px 24px;
+    }
+
+    main { max-width: 480px; width: 100% }
+
+    .code {
+      font-size: 72px;
+      font-weight: 700;
+      letter-spacing: -3px;
+      color: var(--heading);
+      line-height: 1;
+      margin-bottom: 20px;
+    }
+
+    .divider {
+      width: 48px;
+      height: 2px;
+      background: var(--divider-bg);
+      margin-bottom: 20px;
+    }
+
+    .route {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    .method { color: var(--token-method) }
+    .path   { color: var(--token-path)   }
+
+    .msg {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .proto {
+      color: var(--faint);
+      font-size: 11px;
+      margin-top: 24px;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .footer-logo {
+      height: 14px;
+      width: auto;
+      opacity: 0.55;
+      vertical-align: middle;
+    }
+
+    .footer-brand { color: var(--text); font-weight: 600 }
+    .sep { color: var(--faint); font-size: 14px; line-height: 1 }
+    time { font-variant-numeric: tabular-nums }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <main>
+      <div class="code">404</div>
+      <div class="divider"></div>
+      <p><span class="route"><span class="method">{{method}}</span> <span class="path">{{path}}</span></span></p>
+      <p class="msg">No route matched this request.</p>
+      <p class="proto">{{protocol}}</p>
+    </main>
+  </div>
+
+  <footer>
+    {{logo_img}}
+    <span class="footer-brand">Flash 5</span>
+    <span class="sep">·</span>
+    <span>v{{version}}</span>
+    <span class="sep">·</span>
+    <time>{{timestamp}}</time>
+  </footer>
+</body>
+
+</html>
