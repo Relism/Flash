@@ -7,10 +7,7 @@
     <groupId>dev.relism</groupId>
     <artifactId>Flash</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <packaging>pom</packaging>
-    <modules>
-        <module>flash-bench</module>
-    </modules>
+    <packaging>jar</packaging>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -56,6 +53,12 @@
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.16</version>
             <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.42</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 

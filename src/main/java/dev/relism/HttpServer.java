@@ -63,12 +63,11 @@ public class HttpServer {
      * when the accept loop is running and the server is ready to serve requests.
      */
     public CompletableFuture<Void> start() {
-        Thread.ofVirtual().name("flash-accept-loop").start(this::run);
+        Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run);
         return readyFuture;
     }
 
     private void run() {
-        log.info("Server started on port {}", configuration.getPort());
         try (executorService) {
             readyFuture.complete(null);
             while (!stopped) {
