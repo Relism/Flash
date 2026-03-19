@@ -44,8 +44,8 @@ class RequestParserTest {
     @Test
     void queryParam_resolvedFromPath() throws IOException {
         Request r = parse(req("GET /search?q=flash&page=2 HTTP/1.1", "Host: localhost"));
-        assertEquals("flash", r.getQueryParam("q"));
-        assertEquals("2",     r.getQueryParam("page"));
+        assertEquals("flash", r.query("q"));
+        assertEquals("2",     r.query("page"));
     }
 
     // --- headers ---
@@ -53,15 +53,15 @@ class RequestParserTest {
     @Test
     void headers_parsed() throws IOException {
         Request r = parse(req("GET / HTTP/1.1", "Host: example.com", "Accept: application/json"));
-        assertEquals("example.com",       r.getHeader("Host"));
-        assertEquals("application/json",  r.getHeader("Accept"));
+        assertEquals("example.com",       r.header("Host"));
+        assertEquals("application/json",  r.header("Accept"));
     }
 
     @Test
     void headers_caseInsensitive() throws IOException {
         Request r = parse(req("GET / HTTP/1.1", "Content-Type: text/plain"));
-        assertEquals("text/plain", r.getHeader("content-type"));
-        assertEquals("text/plain", r.getHeader("CONTENT-TYPE"));
+        assertEquals("text/plain", r.header("content-type"));
+        assertEquals("text/plain", r.header("CONTENT-TYPE"));
     }
 
     // --- body ---
@@ -72,13 +72,13 @@ class RequestParserTest {
         String raw  = "POST / HTTP/1.1\r\nContent-Length: " + body.length() + "\r\n\r\n" + body;
         Request r   = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
-        assertEquals(body, new String(r.getBody(), StandardCharsets.UTF_8));
+        assertEquals(body, new String(r.body().bytes(), StandardCharsets.UTF_8));
     }
 
     @Test
     void body_emptyWhenNoContentLength() throws IOException {
         Request r = parse(req("GET / HTTP/1.1", "Host: localhost"));
-        assertEquals(0, r.getBody().length);
+        assertTrue(r.body().isEmpty());
     }
 
     // --- edge cases / robustness ---
@@ -102,17 +102,43 @@ class RequestParserTest {
 
     @Test
     void requestLine_noProtocol_throwsIOException() {
-        // No space after path — parser cannot find protocol boundary
+        // No space after path, parser cannot find protocol boundary
         assertThrows(IOException.class, () -> parse(req("GET /noproto")));
     }
 
     @Test
     void headers_exceedingMaxBufferSize_throwsIOException() {
-        // Feed more bytes than the configured cap with no \r\n\r\n — must throw
+        // Feed more bytes than the configured cap with no \r\n\r\n : must throw
         int cap = 16 * 1024;
         byte[] giant = new byte[cap + 1];
         Arrays.fill(giant, (byte) 'A');
         assertThrows(IOException.class, () -> new RequestParser(cap).parse(new ByteArrayInputStream(giant)));
+    }
+
+    @Test
+    void chunkedTransferEncoding_bodyReadable() throws IOException {
+        String raw = "POST / HTTP/1.1\r\n" +
+                     "Host: localhost\r\n" +
+                     "Transfer-Encoding: chunked\r\n" +
+                     "\r\n" +
+                     "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+        Request r = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+        assertNotNull(r);
+        assertEquals(-1L, r.body().contentLength()); // -1 = chunked
+        assertArrayEquals("hello world".getBytes(StandardCharsets.UTF_8), r.body().bytes());
+    }
+
+    @Test
+    void contentLength_parsedAsLong() throws IOException {
+        // 5 GB — too large to materialize, but contentLength must be a long
+        String raw = "POST / HTTP/1.1\r\n" +
+                     "Host: localhost\r\n" +
+                     "Content-Length: 5000000000\r\n" +
+                     "\r\n";
+        Request r = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+        assertNotNull(r);
+        assertEquals(5_000_000_000L, r.body().contentLength());
+        assertThrows(IllegalStateException.class, r.body()::bytes);
     }
 
     @Test
@@ -122,7 +148,7 @@ class RequestParserTest {
         String raw  = "POST / HTTP/1.1\r\nContent-Length: 50\r\n\r\n" + body;
         Request r   = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
-        assertEquals(50, r.getBody().length);
-        assertEquals(body, new String(r.getBody(), 0, body.length(), StandardCharsets.UTF_8));
+        assertEquals(50, r.body().bytes().length);
+        assertEquals(body, new String(r.body().bytes(), 0, body.length(), StandardCharsets.UTF_8));
     }
 }

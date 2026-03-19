@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Lazy query parameter access ({@code ?key=value&...}). Backed by a zero-copy {@link ByteView}
- * over the raw query string bytes — no parsing at construction, values decoded on demand.
+ * over the raw query string bytes, no parsing at construction, values decoded on demand.
  */
 public class QueryParams {
     public static final QueryParams EMPTY = new QueryParams(null);

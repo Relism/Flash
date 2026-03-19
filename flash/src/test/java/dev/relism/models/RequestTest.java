@@ -25,64 +25,65 @@ class RequestTest {
     // --- creation ---
 
     @Test
-    void request_creationAndGetters() {
-        HeaderMap headers = new HeaderMap(new byte[0]);
+    void request_creationAndAccessors() {
+        HeaderMap headers = new HeaderMap();
         RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/path"), viewOf("q=1"), viewOf("HTTP/1.1"), headers);
         byte[] body = "body".getBytes(StandardCharsets.UTF_8);
-        
+
         Request r = new Request(line, body);
-        
-        assertEquals(line, r.getRequestLine());
-        assertArrayEquals(body, r.getBody());
+
+        assertEquals(HttpMethod.GET, r.method());
+        assertEquals("/path", r.path());
+        assertArrayEquals(body, r.body().bytes());
         assertNotNull(r.toString());
     }
 
-    // --- delegates ---
+    // --- headers ---
 
     @Test
-    void headers_delegatesToRequestLine() {
+    void header_delegatesToRequestLine() {
         byte[] buffer = "Host: localhost\r\n".getBytes(StandardCharsets.UTF_8);
-        HeaderMap headers = new HeaderMap(buffer);
-        headers.add(0, 4, 6, 9);
+        HeaderMap headers = new HeaderMap();
+        headers.reset(buffer, 0, buffer.length);
         RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), headers);
         Request r = new Request(line, new byte[0]);
-        
-        assertEquals("localhost", r.getHeader("Host"));
-        assertEquals(List.of("localhost"), r.getHeaders("Host"));
-        assertEquals(List.of("localhost"), r.getHeaders());
+
+        assertEquals("localhost", r.header("Host"));
+        assertEquals(List.of("localhost"), r.headers("Host"));
+        assertEquals(List.of("localhost"), r.headers());
     }
 
-    // --- pathParams ---
+    // --- path params ---
 
     @Test
-    void pathParam_lazyGet() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap(new byte[0]));
+    void param_lazyGet() {
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap());
         Request r = new Request(line, new byte[0]);
-        
-        assertNull(r.getPathParam("id"));
-        
+
+        assertNull(r.param("id"));
+
         r.setPathParams(new PathParams(viewOf("/123"), new String[]{"id"}, new int[]{1}, new int[]{3}));
-        assertEquals("123", r.getPathParam("id"));
+        assertEquals("123", r.param("id"));
     }
 
-    // --- queryParams ---
+    // --- query params ---
 
     @Test
-    void queryParam_lazyGet_fromQueryString() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), viewOf("a=1&b=2&b=3"), viewOf("HTTP/1.1"), new HeaderMap(new byte[0]));
+    void query_lazyGet_fromQueryString() {
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), viewOf("a=1&b=2&b=3"), viewOf("HTTP/1.1"), new HeaderMap());
         Request r = new Request(line, new byte[0]);
-        
-        assertEquals("1", r.getQueryParam("a"));
-        assertEquals("2", r.getQueryParam("b")); // First value
-        assertEquals(List.of("2", "3"), r.getQueryParams("b"));
+
+        assertEquals("1", r.query("a"));
+        assertEquals("2", r.query("b"));
+        assertEquals(List.of("2", "3"), r.queries("b"));
     }
-    
+
     @Test
-    void queryParam_lazyGet_nullQueryString() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap(new byte[0]));
+    void query_lazyGet_nullQueryString() {
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap());
         Request r = new Request(line, new byte[0]);
-        
-        assertNull(r.getQueryParam("a"));
-        assertTrue(r.getQueryParams("a").isEmpty());
+
+        assertNull(r.query("a"));
+        assertTrue(r.queries("a").isEmpty());
     }
 }

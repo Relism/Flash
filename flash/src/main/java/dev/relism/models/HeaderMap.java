@@ -1,65 +1,78 @@
 package dev.relism.models;
 
 import dev.relism.fpr.core.ByteView;
+import lombok.NoArgsConstructor;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Zero-allocation header storage backed by raw byte offsets into the shared request buffer.
- * Offsets are recorded at parse time; Strings are allocated only on {@link #getFirst} / {@link #getAll}.
+ * Lazy header access backed by a raw byte slice of the request buffer.
+ * No allocations at parse time; Strings are created only when {@link #first} / {@link #all} is called.
+ * One instance per connection; reused across keep-alive requests via {@link #reset}.
  */
+@NoArgsConstructor
 public class HeaderMap {
-    private static final int MAX_HEADERS = 32;
+    private byte[] buffer;
+    private int sectionStart;
+    private int sectionEnd;
 
-    private final byte[] buffer;
-    private final int[] keys   = new int[MAX_HEADERS * 2]; // interleaved [start, len] pairs
-    private final int[] values = new int[MAX_HEADERS * 2]; // interleaved [start, len] pairs
-    private int count = 0;
-
-    public HeaderMap(byte[] buffer) {
-        this.buffer = buffer;
+    /** Resets this map to the header section {@code buffer[sectionStart, sectionEnd)}. */
+    public void reset(byte[] buffer, int sectionStart, int sectionEnd) {
+        this.buffer       = buffer;
+        this.sectionStart = sectionStart;
+        this.sectionEnd   = sectionEnd;
     }
 
-    public void add(int keyStart, int keyLen, int valStart, int valLen) {
-        if (count >= MAX_HEADERS) throw new IllegalStateException("Too many headers: limit is " + MAX_HEADERS);
-        keys[count * 2]     = keyStart;
-        keys[count * 2 + 1] = keyLen;
-        values[count * 2]     = valStart;
-        values[count * 2 + 1] = valLen;
-        count++;
+    /** Returns the first value of header {@code name} (case-insensitive), or {@code null}. */
+    public String first(String name) {
+        long r = findFirst(name);
+        if (r < 0) return null;
+        int s = (int) (r >> 32), l = (int) (r & 0xFFFFFFFFL);
+        return new String(buffer, s, l, StandardCharsets.UTF_8);
     }
 
-    public String getFirst(String name) {
-        int idx = indexOf(name);
-        if (idx < 0) return null;
-        return new String(buffer, values[idx * 2], values[idx * 2 + 1], StandardCharsets.UTF_8);
-    }
-
-    public List<String> getAll(String name) {
+    /** Returns all values of header {@code name} in declaration order, or an empty list. */
+    public List<String> all(String name) {
+        if (buffer == null) return List.of();
         List<String> result = null;
-        for (int i = 0; i < count; i++) {
-            if (keyMatches(i, name)) {
+        int i = sectionStart;
+        while (i < sectionEnd) {
+            int lineEnd = findCR(i);
+            int colon   = findColon(i, lineEnd);
+            if (colon != -1 && keyMatches(i, colon - i, name)) {
+                int vs = skipSpaces(colon + 1, lineEnd);
                 if (result == null) result = new ArrayList<>();
-                result.add(new String(buffer, values[i * 2], values[i * 2 + 1], StandardCharsets.UTF_8));
+                result.add(new String(buffer, vs, lineEnd - vs, StandardCharsets.UTF_8));
             }
+            i = lineEnd + 2;
         }
         return result != null ? result : List.of();
     }
 
-    public List<String> getAll() {
+    /** Returns all header values in declaration order. */
+    public List<String> all() {
+        if (buffer == null) return List.of();
         List<String> result = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            result.add(new String(buffer, values[i * 2], values[i * 2 + 1], StandardCharsets.UTF_8));
+        int i = sectionStart;
+        while (i < sectionEnd) {
+            int lineEnd = findCR(i);
+            int colon   = findColon(i, lineEnd);
+            if (colon != -1) {
+                int vs = skipSpaces(colon + 1, lineEnd);
+                result.add(new String(buffer, vs, lineEnd - vs, StandardCharsets.UTF_8));
+            }
+            i = lineEnd + 2;
         }
         return result;
     }
 
-    public boolean headerValueEqualsIgnoreCase(String name, String value) {
-        int idx = indexOf(name);
-        if (idx < 0) return false;
-        int vs = values[idx * 2], vl = values[idx * 2 + 1];
+    /** Case-insensitive comparison of the first value of {@code name} against {@code value}. */
+    public boolean valueEqualsIgnoreCase(String name, String value) {
+        long r = findFirst(name);
+        if (r < 0) return false;
+        int vs = (int) (r >> 32), vl = (int) (r & 0xFFFFFFFFL);
         if (vl != value.length()) return false;
         for (int i = 0; i < vl; i++) {
             byte b = buffer[vs + i];
@@ -71,31 +84,54 @@ public class HeaderMap {
         return true;
     }
 
-    public ByteView getView(String name) {
-        int idx = indexOf(name);
-        if (idx < 0) return null;
-        final int start = values[idx * 2];
-        final int len   = values[idx * 2 + 1];
+    /** Returns a zero-copy {@link ByteView} over the first value of {@code name}, or {@code null}. */
+    public ByteView view(String name) {
+        long r = findFirst(name);
+        if (r < 0) return null;
+        final int s = (int) (r >> 32), l = (int) (r & 0xFFFFFFFFL);
         return new ByteView() {
-            public int length()       { return len; }
-            public byte byteAt(int i) { return buffer[start + i]; }
+            public int length()       { return l; }
+            public byte byteAt(int i) { return buffer[s + i]; }
         };
     }
 
-    private int indexOf(String name) {
-        for (int i = 0; i < count; i++) {
-            if (keyMatches(i, name)) return i;
+    /** Returns {@code (valStart << 32) | valLen}, or {@code -1} if not found. */
+    private long findFirst(String name) {
+        if (buffer == null) return -1L;
+        int i = sectionStart;
+        while (i < sectionEnd) {
+            int lineEnd = findCR(i);
+            int colon   = findColon(i, lineEnd);
+            if (colon != -1 && keyMatches(i, colon - i, name)) {
+                int vs = skipSpaces(colon + 1, lineEnd);
+                return ((long) vs << 32) | (lineEnd - vs);
+            }
+            i = lineEnd + 2;
         }
+        return -1L;
+    }
+
+    private int findCR(int from) {
+        for (int i = from; i < sectionEnd; i++) if (buffer[i] == '\r') return i;
+        return sectionEnd;
+    }
+
+    private int findColon(int from, int to) {
+        for (int i = from; i < to; i++) if (buffer[i] == ':') return i;
         return -1;
     }
 
-    private boolean keyMatches(int i, String name) {
-        int ks = keys[i * 2], kl = keys[i * 2 + 1];
-        if (kl != name.length()) return false;
-        for (int j = 0; j < kl; j++) {
-            byte b = buffer[ks + j];
+    private int skipSpaces(int from, int end) {
+        while (from < end && buffer[from] == ' ') from++;
+        return from;
+    }
+
+    private boolean keyMatches(int start, int len, String name) {
+        if (len != name.length()) return false;
+        for (int i = 0; i < len; i++) {
+            byte b = buffer[start + i];
             if (b >= 'A' && b <= 'Z') b += 32;
-            char c = name.charAt(j);
+            char c = name.charAt(i);
             if (c >= 'A' && c <= 'Z') c += 32;
             if (b != (byte) c) return false;
         }

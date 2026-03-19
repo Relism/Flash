@@ -12,8 +12,8 @@ import lombok.Getter;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Base router. Each router has a namespace prefix (default {@code "/"}); routes added via
- * {@link #get}, {@link #post}, etc. are relative to it. Error handlers are scoped to this router.
+ * Base router. Each router has a namespace prefix (default {@code "/"});
+ * Error handlers are scoped to this router.
  * The namespace is set automatically by {@link GlobalRouter#mount}.
  */
 public abstract class AbstractRouter {
@@ -57,21 +57,20 @@ public abstract class AbstractRouter {
      * Registers a route relative to this router's namespace. Return a {@link Response} to replace
      * it entirely, any other non-null value to set it as the body, or {@code null} to leave it unchanged.
      */
-    public AbstractRouter get(String path, SimpleHandler.FunctionalHandler handler) {
-        return addRoute(HttpMethod.GET, PathUtils.sanitize(path), new SimpleHandler(handler));
+    public AbstractRouter register(HttpMethod method, String path, SimpleHandler.FunctionalHandler handler) {
+        return addRoute(method, PathUtils.sanitize(path), new SimpleHandler(handler));
     }
 
-    public AbstractRouter post(String path, SimpleHandler.FunctionalHandler handler) {
-        return addRoute(HttpMethod.POST, PathUtils.sanitize(path), new SimpleHandler(handler));
-    }
-
-    public AbstractRouter put(String path, SimpleHandler.FunctionalHandler handler) {
-        return addRoute(HttpMethod.PUT, PathUtils.sanitize(path), new SimpleHandler(handler));
-    }
-
-    public AbstractRouter delete(String path, SimpleHandler.FunctionalHandler handler) {
-        return addRoute(HttpMethod.DELETE, PathUtils.sanitize(path), new SimpleHandler(handler));
-    }
+    public AbstractRouter get(String path, SimpleHandler.FunctionalHandler h)     { return register(HttpMethod.GET,     path, h); }
+    public AbstractRouter post(String path, SimpleHandler.FunctionalHandler h)    { return register(HttpMethod.POST,    path, h); }
+    public AbstractRouter put(String path, SimpleHandler.FunctionalHandler h)     { return register(HttpMethod.PUT,     path, h); }
+    public AbstractRouter delete(String path, SimpleHandler.FunctionalHandler h)  { return register(HttpMethod.DELETE,  path, h); }
+    public AbstractRouter patch(String path, SimpleHandler.FunctionalHandler h)   { return register(HttpMethod.PATCH,   path, h); }
+    public AbstractRouter options(String path, SimpleHandler.FunctionalHandler h) { return register(HttpMethod.OPTIONS, path, h); }
+    public AbstractRouter head(String path, SimpleHandler.FunctionalHandler h)    { return register(HttpMethod.HEAD,    path, h); }
+    public AbstractRouter trace(String path, SimpleHandler.FunctionalHandler h)   { return register(HttpMethod.TRACE,   path, h); }
+    public AbstractRouter connect(String path, SimpleHandler.FunctionalHandler h) { return register(HttpMethod.CONNECT, path, h); }
+    public AbstractRouter purge(String path, SimpleHandler.FunctionalHandler h)   { return register(HttpMethod.PURGE,   path, h); }
 
     /** Registers a class-based handler; the class must be annotated with {@link Route @Route}. */
     public AbstractRouter register(RequestHandler handler) {

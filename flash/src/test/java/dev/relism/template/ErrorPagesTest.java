@@ -24,7 +24,7 @@ class ErrorPagesTest {
         byte[] protoBytes = protocol.getBytes(StandardCharsets.UTF_8);
         FastPathViews.RequestByteView protoView = new FastPathViews.RequestByteView(protoBytes, 0, protoBytes.length);
 
-        RequestLine line = new RequestLine(HttpMethod.GET, pathView, null, protoView, new HeaderMap(new byte[0]));
+        RequestLine line = new RequestLine(HttpMethod.GET, pathView, null, protoView, new HeaderMap());
         return new Request(line, new byte[0]);
     }
 

@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Pre-compiled byte representations of common HTTP {@code Content-Type} values.
- * {@link #getBytes()} returns the pre-computed array directly — never allocates.
+ * {@link #getBytes()} returns the pre-computed array directly, never allocates.
  */
 @Getter
 public enum ContentType {
