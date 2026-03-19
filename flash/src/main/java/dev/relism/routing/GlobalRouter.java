@@ -20,7 +20,14 @@ import java.util.Map;
 public class GlobalRouter extends AbstractRouter {
     private final Map<String, AbstractRouter> subRoutersMap = new HashMap<>();
     private final List<AbstractRouter> sortedSubRouters = new ArrayList<>();
-    private final AbstractRouter internalRouter = new FastPathRouterImpl();
+    private final AbstractRouter internalRouter;
+
+    public GlobalRouter(Middleware... middlewares) {
+        super(middlewares);
+        this.internalRouter = new FastPathRouterImpl();
+    }
+
+    public GlobalRouter() { this(new Middleware[0]); }
 
     public void mount(String namespace, AbstractRouter router) {
         String sanitized = PathUtils.sanitize(namespace);

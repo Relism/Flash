@@ -4,37 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="optimized dynamic body size impl, decluttering javadocs/comments">
-      <change afterPath="$PROJECT_DIR$/flash-bench/src/main/java/dev/relism/bench/StaticResourceManager.java" afterDir="false" />
+    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="multipart parsing, request body access, and chunked input stream support">
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash-bench/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-bench/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-bench/src/main/java/dev/relism/bench/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-bench/src/main/java/dev/relism/bench/Main.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/RequestParser.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/RequestParser.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/ContentType.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/ContentType.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/HttpStatus.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/http/HttpStatus.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/HeaderMap.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/HeaderMap.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/LazyBody.java" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/QueryParams.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/QueryParams.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Request.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Request.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/RequestHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/RequestHandler.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Response.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Response.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/SimpleHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/SimpleHandler.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathViews.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_404.html" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_404.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_exception.html" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/resources/assets/html/default_exception.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerConcurrencyTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerConcurrencyTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/RequestParserTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/RequestParserTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/HeaderMapTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/HeaderMapTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestLineTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestLineTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/RequestTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/ResponseTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/models/ResponseTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/GlobalRouterTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/GlobalRouterTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImplTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImplTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/template/ErrorPagesTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/template/ErrorPagesTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/GlobalRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/GlobalRouter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/Route.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/Route.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/routers/fastpathrouter/FastPathRouterImpl.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -247,7 +229,7 @@
       <workItem from="1773837116508" duration="4255000" />
       <workItem from="1773847734658" duration="911000" />
       <workItem from="1773875652058" duration="5481000" />
-      <workItem from="1773915392332" duration="1223000" />
+      <workItem from="1773915392332" duration="24154000" />
     </task>
     <task id="LOCAL-00001" summary="Initial">
       <option name="closed" value="true" />
@@ -281,7 +263,23 @@
       <option name="project" value="LOCAL" />
       <updated>1773591259108</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="enhanced HTTP server configuration and response handling; added acceptorThreads, improved header management, and refined error page titles">
+      <option name="closed" value="true" />
+      <created>1773920675327</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773920675327</updated>
+    </task>
+    <task id="LOCAL-00006" summary="multipart parsing, request body access, and chunked input stream support">
+      <option name="closed" value="true" />
+      <created>1773920735659</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1773920735659</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -303,7 +301,9 @@
     <MESSAGE value="pre-module refactor" />
     <MESSAGE value="refactored, pre-buffer reuse" />
     <MESSAGE value="optimized dynamic body size impl, decluttering javadocs/comments" />
-    <option name="LAST_COMMIT_MESSAGE" value="optimized dynamic body size impl, decluttering javadocs/comments" />
+    <MESSAGE value="enhanced HTTP server configuration and response handling; added acceptorThreads, improved header management, and refined error page titles" />
+    <MESSAGE value="multipart parsing, request body access, and chunked input stream support" />
+    <option name="LAST_COMMIT_MESSAGE" value="multipart parsing, request body access, and chunked input stream support" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
