@@ -6,6 +6,7 @@ import dev.relism.http.HttpStatus;
 import dev.relism.models.*;
 import dev.relism.routing.AbstractRouter;
 import dev.relism.routing.GlobalRouter;
+import dev.relism.routing.Middleware;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class HttpServer {
     private final HttpServerConfiguration configuration;
     private final ServerSocket serverSocket;
-    private final GlobalRouter globalRouter = new GlobalRouter();
+    private final GlobalRouter globalRouter;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     private volatile boolean stopped = false;
@@ -52,9 +53,14 @@ public class HttpServer {
             DIGITS[i] = String.valueOf(i).getBytes(StandardCharsets.UTF_8);
     }
 
-    public HttpServer(HttpServerConfiguration configuration) throws IOException {
+    /**
+     * Creates the server with optional server-level middlewares applied to every registered route.
+     * Middlewares are pre-fused at construction time; the first element executes outermost.
+     */
+    public HttpServer(HttpServerConfiguration configuration, Middleware... middlewares) throws IOException {
         this.configuration = configuration;
-        this.serverSocket = new ServerSocket(configuration.getPort());
+        this.serverSocket  = new ServerSocket(configuration.getPort());
+        this.globalRouter  = new GlobalRouter(middlewares);
     }
 
     /** Returns a future that completes once the accept loop is running and the server is ready. */
@@ -119,21 +125,18 @@ public class HttpServer {
         return this;
     }
 
-    public HttpServer register(RequestHandler handler) {
-        globalRouter.register(handler);
-        return this;
-    }
+    public HttpServer register(RequestHandler handler, Middleware... m) { globalRouter.register(handler, m); return this; }
 
-    public HttpServer get(String path, SimpleHandler.FunctionalHandler h)     { globalRouter.get(path, h);     return this; }
-    public HttpServer post(String path, SimpleHandler.FunctionalHandler h)    { globalRouter.post(path, h);    return this; }
-    public HttpServer put(String path, SimpleHandler.FunctionalHandler h)     { globalRouter.put(path, h);     return this; }
-    public HttpServer delete(String path, SimpleHandler.FunctionalHandler h)  { globalRouter.delete(path, h);  return this; }
-    public HttpServer patch(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.patch(path, h);   return this; }
-    public HttpServer options(String path, SimpleHandler.FunctionalHandler h) { globalRouter.options(path, h); return this; }
-    public HttpServer head(String path, SimpleHandler.FunctionalHandler h)    { globalRouter.head(path, h);    return this; }
-    public HttpServer trace(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.trace(path, h);   return this; }
-    public HttpServer connect(String path, SimpleHandler.FunctionalHandler h) { globalRouter.connect(path, h); return this; }
-    public HttpServer purge(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.purge(path, h);   return this; }
+    public HttpServer get    (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.get    (path, h, m); return this; }
+    public HttpServer post   (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.post   (path, h, m); return this; }
+    public HttpServer put    (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.put    (path, h, m); return this; }
+    public HttpServer delete (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.delete (path, h, m); return this; }
+    public HttpServer patch  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.patch  (path, h, m); return this; }
+    public HttpServer options(String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.options(path, h, m); return this; }
+    public HttpServer head   (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.head   (path, h, m); return this; }
+    public HttpServer trace  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.trace  (path, h, m); return this; }
+    public HttpServer connect(String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.connect(path, h, m); return this; }
+    public HttpServer purge  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.purge  (path, h, m); return this; }
 
 
     private void process(Socket socket) {

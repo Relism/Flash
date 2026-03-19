@@ -9,6 +9,7 @@ import dev.relism.http.HttpMethod;
 import dev.relism.models.Request;
 import dev.relism.models.RequestHandler;
 import dev.relism.routing.AbstractRouter;
+import dev.relism.routing.Middleware;
 import dev.relism.routing.PathUtils;
 
 /**
@@ -21,6 +22,9 @@ public class FastPathRouterImpl extends AbstractRouter {
     private final RouterBuilder<RequestHandler> builder = new RouterBuilder<>();
     private volatile FastPathRouter<ByteView, RequestHandler> router;
     private          String[]                                 cachedParamNames;
+
+    public FastPathRouterImpl(Middleware... middlewares) { super(middlewares); }
+    public FastPathRouterImpl()                          { super(); }
 
     private static final class FastPathRouterContext {
         private static final ThreadLocal<MatchResult<RequestHandler>> RESULT_HOLDER =

@@ -112,12 +112,6 @@ public class Response {
 
     public boolean isStreaming()      { return stream != null; }
 
-    /**
-     * Pre-encoded status bytes (e.g. {@code "200 OK"}), or {@code null} if the status was set
-     * via {@link #status(int)} — in which case {@link HttpStatus#bytesForCode} is used as fallback.
-     */
-    public byte[] getStatusBytes()   { return statusBytes; }
-
     // -------------------------------------------------------------------------
     // Internal setters used by HttpServer for handler return values
     // -------------------------------------------------------------------------
