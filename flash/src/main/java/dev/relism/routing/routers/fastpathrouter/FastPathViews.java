@@ -39,7 +39,7 @@ public final class FastPathViews {
         }
     }
 
-    /** Mutable composite view: method bytes + path. Reused via ThreadLocal — call reset() before use. */
+    /** Mutable composite view: method bytes + path. Reused via ThreadLocal, call reset() before use. */
     public static final class MethodPathByteView implements ByteView {
         private byte[] method;
         private ByteView path;

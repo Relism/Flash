@@ -13,5 +13,5 @@ public abstract class RequestHandler {
      * return a {@link Response} to replace the whole response, any other non-null value
      * to set it as the body, or {@code null} to leave the response as-is.
      */
-    public abstract Object handle(Request request, Response response);
+    public abstract Object handle(Request request, Response response) throws Exception;
 }

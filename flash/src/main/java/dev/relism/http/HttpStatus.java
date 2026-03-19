@@ -58,7 +58,7 @@ public enum HttpStatus {
         }
     }
 
-    private final int code;
+    private final int    code;
     private final byte[] bytes;
 
     HttpStatus(int code, String reason) {
@@ -66,7 +66,14 @@ public enum HttpStatus {
         this.bytes = (code + " " + reason).getBytes(StandardCharsets.UTF_8);
     }
 
-    /** * Returns pre-compiled status bytes for the given code.
+    /** Numeric status code (e.g. {@code 200}). */
+    public int code() { return code; }
+
+    /** Pre-encoded {@code "200 OK"} bytes — zero allocation on the write path. */
+    public byte[] bytes() { return bytes; }
+
+    /**
+     * Returns pre-compiled status bytes for the given code.
      * Access is O(1) and generates zero garbage.
      */
     public static byte[] bytesForCode(int code) {

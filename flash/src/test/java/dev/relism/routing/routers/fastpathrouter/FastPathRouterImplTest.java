@@ -23,7 +23,7 @@ class FastPathRouterImplTest {
         RequestLine line = new RequestLine(
                 method, pathView, null,
                 new FastPathViews.RequestByteView("HTTP/1.1".getBytes(StandardCharsets.UTF_8), 0, 8),
-                new HeaderMap(new byte[0])
+                new HeaderMap()
         );
         return new Request(line, new byte[0]);
     }
@@ -31,7 +31,7 @@ class FastPathRouterImplTest {
     // --- route ---
 
     @Test
-    void route_lazyCompilationAndMatch() {
+    void route_lazyCompilationAndMatch() throws Exception {
         FastPathRouterImpl router = new FastPathRouterImpl();
         
         router.get("/a", (req, res) -> "A");
@@ -57,7 +57,7 @@ class FastPathRouterImplTest {
     }
 
     @Test
-    void route_extractsPathParams() {
+    void route_extractsPathParams() throws Exception {
         FastPathRouterImpl router = new FastPathRouterImpl();
         
         router.get("/users/{id}/items/{itemId}", (req, res) -> "Extract");
@@ -70,7 +70,7 @@ class FastPathRouterImplTest {
 
         // Verify path params were injected
         assertNotNull(request.getPathParams());
-        assertEquals("123", request.getPathParam("id"));
-        assertEquals("456", request.getPathParam("itemId"));
+        assertEquals("123", request.param("id"));
+        assertEquals("456", request.param("itemId"));
     }
 }

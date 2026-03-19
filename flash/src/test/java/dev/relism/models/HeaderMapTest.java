@@ -12,73 +12,63 @@ class HeaderMapTest {
 
     // --- helpers ---
 
-    private static HeaderMap parse(String raw, String... headers) {
+    private static HeaderMap parse(String... headers) {
         StringBuilder sb = new StringBuilder();
         for (String h : headers) sb.append(h).append("\r\n");
         byte[] buffer = sb.toString().getBytes(StandardCharsets.UTF_8);
-        HeaderMap map = new HeaderMap(buffer);
-        
-        int current = 0;
-        for (int i = 0; i < headers.length; i++) {
-            int colon = sb.indexOf(":", current);
-            int lineEnd = sb.indexOf("\r\n", current);
-            int valueStart = colon + 1;
-            while (valueStart < lineEnd && buffer[valueStart] == ' ') valueStart++;
-            
-            map.add(current, colon - current, valueStart, lineEnd - valueStart);
-            current = lineEnd + 2;
-        }
+        HeaderMap map = new HeaderMap();
+        map.reset(buffer, 0, buffer.length);
         return map;
     }
 
-    // --- getFirst ---
+    // --- first ---
 
     @Test
-    void getFirst_existingHeader() {
-        HeaderMap map = parse("", "Host: localhost", "Accept: text/plain");
-        assertEquals("localhost", map.getFirst("Host"));
-        assertEquals("text/plain", map.getFirst("Accept"));
+    void first_existingHeader() {
+        HeaderMap map = parse("Host: localhost", "Accept: text/plain");
+        assertEquals("localhost", map.first("Host"));
+        assertEquals("text/plain", map.first("Accept"));
     }
 
     @Test
-    void getFirst_caseInsensitive() {
-        HeaderMap map = parse("", "ConteNT-tYPe: application/json");
-        assertEquals("application/json", map.getFirst("content-type"));
-        assertEquals("application/json", map.getFirst("CONTENT-TYPE"));
+    void first_caseInsensitive() {
+        HeaderMap map = parse("ConteNT-tYPe: application/json");
+        assertEquals("application/json", map.first("content-type"));
+        assertEquals("application/json", map.first("CONTENT-TYPE"));
     }
 
     @Test
-    void getFirst_missingHeader_returnsNull() {
-        HeaderMap map = parse("", "Host: localhost");
-        assertNull(map.getFirst("Accept"));
+    void first_missingHeader_returnsNull() {
+        HeaderMap map = parse("Host: localhost");
+        assertNull(map.first("Accept"));
     }
 
-    // --- getAll ---
+    // --- all ---
 
     @Test
-    void getAll_multipleValuesByName() {
-        HeaderMap map = parse("", "Cookie: a=1", "Set-Cookie: token=123", "Cookie: b=2");
-        assertEquals(List.of("a=1", "b=2"), map.getAll("Cookie"));
-    }
-
-    @Test
-    void getAll_missingHeader_returnsEmptyList() {
-        HeaderMap map = parse("", "Host: localhost");
-        assertTrue(map.getAll("Cookie").isEmpty());
+    void all_multipleValuesByName() {
+        HeaderMap map = parse("Cookie: a=1", "Set-Cookie: token=123", "Cookie: b=2");
+        assertEquals(List.of("a=1", "b=2"), map.all("Cookie"));
     }
 
     @Test
-    void getAll_returnsAllHeaders() {
-        HeaderMap map = parse("", "A: 1", "B: 2");
-        assertEquals(List.of("1", "2"), map.getAll());
+    void all_missingHeader_returnsEmptyList() {
+        HeaderMap map = parse("Host: localhost");
+        assertTrue(map.all("Cookie").isEmpty());
     }
 
-    // --- getView ---
+    @Test
+    void all_returnsAllHeaders() {
+        HeaderMap map = parse("A: 1", "B: 2");
+        assertEquals(List.of("1", "2"), map.all());
+    }
+
+    // --- view ---
 
     @Test
-    void getView_returnsZeroCopyView() {
-        HeaderMap map = parse("", "Host: localhost");
-        ByteView view = map.getView("Host");
+    void view_returnsZeroCopyView() {
+        HeaderMap map = parse("Host: localhost");
+        ByteView view = map.view("Host");
         assertNotNull(view);
         assertEquals(9, view.length());
         assertEquals('l', view.byteAt(0));
@@ -86,20 +76,18 @@ class HeaderMapTest {
     }
 
     @Test
-    void getView_missingHeader_returnsNull() {
-        HeaderMap map = parse("", "Host: localhost");
-        assertNull(map.getView("Accept"));
+    void view_missingHeader_returnsNull() {
+        HeaderMap map = parse("Host: localhost");
+        assertNull(map.view("Accept"));
     }
-    
-    // --- limit ---
-    
+
+    // --- empty ---
+
     @Test
-    void maxHeadersLimit() {
-        byte[] buffer = new byte[100];
-        HeaderMap map = new HeaderMap(buffer);
-        for (int i = 0; i < 32; i++) {
-            map.add(0, 1, 1, 1);
-        }
-        assertThrows(IllegalStateException.class, () -> map.add(0, 1, 1, 1));
+    void emptyMap_returnsNullAndEmptyList() {
+        HeaderMap map = new HeaderMap();
+        assertNull(map.first("Host"));
+        assertTrue(map.all("Host").isEmpty());
+        assertTrue(map.all().isEmpty());
     }
 }

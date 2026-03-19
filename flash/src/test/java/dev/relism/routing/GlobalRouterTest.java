@@ -44,7 +44,7 @@ class GlobalRouterTest {
         RequestLine line = new RequestLine(
                 HttpMethod.GET, pathView, null,
                 new FastPathViews.RequestByteView("HTTP/1.1".getBytes(StandardCharsets.UTF_8), 0, 8),
-                new HeaderMap(new byte[0])
+                new HeaderMap()
         );
         return new Request(line, new byte[0]);
     }

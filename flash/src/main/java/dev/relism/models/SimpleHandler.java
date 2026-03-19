@@ -12,7 +12,7 @@ public class SimpleHandler extends RequestHandler {
     private final FunctionalHandler delegate;
 
     @Override
-    public Object handle(Request request, Response response) {
+    public Object handle(Request request, Response response) throws Exception {
         return delegate.handle(request, response);
     }
 
@@ -21,6 +21,6 @@ public class SimpleHandler extends RequestHandler {
      */
     @FunctionalInterface
     public interface FunctionalHandler {
-        Object handle(Request request, Response response);
+        Object handle(Request request, Response response) throws Exception;
     }
 }

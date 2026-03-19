@@ -39,8 +39,10 @@ public class HttpServer {
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONTENT_TYPE = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONTENT_LENGTH = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONNECTION_CLOSE = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONNECTION_CLOSE    = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION_KEEPALIVE = "Connection: keep-alive\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] TRANSFER_CHUNKED    = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] FINAL_CHUNK         = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
 
     private static final byte[] UNKNOWN_STATUS_SUFFIX = " Unknown".getBytes(StandardCharsets.UTF_8);
 
@@ -122,30 +124,17 @@ public class HttpServer {
         return this;
     }
 
-    /**
-     * Registers a route on the internal router. The handler return value drives the response:
-     * return a {@link dev.relism.models.Response} to replace it entirely, any other non-null
-     * value to set it as the body, or {@code null} to leave the response object unchanged.
-     */
-    public HttpServer get(String path, SimpleHandler.FunctionalHandler h) {
-        globalRouter.get(path, h);
-        return this;
-    }
+    public HttpServer get(String path, SimpleHandler.FunctionalHandler h)     { globalRouter.get(path, h);     return this; }
+    public HttpServer post(String path, SimpleHandler.FunctionalHandler h)    { globalRouter.post(path, h);    return this; }
+    public HttpServer put(String path, SimpleHandler.FunctionalHandler h)     { globalRouter.put(path, h);     return this; }
+    public HttpServer delete(String path, SimpleHandler.FunctionalHandler h)  { globalRouter.delete(path, h);  return this; }
+    public HttpServer patch(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.patch(path, h);   return this; }
+    public HttpServer options(String path, SimpleHandler.FunctionalHandler h) { globalRouter.options(path, h); return this; }
+    public HttpServer head(String path, SimpleHandler.FunctionalHandler h)    { globalRouter.head(path, h);    return this; }
+    public HttpServer trace(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.trace(path, h);   return this; }
+    public HttpServer connect(String path, SimpleHandler.FunctionalHandler h) { globalRouter.connect(path, h); return this; }
+    public HttpServer purge(String path, SimpleHandler.FunctionalHandler h)   { globalRouter.purge(path, h);   return this; }
 
-    public HttpServer post(String path, SimpleHandler.FunctionalHandler h) {
-        globalRouter.post(path, h);
-        return this;
-    }
-
-    public HttpServer put(String path, SimpleHandler.FunctionalHandler h) {
-        globalRouter.put(path, h);
-        return this;
-    }
-
-    public HttpServer delete(String path, SimpleHandler.FunctionalHandler h) {
-        globalRouter.delete(path, h);
-        return this;
-    }
 
     private void process(Socket socket) {
         activeSockets.add(socket);
@@ -161,7 +150,7 @@ public class HttpServer {
 
                     boolean keepAlive = isKeepAlive(request);
 
-                    Response response = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+                    Response response = new Response(200, ContentType.TEXT_PLAIN);
                     RequestHandler handler = globalRouter.route(request);
 
                     try {
@@ -178,29 +167,19 @@ public class HttpServer {
                             response.setBody(result);
                     }
 
-                    request.getBody();
-
-                    out.write(HTTP_1_1);
-                    writeStatusPhrase(out, response.getStatusCode());
-                    out.write(CRLF);
-                    out.write(CONTENT_TYPE);
-                    out.write(response.getContentType());
-                    out.write(CRLF);
-                    out.write(CONTENT_LENGTH);
-                    writeInt(out, response.getBody() != null ? response.getBody().length : 0);
-                    out.write(CRLF);
-                    out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
-                    out.write(CRLF);
-                    if (response.getBody() != null)
-                        out.write(response.getBody());
-                    out.flush();
+                    writeResponse(out, response, keepAlive);
+                    request.drain();
 
                     if (!keepAlive)
                         break;
                 }
             } catch (IOException e) {
-                if (!stopped)
-                    log.error("I/O error handling request", e);
+                if (!stopped) {
+                    if (e instanceof java.net.SocketException)
+                        log.debug("Connection closed: {}", e.getMessage());
+                    else
+                        log.error("I/O error handling request", e);
+                }
             } finally {
                 activeSockets.remove(socket);
             }
@@ -215,31 +194,87 @@ public class HttpServer {
                 || request.headerEquals("Connection", "keep-alive");
     }
 
-    private static void writeStatusPhrase(OutputStream out, int statusCode) throws IOException {
-        byte[] phrase = HttpStatus.bytesForCode(statusCode);
-        if (phrase != null) {
-            out.write(phrase);
+    /**
+     * Writes a complete HTTP response. The fixed-body path (the common case for simple handlers
+     * like /plaintext) is kept inline; streaming and chunked bodies are delegated to
+     * {@link #writeStreamingBody} so the JIT can optimise this method aggressively.
+     */
+    private static void writeResponse(OutputStream out, Response response, boolean keepAlive) throws IOException {
+        out.write(HTTP_1_1);
+        byte[] statusBytes = response.getStatusBytes();
+        if (statusBytes != null) out.write(statusBytes);
+        else writeStatusPhrase(out, response.getStatusCode());
+        out.write(CRLF);
+        out.write(CONTENT_TYPE);
+        out.write(response.getContentType());
+        out.write(CRLF);
+        response.writeHeaders(out);
+
+        if (response.isStreaming()) {
+            writeStreamingBody(out, response, keepAlive);
         } else {
-            writeInt(out, statusCode);
-            out.write(UNKNOWN_STATUS_SUFFIX);
+            byte[] body = response.getBody();
+            out.write(CONTENT_LENGTH);
+            writeLong(out, body != null ? body.length : 0);
+            out.write(CRLF);
+            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            out.write(CRLF);
+            if (body != null) out.write(body);
+        }
+        out.flush();
+    }
+
+    /** Streaming write path — extracted from {@link #writeResponse} to keep the hot method small. */
+    private static void writeStreamingBody(OutputStream out, Response response, boolean keepAlive) throws IOException {
+        if (!response.isChunked()) {
+            out.write(CONTENT_LENGTH);
+            writeLong(out, response.getStreamLength());
+            out.write(CRLF);
+            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            out.write(CRLF);
+            response.getStream().transferTo(out);
+        } else {
+            out.write(TRANSFER_CHUNKED);
+            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            out.write(CRLF);
+            writeChunked(out, response.getStream());
         }
     }
 
-    private static void writeInt(OutputStream out, int value) throws IOException {
-        if (value == 0) {
-            out.write(DIGITS[0]);
-            return;
+    private static void writeStatusPhrase(OutputStream out, int statusCode) throws IOException {
+        byte[] phrase = HttpStatus.bytesForCode(statusCode);
+        if (phrase != null) out.write(phrase);
+        else { writeLong(out, statusCode); out.write(UNKNOWN_STATUS_SUFFIX); }
+    }
+
+    private static void writeLong(OutputStream out, long value) throws IOException {
+        if (value == 0) { out.write(DIGITS[0]); return; }
+        if (value < 0)  { out.write('-'); value = -value; }
+        long divisor = 1;
+        while (value / divisor >= 10) divisor *= 10;
+        while (divisor > 0) { out.write(DIGITS[(int) ((value / divisor) % 10)]); divisor /= 10; }
+    }
+
+    private static void writeChunked(OutputStream out, InputStream stream) throws IOException {
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = stream.read(buf)) > 0) {
+            writeHex(out, n);
+            out.write(CRLF);
+            out.write(buf, 0, n);
+            out.write(CRLF);
         }
-        if (value < 0) {
-            out.write('-');
-            value = -value;
+        out.write(FINAL_CHUNK);
+    }
+
+    private static void writeHex(OutputStream out, int value) throws IOException {
+        int shift = 28;
+        boolean leading = true;
+        while (shift >= 0) {
+            int digit = (value >>> shift) & 0xF;
+            if (digit != 0 || !leading) { leading = false; out.write(digit < 10 ? '0' + digit : 'a' + digit - 10); }
+            shift -= 4;
         }
-        int divisor = 1;
-        while (value / divisor >= 10)
-            divisor *= 10;
-        while (divisor > 0) {
-            out.write(DIGITS[(value / divisor) % 10]);
-            divisor /= 10;
-        }
+        if (leading) out.write('0');
     }
 }

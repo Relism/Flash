@@ -40,7 +40,7 @@ class HttpServerConcurrencyTest {
         server = new HttpServer(config);
         server.get("/ping", (req, res) -> "pong");
         server.post("/echo", (req, res) -> {
-            byte[] body = req.getBody();
+            byte[] body = req.body().bytes();
             return new Response(200, body, ContentType.TEXT_PLAIN);
         });
 
