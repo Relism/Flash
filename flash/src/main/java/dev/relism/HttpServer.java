@@ -125,18 +125,37 @@ public class HttpServer {
         return this;
     }
 
-    public HttpServer register(RequestHandler handler, Middleware... m) { globalRouter.register(handler, m); return this; }
+    // ── Direct registration (called by FlashApp via RouteHandle.with()) ──────
 
-    public HttpServer get    (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.get    (path, h, m); return this; }
-    public HttpServer post   (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.post   (path, h, m); return this; }
-    public HttpServer put    (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.put    (path, h, m); return this; }
-    public HttpServer delete (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.delete (path, h, m); return this; }
-    public HttpServer patch  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.patch  (path, h, m); return this; }
-    public HttpServer options(String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.options(path, h, m); return this; }
-    public HttpServer head   (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.head   (path, h, m); return this; }
-    public HttpServer trace  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.trace  (path, h, m); return this; }
-    public HttpServer connect(String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.connect(path, h, m); return this; }
-    public HttpServer purge  (String path, SimpleHandler.FunctionalHandler h, Middleware... m) { globalRouter.purge  (path, h, m); return this; }
+    public HttpServer doRegister(dev.relism.http.HttpMethod method, String path,
+                                 SimpleHandler.FunctionalHandler handler,
+                                 dev.relism.routing.Middleware[] middlewares) {
+        globalRouter.doRegister(method, path, handler, middlewares);
+        return this;
+    }
+
+    public HttpServer doRegister(RequestHandler handler,
+                                 dev.relism.routing.Middleware[] middlewares) {
+        globalRouter.doRegister(handler, middlewares);
+        return this;
+    }
+
+    // ── Fluent registration (delegates to globalRouter) ───────────────────────
+
+    public dev.relism.routing.RouteHandle<HttpServer> register(RequestHandler handler) {
+        return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(handler, m));
+    }
+
+    public dev.relism.routing.RouteHandle<HttpServer> get    (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.GET,     path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> post   (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.POST,    path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> put    (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PUT,     path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> delete (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.DELETE,  path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> patch  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PATCH,   path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> options(String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.OPTIONS, path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> head   (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.HEAD,    path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> trace  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.TRACE,   path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> connect(String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.CONNECT, path, h, m)); }
+    public dev.relism.routing.RouteHandle<HttpServer> purge  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PURGE,   path, h, m)); }
 
 
     private void process(Socket socket) {

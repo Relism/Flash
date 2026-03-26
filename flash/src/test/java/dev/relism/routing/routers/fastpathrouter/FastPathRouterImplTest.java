@@ -34,8 +34,8 @@ class FastPathRouterImplTest {
     void route_lazyCompilationAndMatch() throws Exception {
         FastPathRouterImpl router = new FastPathRouterImpl();
         
-        router.get("/a", (req, res) -> "A");
-        router.post("/b", (req, res) -> "B");
+        router.get("/a", (req, res) -> "A").with();
+        router.post("/b", (req, res) -> "B").with();
 
         RequestHandler res1 = router.route(mockRequest(HttpMethod.GET, "/a"));
         assertNotNull(res1);
@@ -49,7 +49,7 @@ class FastPathRouterImplTest {
     @Test
     void route_noMatch_returnsNull() {
         FastPathRouterImpl router = new FastPathRouterImpl();
-        router.get("/a", (req, res) -> "A");
+        router.get("/a", (req, res) -> "A").with();
 
         assertNull(router.route(mockRequest(HttpMethod.GET, "/b")));
         // Wrong method
@@ -60,7 +60,7 @@ class FastPathRouterImplTest {
     void route_extractsPathParams() throws Exception {
         FastPathRouterImpl router = new FastPathRouterImpl();
         
-        router.get("/users/{id}/items/{itemId}", (req, res) -> "Extract");
+        router.get("/users/{id}/items/{itemId}", (req, res) -> "Extract").with();
 
         Request request = mockRequest(HttpMethod.GET, "/users/123/items/456");
         RequestHandler handler = router.route(request);

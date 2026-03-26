@@ -37,31 +37,31 @@ class HttpServerTest {
         server = new HttpServer(config);
         
         // Setup some routes
-        server.get("/api/ping", (req, res) -> "pong");
-        
+        server.get("/api/ping", (req, res) -> "pong").with();
+
         server.post("/api/echo", (req, res) -> {
             byte[] body = req.body().bytes();
             return res.status(201).body(body); // echo body & change status
-        });
+        }).with();
 
         server.get("/api/crash", (req, res) -> {
             throw new RuntimeException("Simulated Crash");
-        });
+        }).with();
 
         byte[] streamData = "streaming response body".getBytes(StandardCharsets.UTF_8);
         server.get("/api/stream", (req, res) ->
-                res.stream(new ByteArrayInputStream(streamData), streamData.length));
+                res.stream(new ByteArrayInputStream(streamData), streamData.length)).with();
 
         server.get("/api/chunked-out", (req, res) ->
-                res.chunked(new ByteArrayInputStream(streamData)));
+                res.chunked(new ByteArrayInputStream(streamData))).with();
 
         server.get("/api/custom-header", (req, res) ->
-                res.body("ok").header("X-Flash", "works"));
+                res.body("ok").header("X-Flash", "works")).with();
 
         server.post("/api/chunked-in", (req, res) -> {
             byte[] body = req.body().bytes();
             return res.body(body);
-        });
+        }).with();
 
         server.start().get(5, TimeUnit.SECONDS);
     }

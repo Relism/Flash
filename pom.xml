@@ -11,6 +11,8 @@
 
     <modules>
         <module>flash</module>
+        <module>flash-extensions</module>
+        <module>flash-bench</module>
     </modules>
 
     <properties>
@@ -34,6 +36,21 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-jackson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-openapi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-oidc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
