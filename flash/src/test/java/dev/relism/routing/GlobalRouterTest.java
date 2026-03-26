@@ -75,7 +75,7 @@ class GlobalRouterTest {
         GlobalRouter global = new GlobalRouter();
         RequestHandler internalHandler = new SimpleHandler((req, res) -> "internal");
         
-        global.get("/hello", (req, res) -> "internal");
+        global.get("/hello", (req, res) -> "internal").with();
         // We know it routes to internal. Let's send a request.
         RequestHandler resolved = global.route(mockRequest("/hello"));
         assertNotNull(resolved);

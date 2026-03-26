@@ -34,7 +34,7 @@ class AbstractRouterTest {
         }
     }
 
-    @Route(method = "POST", path = "/profile")
+    @Route(method = dev.relism.http.HttpMethod.POST, path = "/profile")
     static class ProfileHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
@@ -68,18 +68,18 @@ class AbstractRouterTest {
         DummyRouter router = new DummyRouter();
         SimpleHandler.FunctionalHandler func = (req, res) -> "OK";
 
-        router.get("users/", func);
+        router.get("users/", func).with();
         assertEquals(HttpMethod.GET, router.lastAddedMethod);
         assertEquals("/users", router.lastAddedPath);
         assertTrue(router.lastAddedHandler instanceof SimpleHandler);
 
-        router.post("/items", func);
+        router.post("/items", func).with();
         assertEquals(HttpMethod.POST, router.lastAddedMethod);
 
-        router.put("update", func);
+        router.put("update", func).with();
         assertEquals(HttpMethod.PUT, router.lastAddedMethod);
 
-        router.delete("//delete//", func);
+        router.delete("//delete//", func).with();
         assertEquals(HttpMethod.DELETE, router.lastAddedMethod);
         assertEquals("/delete", router.lastAddedPath);
     }
@@ -90,9 +90,9 @@ class AbstractRouterTest {
     void register_annotatedHandler_addsRoute() {
         DummyRouter router = new DummyRouter();
         ProfileHandler handler = new ProfileHandler();
-        
-        router.register(handler);
-        
+
+        router.register(handler).with();
+
         assertEquals(HttpMethod.POST, router.lastAddedMethod);
         assertEquals("/profile", router.lastAddedPath);
         assertEquals(handler, router.lastAddedHandler);
@@ -101,7 +101,7 @@ class AbstractRouterTest {
     @Test
     void register_unannotatedHandler_doesNothing() {
         DummyRouter router = new DummyRouter();
-        router.register(new UnannotatedHandler());
+        router.register(new UnannotatedHandler()).with();
         assertNull(router.lastAddedMethod); // Nothing added
     }
 

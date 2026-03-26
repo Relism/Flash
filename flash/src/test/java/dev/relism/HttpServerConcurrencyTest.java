@@ -38,11 +38,11 @@ class HttpServerConcurrencyTest {
                 .build();
 
         server = new HttpServer(config);
-        server.get("/ping", (req, res) -> "pong");
+        server.get("/ping", (req, res) -> "pong").with();
         server.post("/echo", (req, res) -> {
             byte[] body = req.body().bytes();
             return new Response(200, body, ContentType.TEXT_PLAIN);
-        });
+        }).with();
 
         server.start().get(5, TimeUnit.SECONDS);
 
@@ -187,7 +187,7 @@ class HttpServerConcurrencyTest {
 
         for (int i = 0; i < 10; i++) {
             final int idx = i;
-            freshServer.get("/route" + idx, (req, res) -> "handler" + idx);
+            freshServer.get("/route" + idx, (req, res) -> "handler" + idx).with();
         }
 
         freshServer.start().get(5, TimeUnit.SECONDS);
