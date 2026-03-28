@@ -17,6 +17,7 @@
         <module>flash-ext-jackson</module>
         <module>flash-ext-openapi</module>
         <module>flash-ext-oidc</module>
+        <module>flash-ext-routeviewer</module>
     </modules>
 
     <dependencyManagement>

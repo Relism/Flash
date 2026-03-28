@@ -1,0 +1,100 @@
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1117;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #1a1d27;
+  border-bottom: 1px solid #2e3347;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.logo { font-weight: 700; font-size: 15px; letter-spacing: -.3px; }
+
+.badge {
+  background: #7c6af7;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.legend {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #8892a4;
+}
+
+.legend-item { display: flex; align-items: center; gap: 5px; }
+
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-dash {
+  border: 2px dashed;
+  background: transparent !important;
+}
+
+.center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.muted { color: #8892a4; }
+.error { color: #f87171; }
+
+/* ReactFlow override */
+.react-flow__renderer { flex: 1; }
+
+/* Sidebar */
+.sidebar-content {
+  padding: 16px 12px;
+  font-family: system-ui, sans-serif;
+  color: #e2e8f0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.sidebar-content h3 {
+  color: #e2e8f0;
+}
+
+/* Scrollbar styling */
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: #2e3347;
+  border-radius: 3px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: #3d4557;
+}
+
+/* Hide interactivity toggle button in Controls */
+.react-flow__controls button:nth-child(4) {
+  display: none;
+}
+
+/* Abstract node highlighting in MiniMap */
+.react-flow__minimap-node[data-id*="Abstract"] {
+  stroke: #ef4444;
+}

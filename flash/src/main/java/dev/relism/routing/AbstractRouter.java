@@ -17,11 +17,15 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>Router-level {@link Middleware middlewares} are passed at construction time and
  * pre-fused into a single wrapper applied to every handler registered on this router.
- * Handler-level middlewares are passed to the {@link #register} / {@link #get} family of
- * methods and wrapped <em>inside</em> the router-level chain.
+ * Handler-level middlewares are passed to {@link #doRegister} and wrapped
+ * <em>inside</em> the router-level chain.
  *
  * <p>All middleware composition happens once at boot time; the hot-path sees only a plain
  * {@link RequestHandler} call with zero allocation and zero lookup overhead.
+ *
+ * <p><b>Registration</b>: use {@link dev.relism.extension.FlashApp} or
+ * {@link dev.relism.extension.FlashScope} — they are the public registration API.
+ * {@link #doRegister} is an infrastructure method for those entry points.
  */
 public abstract class AbstractRouter {
 
@@ -35,7 +39,14 @@ public abstract class AbstractRouter {
      * Pre-fused router-level middleware, or {@code null} when none were registered.
      * A single null-check in {@link #compile} is the only cost when no router middleware exists.
      */
-    private final Middleware routerMiddleware;
+    private final Middleware   routerMiddleware;
+
+    /**
+     * Raw router-level middleware array, kept for route event emission by
+     * {@link dev.relism.extension.FlashApp} and {@link dev.relism.extension.FlashScope}.
+     * Never mutated after construction. Not used on the hot-path.
+     */
+    private final Middleware[] rawRouterMiddlewares;
 
     protected SimpleHandler notFoundHandler = new SimpleHandler((req, res) -> {
         res.setStatusCode(404);
@@ -56,15 +67,25 @@ public abstract class AbstractRouter {
      * @param middlewares zero or more middlewares applied to every handler on this router
      */
     protected AbstractRouter(Middleware... middlewares) {
+        this.rawRouterMiddlewares = middlewares;
         this.routerMiddleware = middlewares.length == 0 ? null
                               : middlewares.length == 1 ? middlewares[0]
                               : Middleware.of(middlewares);
     }
 
+    /**
+     * Returns the raw router-level middleware array as passed at construction.
+     * Used by {@link dev.relism.extension.FlashApp} and {@link dev.relism.extension.FlashScope}
+     * to populate {@link dev.relism.extension.RouteEvent#middlewareChain()}.
+     * Never mutated; never called on the hot-path.
+     */
+    public Middleware[] routerMiddlewares() { return rawRouterMiddlewares; }
+
     // ── Internal wiring ───────────────────────────────────────────────────────
 
     SimpleHandler    getNotFoundHandler()  { return notFoundHandler; }
     ExceptionHandler getExceptionHandler() { return exceptionHandler; }
+
     void setNamespace(String namespace) {
         this.namespace = namespace;
         this.namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
@@ -81,10 +102,8 @@ public abstract class AbstractRouter {
      */
     private RequestHandler compile(RequestHandler handler, Middleware[] handlerMiddlewares) {
         RequestHandler compiled = handler;
-        // handler-level: wrap from innermost outward; box FunctionalHandler → SimpleHandler once per layer
         for (int i = handlerMiddlewares.length - 1; i >= 0; i--)
             compiled = new SimpleHandler(handlerMiddlewares[i].wrap(compiled));
-        // router-level: outermost wrapper, executes first
         if (routerMiddleware != null)
             compiled = new SimpleHandler(routerMiddleware.wrap(compiled));
         return compiled;
@@ -102,11 +121,12 @@ public abstract class AbstractRouter {
         return this;
     }
 
-    // ── Internal registration (package-private) ───────────────────────────────
+    // ── Infrastructure registration ───────────────────────────────────────────
+    // Used by FlashApp and FlashScope. Not part of the public user-facing API.
 
     /**
      * Registers a lambda handler immediately with a pre-built middleware array.
-     * Called by {@link RouteHandle#with} and by {@link dev.relism.extension.FlashApp}.
+     * Infrastructure method — use {@link dev.relism.extension.FlashApp} instead.
      */
     public AbstractRouter doRegister(HttpMethod method, String path,
                                      SimpleHandler.FunctionalHandler handler, Middleware[] middlewares) {
@@ -116,7 +136,8 @@ public abstract class AbstractRouter {
 
     /**
      * Registers a class-based handler immediately with a pre-built middleware array.
-     * Called by {@link RouteHandle#with} and by {@link dev.relism.extension.FlashApp}.
+     * Reads {@link Route @Route} for method and path.
+     * Infrastructure method — use {@link dev.relism.extension.FlashApp} instead.
      */
     public AbstractRouter doRegister(RequestHandler handler, Middleware[] middlewares) {
         Route annotation = handler.getClass().getAnnotation(Route.class);
@@ -126,42 +147,15 @@ public abstract class AbstractRouter {
         return this;
     }
 
-    // ── Lambda handler registration ───────────────────────────────────────────
-
     /**
-     * Begins registration of a lambda handler. Call {@link RouteHandle#with} on the
-     * returned handle to supply middlewares (if any) and complete the registration.
-     *
-     * <pre>{@code
-     * router.get("/ping",  (req, res) -> "pong").with();
-     * router.get("/admin", adminHandler).with(auth, logging);
-     * }</pre>
+     * Registers a class-based handler with an explicit method and path (ignoring the
+     * {@link Route @Route} annotation's path). Used by {@link dev.relism.extension.FlashScope}
+     * to prepend the scope's namespace prefix.
+     * Infrastructure method — use {@link dev.relism.extension.FlashScope} instead.
      */
-    public RouteHandle<AbstractRouter> get    (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.GET,     path, h, m)); }
-    public RouteHandle<AbstractRouter> post   (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.POST,    path, h, m)); }
-    public RouteHandle<AbstractRouter> put    (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.PUT,     path, h, m)); }
-    public RouteHandle<AbstractRouter> delete (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.DELETE,  path, h, m)); }
-    public RouteHandle<AbstractRouter> patch  (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.PATCH,   path, h, m)); }
-    public RouteHandle<AbstractRouter> options(String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.OPTIONS, path, h, m)); }
-    public RouteHandle<AbstractRouter> head   (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.HEAD,    path, h, m)); }
-    public RouteHandle<AbstractRouter> trace  (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.TRACE,   path, h, m)); }
-    public RouteHandle<AbstractRouter> connect(String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.CONNECT, path, h, m)); }
-    public RouteHandle<AbstractRouter> purge  (String path, SimpleHandler.FunctionalHandler h) { return new RouteHandle<>(this, m -> doRegister(HttpMethod.PURGE,   path, h, m)); }
-
-    // ── Class-based handler registration ─────────────────────────────────────
-
-    /**
-     * Begins registration of a class-based handler. The class must carry a
-     * {@link Route @Route} annotation. Call {@link RouteHandle#with} to supply
-     * optional extra middlewares and complete the registration.
-     *
-     * <pre>{@code
-     * router.register(new BlogHandler()).with();
-     * router.register(new AdminHandler()).with(logging);
-     * }</pre>
-     */
-    public RouteHandle<AbstractRouter> register(RequestHandler handler) {
-        return new RouteHandle<>(this, m -> doRegister(handler, m));
+    public AbstractRouter doRegister(HttpMethod method, String path,
+                                     RequestHandler handler, Middleware[] middlewares) {
+        return addRoute(method, PathUtils.sanitize(path), compile(handler, middlewares));
     }
 
     // ── Routing ───────────────────────────────────────────────────────────────

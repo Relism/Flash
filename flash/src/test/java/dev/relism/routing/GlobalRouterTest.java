@@ -6,7 +6,6 @@ import dev.relism.models.HeaderMap;
 import dev.relism.models.Request;
 import dev.relism.models.RequestHandler;
 import dev.relism.models.RequestLine;
-import dev.relism.models.Response;
 import dev.relism.models.SimpleHandler;
 import dev.relism.routing.routers.fastpathrouter.FastPathViews;
 import org.junit.jupiter.api.Test;
@@ -40,7 +39,6 @@ class GlobalRouterTest {
     private Request mockRequest(String path) {
         byte[] bytes = path.getBytes(StandardCharsets.UTF_8);
         FastPathViews.RequestByteView pathView = new FastPathViews.RequestByteView(bytes, 0, bytes.length);
-
         RequestLine line = new RequestLine(
                 HttpMethod.GET, pathView, null,
                 new FastPathViews.RequestByteView("HTTP/1.1".getBytes(StandardCharsets.UTF_8), 0, 8),
@@ -54,39 +52,30 @@ class GlobalRouterTest {
     @Test
     void route_delegatesToSubRouterBasedOnLongestPrefix() {
         GlobalRouter global = new GlobalRouter();
-        
-        RequestHandler hApi = new SimpleHandler((req, res) -> "api");
+
+        RequestHandler hApi   = new SimpleHandler((req, res) -> "api");
         RequestHandler hApiV1 = new SimpleHandler((req, res) -> "apiv1");
-        
-        global.mount("/api", new MockSubRouter(hApi));
-        global.mount("/api/v1", new MockSubRouter(hApiV1)); // longer prefix
 
-        // Path matches /api/v1 -> Should pick hApiV1 because it's longer and sorted first
-        RequestHandler resolved = global.route(mockRequest("/api/v1/users"));
-        assertEquals(hApiV1, resolved);
+        global.mount("/api",    new MockSubRouter(hApi));
+        global.mount("/api/v1", new MockSubRouter(hApiV1));
 
-        // Path matches /api but not /api/v1
-        RequestHandler resolved2 = global.route(mockRequest("/api/v2/users"));
-        assertEquals(hApi, resolved2);
+        assertEquals(hApiV1, global.route(mockRequest("/api/v1/users")));
+        assertEquals(hApi,   global.route(mockRequest("/api/v2/users")));
     }
 
     @Test
     void route_fallsBackToInternalRouter() throws Exception {
         GlobalRouter global = new GlobalRouter();
-        RequestHandler internalHandler = new SimpleHandler((req, res) -> "internal");
-        
-        global.get("/hello", (req, res) -> "internal").with();
-        // We know it routes to internal. Let's send a request.
+        global.doRegister(HttpMethod.GET, "/hello", (req, res) -> "internal", new Middleware[0]);
+
         RequestHandler resolved = global.route(mockRequest("/hello"));
         assertNotNull(resolved);
-        // It's the compiled FastPathRouter handler, let's verify it works
         assertEquals("internal", resolved.handle(null, null));
     }
 
     @Test
     void route_noMatch_returnsNotFoundHandler() {
         GlobalRouter global = new GlobalRouter();
-        // Nothing registered. Should return the global notFoundHandler.
         RequestHandler resolved = global.route(mockRequest("/unknown"));
         assertEquals(global.getNotFoundHandler(), resolved);
     }
@@ -102,10 +91,7 @@ class GlobalRouterTest {
 
         global.mount("/api", sub);
 
-        // Under sub-namespace
         assertEquals(customSubHandler, global.resolveExceptionHandler(mockRequest("/api/fail")));
-        
-        // Outside sub-namespace (global)
         assertEquals(global.getExceptionHandler(), global.resolveExceptionHandler(mockRequest("/other")));
     }
 }

@@ -69,6 +69,29 @@ public class OidcMiddleware {
     }
 
     /**
+     * Silently populates {@link ClaimsHolder} if a valid bearer token or session cookie
+     * is present, but never rejects or redirects unauthenticated requests. Use this on
+     * public routes that want to personalise the response when the user happens to be
+     * logged in (e.g. showing a username on a landing page).
+     *
+     * <pre>{@code
+     * app.get("/", handler).with(oidc.optional());
+     * // Inside handler: ClaimsHolder.user() is non-null iff the user is logged in.
+     * }</pre>
+     */
+    public Middleware optional() {
+        return next -> (req, res) -> {
+            Map<String, Object> claims = resolveQuiet(req);
+            if (claims != null) ClaimsHolder.set(claims);
+            try {
+                return next.handle(req, res);
+            } finally {
+                ClaimsHolder.clear();
+            }
+        };
+    }
+
+    /**
      * Like {@link #protect()} but also enforces that the caller holds at least one
      * of the given roles (OR semantics). Roles are extracted via
      * {@link OidcConfig#rolesClaimPath()}.
@@ -90,9 +113,39 @@ public class OidcMiddleware {
     // -- Package-private: AnnotationProcessor hooks ---------------------------
 
     Middleware authenticatedMiddleware()          { return protect(); }
+    Middleware optionalMiddleware()               { return optional(); }
     Middleware rolesMiddleware(String[] required) { return requireRole(required); }
 
     // -- Internals ------------------------------------------------------------
+
+    /**
+     * Like {@link #resolve} but never redirects or throws — returns {@code null} silently
+     * when no valid credentials are present. Used by {@link #optional()}.
+     */
+    private Map<String, Object> resolveQuiet(Request req) {
+        String auth = req.header("Authorization");
+        if (auth != null && auth.startsWith("Bearer "))
+            return validator.validate(auth.substring(7));
+
+        String sessionId = cookieValue(req, "oidc_session");
+        if (sessionId != null) {
+            Optional<OidcSession> found = config.sessionStore().find(sessionId);
+            if (found.isPresent()) {
+                OidcSession session = found.get();
+                if (!session.isAccessTokenExpired())
+                    return session.claims();
+                if (session.refreshToken() != null) {
+                    try {
+                        OidcSession refreshed = doRefresh(session);
+                        config.sessionStore().save(refreshed);
+                        return refreshed.claims();
+                    } catch (Exception ignored) { }
+                }
+                config.sessionStore().delete(sessionId);
+            }
+        }
+        return null;
+    }
 
     /**
      * Returns claims on success, or {@code null} if a redirect was already written to
@@ -136,7 +189,7 @@ public class OidcMiddleware {
         // Browser — redirect to login, preserving the original URL in state
         String loginUrl = config.routePrefix() + "/login?redirect="
                 + URLEncoder.encode(req.path(), StandardCharsets.UTF_8);
-        res.status(302).header("Location", loginUrl);
+        res.redirect(loginUrl);
         return null;
     }
 

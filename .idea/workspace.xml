@@ -4,12 +4,26 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="enhanced router middleware support; added pre-fused middleware handling and improved handler registration">
-      <change afterPath="$PROJECT_DIR$/.idea/jsLibraryMappings.xml" afterDir="false" />
+    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="pre-major refactoring + ext api.">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/encodings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/src/main/java/dev/relism/ext/jackson/JacksonExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/src/main/java/dev/relism/ext/jackson/JacksonExtension.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/Authenticated.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/Authenticated.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcExtension.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcMiddleware.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcMiddleware.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiExtension.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/HttpServerConfiguration.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/ExtensionContext.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/ExtensionContext.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashApp.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashApp.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashExtension.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Response.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/models/Response.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/routing/AbstractRouter.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerConcurrencyTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerConcurrencyTest.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/HttpServerTest.java" afterDir="false" />
@@ -30,7 +44,7 @@
     </persistenceIdMap>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="130" />
+    <option name="cachedIndexableFilesCount" value="203" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="FileTemplateManagerImpl">
@@ -69,50 +83,50 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Application.ExternalBenchmark (1).executor": "Run",
-    "Application.ExternalBenchmark.executor": "Run",
-    "Application.Main.executor": "Run",
-    "Application.dev.relism.bench.Main.executor": "Run",
-    "JUnit.RequestParserTest.executor": "Run",
-    "JUnit.RequestParserTest.headers_caseInsensitive.executor": "Debug",
-    "Maven.FlashPractice [test].executor": "Run",
-    "Maven.flash [compile].executor": "Run",
-    "Maven.flash [install].executor": "Run",
-    "Maven.flash [test].executor": "Run",
-    "Maven.flash-bench [clean].executor": "Run",
-    "Maven.flash-bench [install].executor": "Run",
-    "Maven.flash-bench [package].executor": "Run",
-    "Maven.flash-bench [validate].executor": "Run",
-    "Maven.flash-parent [install].executor": "Run",
-    "Maven.flash-parent [package].executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "master",
-    "ignore.virus.scanning.warn.message": "true",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "C:/Users/elorc/Documents/Coding/Java/practice/Flash",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "npm.build.executor": "Run",
-    "onboarding.tips.debug.path": "C:/Users/elorc/Documents/Coding/Java/practice/FlashPractice/flash-bench/src/main/java/dev/relism/Main.java",
-    "project.structure.last.edited": "Modules",
-    "project.structure.proportion": "0.15",
-    "project.structure.side.proportion": "0.1150748",
-    "settings.editor.selected.configurable": "project.propVCSSupport.DirectoryMappings",
-    "ts.external.directory.path": "C:\\Users\\elorc\\Documents\\Coding\\Java\\practice\\Flash\\nuxt-shadcn-dashboard\\node_modules\\typescript\\lib",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Application.ExternalBenchmark (1).executor&quot;: &quot;Run&quot;,
+    &quot;Application.ExternalBenchmark.executor&quot;: &quot;Run&quot;,
+    &quot;Application.Main.executor&quot;: &quot;Run&quot;,
+    &quot;Application.dev.relism.bench.Main.executor&quot;: &quot;Run&quot;,
+    &quot;JUnit.RequestParserTest.executor&quot;: &quot;Run&quot;,
+    &quot;JUnit.RequestParserTest.headers_caseInsensitive.executor&quot;: &quot;Debug&quot;,
+    &quot;Maven.FlashPractice [test].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash [compile].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash [install].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash [test].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-bench [clean].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-bench [install].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-bench [package].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-bench [validate].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-parent [install].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-parent [package].executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/elorc/Documents/Coding/Java/practice/Flash&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;npm.build.executor&quot;: &quot;Run&quot;,
+    &quot;onboarding.tips.debug.path&quot;: &quot;C:/Users/elorc/Documents/Coding/Java/practice/FlashPractice/flash-bench/src/main/java/dev/relism/Main.java&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.1150748&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;project.propVCSSupport.DirectoryMappings&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;C:\\Users\\elorc\\Documents\\Coding\\Java\\practice\\Flash\\nuxt-shadcn-dashboard\\node_modules\\typescript\\lib&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\elorc\Documents\Coding\Java\practice\Flash" />
@@ -251,7 +265,12 @@
       <workItem from="1774136286683" duration="3816000" />
       <workItem from="1774187096932" duration="25000" />
       <workItem from="1774458099414" duration="14351000" />
-      <workItem from="1774523863906" duration="4441000" />
+      <workItem from="1774523863906" duration="9762000" />
+      <workItem from="1774555172612" duration="9776000" />
+      <workItem from="1774604979874" duration="16474000" />
+      <workItem from="1774628513273" duration="86000" />
+      <workItem from="1774638461244" duration="5718000" />
+      <workItem from="1774691772785" duration="3801000" />
     </task>
     <task id="LOCAL-00001" summary="Initial">
       <option name="closed" value="true" />
@@ -309,7 +328,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773952556190</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="pre-major refactoring + ext api.">
+      <option name="closed" value="true" />
+      <created>1774530802482</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1774530802482</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -346,7 +373,8 @@
     <MESSAGE value="enhanced HTTP server configuration and response handling; added acceptorThreads, improved header management, and refined error page titles" />
     <MESSAGE value="multipart parsing, request body access, and chunked input stream support" />
     <MESSAGE value="enhanced router middleware support; added pre-fused middleware handling and improved handler registration" />
-    <option name="LAST_COMMIT_MESSAGE" value="enhanced router middleware support; added pre-fused middleware handling and improved handler registration" />
+    <MESSAGE value="pre-major refactoring + ext api." />
+    <option name="LAST_COMMIT_MESSAGE" value="pre-major refactoring + ext api." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

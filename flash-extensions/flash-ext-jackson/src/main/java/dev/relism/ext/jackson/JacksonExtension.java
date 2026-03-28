@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.relism.exceptions.HttpException;
 import dev.relism.extension.ExtensionContext;
-import dev.relism.extension.FlashApp;
 import dev.relism.extension.FlashExtension;
+import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.ContentType;
 
 /**
@@ -45,7 +45,7 @@ public class JacksonExtension implements FlashExtension {
     }
 
     @Override
-    public void install(FlashApp app, ExtensionContext ctx) {
+    public void install(FlashRegistrar app, ExtensionContext ctx) {
         ctx.provide(ObjectMapper.class, mapper);
         JacksonHandler.mapper = mapper;
 

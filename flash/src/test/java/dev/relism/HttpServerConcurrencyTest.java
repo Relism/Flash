@@ -1,5 +1,7 @@
 package dev.relism;
 
+import dev.relism.extension.FlashApp;
+import dev.relism.extension.FlashConfiguration;
 import dev.relism.http.ContentType;
 import dev.relism.models.Response;
 import org.junit.jupiter.api.AfterEach;
@@ -23,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HttpServerConcurrencyTest {
 
-    private HttpServer server;
+    private FlashApp app;
     private int port;
     private HttpClient httpClient;
 
@@ -32,19 +34,19 @@ class HttpServerConcurrencyTest {
         try (ServerSocket s = new ServerSocket(0)) {
             port = s.getLocalPort();
         }
-        HttpServerConfiguration config = HttpServerConfiguration.builder()
+
+        app = FlashApp.create(FlashConfiguration.builder()
                 .port(port)
                 .host("127.0.0.1")
-                .build();
+                .build());
 
-        server = new HttpServer(config);
-        server.get("/ping", (req, res) -> "pong").with();
-        server.post("/echo", (req, res) -> {
+        app.get("/ping", (req, res) -> "pong");
+        app.post("/echo", (req, res) -> {
             byte[] body = req.body().bytes();
             return new Response(200, body, ContentType.TEXT_PLAIN);
-        }).with();
+        });
 
-        server.start().get(5, TimeUnit.SECONDS);
+        app.start().get(5, TimeUnit.SECONDS);
 
         httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -53,8 +55,7 @@ class HttpServerConcurrencyTest {
 
     @AfterEach
     void tearDown() {
-        if (server != null)
-            server.stop();
+        if (app != null) app.stop();
     }
 
     // --- helpers ---
@@ -91,7 +92,6 @@ class HttpServerConcurrencyTest {
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger successes = new AtomicInteger();
         List<Throwable> errors = new CopyOnWriteArrayList<>();
-
         List<String> responses = new CopyOnWriteArrayList<>();
 
         for (int i = 0; i < count; i++) {
@@ -100,11 +100,9 @@ class HttpServerConcurrencyTest {
                 try {
                     start.await();
                     HttpResponse<String> res = get("/ping");
-                    String summary = res.statusCode() + "|" + res.body();
-                    responses.add(summary);
-                    if (res.statusCode() == 200 && "pong".equals(res.body())) {
+                    responses.add(res.statusCode() + "|" + res.body());
+                    if (res.statusCode() == 200 && "pong".equals(res.body()))
                         successes.incrementAndGet();
-                    }
                 } catch (Exception e) {
                     errors.add(e);
                 }
@@ -169,7 +167,7 @@ class HttpServerConcurrencyTest {
     }
 
     /**
-     * Races the router's lazy-compile step: a fresh server with 10 registered routes
+     * Races the router's lazy-compile step: a fresh app with 10 registered routes
      * is hit by threads simultaneously before any request has been processed,
      * causing multiple threads to compete on the first compilation.
      */
@@ -180,17 +178,17 @@ class HttpServerConcurrencyTest {
             freshPort = s.getLocalPort();
         }
 
-        HttpServer freshServer = new HttpServer(HttpServerConfiguration.builder()
+        FlashApp freshApp = FlashApp.create(FlashConfiguration.builder()
                 .port(freshPort)
                 .host("127.0.0.1")
                 .build());
 
         for (int i = 0; i < 10; i++) {
             final int idx = i;
-            freshServer.get("/route" + idx, (req, res) -> "handler" + idx).with();
+            freshApp.get("/route" + idx, (req, res) -> "handler" + idx);
         }
 
-        freshServer.start().get(5, TimeUnit.SECONDS);
+        freshApp.start().get(5, TimeUnit.SECONDS);
 
         int count = 20;
         ExecutorService pool = Executors.newFixedThreadPool(count);
@@ -206,9 +204,8 @@ class HttpServerConcurrencyTest {
                 try {
                     start.await();
                     HttpResponse<String> res = get(freshPort, "/route" + routeIdx);
-                    if (res.statusCode() == 200 && ("handler" + routeIdx).equals(res.body())) {
+                    if (res.statusCode() == 200 && ("handler" + routeIdx).equals(res.body()))
                         successes.incrementAndGet();
-                    }
                 } catch (Exception e) {
                     errors.add(e);
                 }
@@ -224,7 +221,7 @@ class HttpServerConcurrencyTest {
             assertTrue(errors.isEmpty(), () -> "Unexpected errors: " + errors);
             assertEquals(count, successes.get());
         } finally {
-            freshServer.stop();
+            freshApp.stop();
         }
     }
 }

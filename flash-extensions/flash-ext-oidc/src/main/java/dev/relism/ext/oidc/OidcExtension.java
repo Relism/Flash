@@ -1,8 +1,8 @@
 package dev.relism.ext.oidc;
 
 import dev.relism.extension.ExtensionContext;
-import dev.relism.extension.FlashApp;
 import dev.relism.extension.FlashExtension;
+import dev.relism.extension.FlashRegistrar;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -59,7 +59,7 @@ public class OidcExtension implements FlashExtension {
     }
 
     @Override
-    public void install(FlashApp app, ExtensionContext ctx) {
+    public void install(FlashRegistrar app, ExtensionContext ctx) {
 
         // 1. Build the shared HttpClient (optionally with TLS verification disabled)
         HttpClient http = buildHttpClient(config);
@@ -116,7 +116,7 @@ public class OidcExtension implements FlashExtension {
                     + "&code_challenge="         + challenge
                     + "&code_challenge_method=S256";
 
-            res.status(302).header("Location", authUrl);
+            res.redirect(authUrl);
             return null;
         }).with();
 
@@ -165,9 +165,8 @@ public class OidcExtension implements FlashExtension {
             );
             config.sessionStore().save(session);
 
-            res.status(302)
-               .header("Set-Cookie", sessionCookie(session.id()))
-               .header("Location",   entry.originalUrl());
+            res.header("Set-Cookie", sessionCookie(session.id()))
+               .redirect(entry.originalUrl());
             return null;
         }).with();
 
@@ -200,9 +199,8 @@ public class OidcExtension implements FlashExtension {
                 location = config.postLogoutRedirectUri();
             }
 
-            res.status(302)
-               .header("Set-Cookie", clearCookie)
-               .header("Location",   location);
+            res.header("Set-Cookie", clearCookie)
+               .redirect(location);
             return null;
         }).with();
 
@@ -212,7 +210,9 @@ public class OidcExtension implements FlashExtension {
             if (roles != null) return List.of(oidcMw.rolesMiddleware(roles.value()));
 
             Authenticated auth = handlerClass.getAnnotation(Authenticated.class);
-            if (auth != null) return List.of(oidcMw.authenticatedMiddleware());
+            if (auth != null) return List.of(auth.optional()
+                    ? oidcMw.optionalMiddleware()
+                    : oidcMw.authenticatedMiddleware());
 
             return List.of();
         });

@@ -99,6 +99,37 @@ public class Response {
         return this;
     }
 
+    /**
+     * 302 Found redirect. Clears the body, sets status and {@code Location} header.
+     * Encoded once at call time; zero-alloc on the write path.
+     *
+     * <pre>{@code
+     * return res.redirect("/login");
+     * }</pre>
+     */
+    public Response redirect(String url) {
+        return redirect(HttpStatus.FOUND, url);
+    }
+
+    /**
+     * Redirect with an explicit 3xx status. Use {@link HttpStatus#MOVED_PERMANENTLY},
+     * {@link HttpStatus#TEMPORARY_REDIRECT} (307), or {@link HttpStatus#PERMANENT_REDIRECT} (308)
+     * when semantics matter.
+     *
+     * <pre>{@code
+     * return res.redirect(HttpStatus.MOVED_PERMANENTLY, "/new-path");
+     * }</pre>
+     */
+    public Response redirect(HttpStatus status, String url) {
+        this.statusCode  = status.code();
+        this.statusBytes = status.bytes();
+        this.body        = null;
+        this.stream      = null;
+        if (headers == null) headers = new ArrayList<>();
+        headers.add(("Location: " + url + "\r\n").getBytes(StandardCharsets.UTF_8));
+        return this;
+    }
+
     /** Adds a response header. Encoded once at call time; zero-alloc on the write path. */
     public Response header(String name, String value) {
         if (headers == null) headers = new ArrayList<>();

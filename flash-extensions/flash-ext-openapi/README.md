@@ -29,7 +29,7 @@ If `flash-ext-oidc` is installed **after** this extension, OIDC security schemes
 ## Installation
 
 ```java
-FlashApp.of(new HttpServer(config))
+FlashApp.create(8080)
     .install(new JacksonExtension())
     .install(new OpenApiExtension("/openapi", "My API", "2.0.0", "Optional description"))
     .register(new MyHandler());
