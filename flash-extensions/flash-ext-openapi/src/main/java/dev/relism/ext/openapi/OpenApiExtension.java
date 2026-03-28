@@ -3,8 +3,8 @@ package dev.relism.ext.openapi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import dev.relism.extension.ExtensionContext;
-import dev.relism.extension.FlashApp;
 import dev.relism.extension.FlashExtension;
+import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.ContentType;
 import dev.relism.routing.Route;
 
@@ -61,7 +61,7 @@ public class OpenApiExtension implements FlashExtension {
     }
 
     @Override
-    public void install(FlashApp app, ExtensionContext ctx) {
+    public void install(FlashRegistrar app, ExtensionContext ctx) {
         ObjectMapper jsonMapper = ctx.require(ObjectMapper.class);
         YAMLMapper   yamlMapper = new YAMLMapper();
 

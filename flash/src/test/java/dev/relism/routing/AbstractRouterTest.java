@@ -14,38 +14,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class AbstractRouterTest {
 
-    // A dummy router for testing base functionality
+    // A minimal concrete router for testing base-class functionality
     static class DummyRouter extends AbstractRouter {
         RequestHandler lastAddedHandler;
-        HttpMethod lastAddedMethod;
-        String lastAddedPath;
+        HttpMethod     lastAddedMethod;
+        String         lastAddedPath;
 
         @Override
         public RequestHandler route(Request request) {
-            return null; // Not testing routing logic here
+            return null;
         }
 
         @Override
         protected AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler) {
-            this.lastAddedMethod = method;
-            this.lastAddedPath = path;
+            this.lastAddedMethod  = method;
+            this.lastAddedPath    = path;
             this.lastAddedHandler = handler;
             return this;
-        }
-    }
-
-    @Route(method = dev.relism.http.HttpMethod.POST, path = "/profile")
-    static class ProfileHandler extends RequestHandler {
-        @Override
-        public Object handle(Request request, Response response) {
-            return null;
-        }
-    }
-
-    static class UnannotatedHandler extends RequestHandler {
-        @Override
-        public Object handle(Request request, Response response) {
-            return null;
         }
     }
 
@@ -55,43 +40,46 @@ class AbstractRouterTest {
     void setNamespace_updatesStringAndBytes() {
         DummyRouter router = new DummyRouter();
         assertEquals("/", router.getNamespace());
-        
+
         router.setNamespace("/api");
         assertEquals("/api", router.getNamespace());
         assertArrayEquals("/api".getBytes(StandardCharsets.UTF_8), router.getNamespaceBytes());
     }
 
-    // --- helpers ---
+    // --- doRegister (infrastructure method used by FlashApp/FlashScope) ---
 
     @Test
-    void getPostPutDelete_delegatesToAddRouteWithSanitizedPath() {
+    void doRegister_lambda_sanitizesPathAndWrapsHandler() {
         DummyRouter router = new DummyRouter();
         SimpleHandler.FunctionalHandler func = (req, res) -> "OK";
 
-        router.get("users/", func).with();
+        router.doRegister(HttpMethod.GET, "users/", func, new Middleware[0]);
         assertEquals(HttpMethod.GET, router.lastAddedMethod);
         assertEquals("/users", router.lastAddedPath);
-        assertTrue(router.lastAddedHandler instanceof SimpleHandler);
+        assertNotNull(router.lastAddedHandler);
 
-        router.post("/items", func).with();
-        assertEquals(HttpMethod.POST, router.lastAddedMethod);
-
-        router.put("update", func).with();
-        assertEquals(HttpMethod.PUT, router.lastAddedMethod);
-
-        router.delete("//delete//", func).with();
+        router.doRegister(HttpMethod.DELETE, "//delete//", func, new Middleware[0]);
         assertEquals(HttpMethod.DELETE, router.lastAddedMethod);
         assertEquals("/delete", router.lastAddedPath);
     }
 
-    // --- register ---
+    @Route(method = HttpMethod.POST, path = "/profile")
+    static class ProfileHandler extends RequestHandler {
+        @Override
+        public Object handle(Request request, Response response) { return null; }
+    }
+
+    static class UnannotatedHandler extends RequestHandler {
+        @Override
+        public Object handle(Request request, Response response) { return null; }
+    }
 
     @Test
-    void register_annotatedHandler_addsRoute() {
+    void doRegister_annotatedHandler_addsRoute() {
         DummyRouter router = new DummyRouter();
         ProfileHandler handler = new ProfileHandler();
 
-        router.register(handler).with();
+        router.doRegister(handler, new Middleware[0]);
 
         assertEquals(HttpMethod.POST, router.lastAddedMethod);
         assertEquals("/profile", router.lastAddedPath);
@@ -99,24 +87,22 @@ class AbstractRouterTest {
     }
 
     @Test
-    void register_unannotatedHandler_doesNothing() {
+    void doRegister_unannotatedHandler_doesNothing() {
         DummyRouter router = new DummyRouter();
-        router.register(new UnannotatedHandler()).with();
-        assertNull(router.lastAddedMethod); // Nothing added
+        router.doRegister(new UnannotatedHandler(), new Middleware[0]);
+        assertNull(router.lastAddedMethod);
     }
 
-    // --- default handlers ---
+    // --- error handlers ---
 
     @Test
     void defaultNotFoundHandler_returns404Html() throws Exception {
         DummyRouter router = new DummyRouter();
         Response res = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
-        
+
         assertNotNull(router.getNotFoundHandler());
-        
-        SimpleHandler.FunctionalHandler custom = (req, resp) -> "Custom 404";
-        router.onNotFound(custom);
-        
+
+        router.onNotFound((req, resp) -> "Custom 404");
         assertEquals("Custom 404", router.getNotFoundHandler().handle(null, res));
     }
 
@@ -125,9 +111,7 @@ class AbstractRouterTest {
         DummyRouter router = new DummyRouter();
         assertNotNull(router.getExceptionHandler());
 
-        AbstractRouter.ExceptionHandler custom = (ex, req, res) -> "Caught";
-        router.onException(custom);
-        
+        router.onException((ex, req, res) -> "Caught");
         assertEquals("Caught", router.getExceptionHandler().handle(new RuntimeException(), null, null));
     }
 }

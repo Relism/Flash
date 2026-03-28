@@ -4,9 +4,8 @@ import dev.relism.fpr.core.ByteView;
 import dev.relism.http.ContentType;
 import dev.relism.http.HttpStatus;
 import dev.relism.models.*;
-import dev.relism.routing.AbstractRouter;
+import dev.relism.extension.FlashConfiguration;
 import dev.relism.routing.GlobalRouter;
-import dev.relism.routing.Middleware;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -22,29 +21,32 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Flash HTTP server. Owns a {@link GlobalRouter} with two routing tiers:
- * mounted sub-routers (matched by longest namespace prefix) and an internal
- * router as fallback. Error handlers are scoped to their respective router.
+ * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread executor,
+ * and the keep-alive accept loop. All routing is delegated to the {@link GlobalRouter}
+ * supplied at construction time.
+ *
+ * <p>This class is package-private — use {@link dev.relism.extension.FlashApp} as the
+ * single entry point for creating and configuring a Flash server.
  */
 @Slf4j
-public class HttpServer {
-    private final HttpServerConfiguration configuration;
-    private final ServerSocket serverSocket;
-    private final GlobalRouter globalRouter;
+class HttpServer implements ServerHandle {
+
+    private final FlashConfiguration configuration;
+    private final ServerSocket            serverSocket;
+    private final GlobalRouter            globalRouter;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     private volatile boolean stopped = false;
     private final CompletableFuture<Void> readyFuture = new CompletableFuture<>();
 
-    private static final byte[] HTTP_1_1 = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONTENT_TYPE = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONTENT_LENGTH = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] HTTP_1_1           = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CRLF               = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONTENT_TYPE       = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONTENT_LENGTH     = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION_CLOSE    = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION_KEEPALIVE = "Connection: keep-alive\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] TRANSFER_CHUNKED    = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] FINAL_CHUNK         = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
-
     private static final byte[] UNKNOWN_STATUS_SUFFIX = " Unknown".getBytes(StandardCharsets.UTF_8);
 
     private static final byte[][] DIGITS = new byte[10][1];
@@ -54,16 +56,20 @@ public class HttpServer {
     }
 
     /**
-     * Creates the server with optional server-level middlewares applied to every registered route.
-     * Middlewares are pre-fused at construction time; the first element executes outermost.
+     * Creates the transport with a pre-built router. Called exclusively by
+     * {@link dev.relism.extension.FlashApp}.
+     *
+     * @param configuration server configuration (port, host, buffer sizes)
+     * @param globalRouter  the fully-wired router to dispatch requests to
      */
-    public HttpServer(HttpServerConfiguration configuration, Middleware... middlewares) throws IOException {
+    HttpServer(FlashConfiguration configuration, GlobalRouter globalRouter) throws IOException {
         this.configuration = configuration;
         this.serverSocket  = new ServerSocket(configuration.getPort());
-        this.globalRouter  = new GlobalRouter(middlewares);
+        this.globalRouter  = globalRouter;
     }
 
     /** Returns a future that completes once the accept loop is running and the server is ready. */
+    @Override
     public CompletableFuture<Void> start() {
         Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run);
         return readyFuture;
@@ -85,6 +91,7 @@ public class HttpServer {
     }
 
     /** Closes all active connections and shuts down the executor. Returns when complete. */
+    @Override
     public CompletableFuture<Void> stop() {
         stopped = true;
         try {
@@ -104,59 +111,7 @@ public class HttpServer {
         return CompletableFuture.completedFuture(null);
     }
 
-    /**
-     * Mounts a sub-router under {@code namespace}. Requests whose path starts with the
-     * namespace are dispatched to {@code router}; longest prefix wins.
-     *
-     * @throws dev.relism.exceptions.DuplicateNamespaceException if {@code namespace} is already mounted
-     */
-    public HttpServer mount(String namespace, AbstractRouter router) {
-        globalRouter.mount(namespace, router);
-        return this;
-    }
-
-    public HttpServer onNotFound(SimpleHandler.FunctionalHandler handler) {
-        globalRouter.onNotFound(handler);
-        return this;
-    }
-
-    public HttpServer onException(AbstractRouter.ExceptionHandler handler) {
-        globalRouter.onException(handler);
-        return this;
-    }
-
-    // ── Direct registration (called by FlashApp via RouteHandle.with()) ──────
-
-    public HttpServer doRegister(dev.relism.http.HttpMethod method, String path,
-                                 SimpleHandler.FunctionalHandler handler,
-                                 dev.relism.routing.Middleware[] middlewares) {
-        globalRouter.doRegister(method, path, handler, middlewares);
-        return this;
-    }
-
-    public HttpServer doRegister(RequestHandler handler,
-                                 dev.relism.routing.Middleware[] middlewares) {
-        globalRouter.doRegister(handler, middlewares);
-        return this;
-    }
-
-    // ── Fluent registration (delegates to globalRouter) ───────────────────────
-
-    public dev.relism.routing.RouteHandle<HttpServer> register(RequestHandler handler) {
-        return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(handler, m));
-    }
-
-    public dev.relism.routing.RouteHandle<HttpServer> get    (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.GET,     path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> post   (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.POST,    path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> put    (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PUT,     path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> delete (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.DELETE,  path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> patch  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PATCH,   path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> options(String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.OPTIONS, path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> head   (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.HEAD,    path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> trace  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.TRACE,   path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> connect(String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.CONNECT, path, h, m)); }
-    public dev.relism.routing.RouteHandle<HttpServer> purge  (String path, SimpleHandler.FunctionalHandler h) { return new dev.relism.routing.RouteHandle<>(this, m -> globalRouter.doRegister(dev.relism.http.HttpMethod.PURGE,   path, h, m)); }
-
+    // ── Hot-path ──────────────────────────────────────────────────────────────
 
     private void process(Socket socket) {
         activeSockets.add(socket);
@@ -210,7 +165,6 @@ public class HttpServer {
 
     private static boolean isKeepAlive(Request request) {
         if (request.headerEquals("Connection", "close")) return false;
-        // Detect HTTP version from last byte of protocol field: "HTTP/1.1" → '1', "HTTP/1.0" → '0'
         ByteView protocol = request.getRequestLine().getProtocol();
         return protocol.length() == 8 && protocol.byteAt(7) == '1'
                 || request.headerEquals("Connection", "keep-alive");
@@ -246,7 +200,6 @@ public class HttpServer {
         out.flush();
     }
 
-    /** Streaming write path — extracted from {@link #writeResponse} to keep the hot method small. */
     private static void writeStreamingBody(OutputStream out, Response response, boolean keepAlive) throws IOException {
         if (!response.isChunked()) {
             out.write(CONTENT_LENGTH);

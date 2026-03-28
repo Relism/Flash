@@ -49,3 +49,4 @@ nuxt-shadcn-dashboard/
 /docs/
 jmh-result.text
 *.text
+/flash-extensions/flash-ext-routeviewer/routeviewer-ui/node_modules/

@@ -1,25 +1,32 @@
 package dev.relism.extension;
 
 /**
- * Contract for all Flash extensions. An extension receives the full {@link FlashApp}
- * so it can both register handlers on the server and expose services through
- * {@link ExtensionContext} for other extensions.
+ * Contract for all Flash extensions. An extension receives a {@link FlashRegistrar}
+ * (either a {@link FlashApp} or a {@link FlashScope}) so it can register routes and
+ * expose shared services via {@link ExtensionContext}.
+ *
+ * <p>Extensions work identically whether installed at the top-level app or inside a
+ * mounted scope:
  *
  * <pre>{@code
- * public class OpenApiExtension implements FlashExtension {
- *     public void install(FlashApp app, ExtensionContext ctx) {
- *         ObjectMapper mapper = ctx.require(ObjectMapper.class);
- *         app.get("/openapi.json", (req, res) -> mapper.writeValueAsString(spec));
+ * public class RateLimitExtension implements FlashExtension {
+ *     public void install(FlashRegistrar app, ExtensionContext ctx) {
+ *         RateLimiter limiter = new RateLimiter(100);
+ *         ctx.provide(RateLimiter.class, limiter);
+ *         app.onException((ex, req, res) -> { ... });
  *     }
  * }
  *
- * FlashApp.of(new HttpServer(config))
+ * // Top-level app
+ * FlashApp.create(8080)
  *     .install(new JacksonExtension())
- *     .install(new OpenApiExtension("/openapi.json"))
  *     .install(new OidcExtension(OidcConfig.fromEnv()));
+ *
+ * // Scoped
+ * app.mount("/api", scope -> scope.install(new RateLimitExtension()));
  * }</pre>
  */
 @FunctionalInterface
 public interface FlashExtension {
-    void install(FlashApp app, ExtensionContext ctx);
+    void install(FlashRegistrar app, ExtensionContext ctx);
 }

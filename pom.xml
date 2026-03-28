@@ -55,8 +55,13 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-routeviewer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
                 <artifactId>fpr-core</artifactId>
-                <version>1.1.0</version>
+                <version>1.1.1</version>
             </dependency>
             <dependency>
                 <groupId>org.projectlombok</groupId>

@@ -32,7 +32,7 @@ Optional: `flash-ext-openapi` — if present, OIDC security schemes are added to
 ## Installation
 
 ```java
-FlashApp.of(new HttpServer(config))
+FlashApp.create(8080)
     .install(new JacksonExtension())
     .install(new OpenApiExtension(...))   // optional — enables Swagger security
     .install(new OidcExtension(
@@ -144,17 +144,17 @@ OidcMiddleware oidc = app.ctx().require(OidcMiddleware.class);
 app.get("/api/me", (req, res) -> {
     OidcUser u = ClaimsHolder.user();   // never null here
     return Map.of("sub", u.sub(), "email", u.email());
-}, oidc.protect());
+}).with(oidc.protect());
 
 // Authentication + role check
 app.delete("/api/admin/users/{id}", (req, res) -> {
     OidcUser u = ClaimsHolder.user();
     // ...
-}, oidc.requireRole("admin"));
+}).with(oidc.requireRole("admin"));
 
 // Multiple roles (OR): passes if user holds any one of them
-app.get("/api/reports", (req, res) -> { ... },
-    oidc.requireRole("admin", "reports-viewer"));
+app.get("/api/reports", (req, res) -> { ... })
+   .with(oidc.requireRole("admin", "reports-viewer"));
 ```
 
 `oidc.protect()` / `oidc.requireRole(...)` return a `Middleware` — a composable
@@ -326,8 +326,8 @@ OidcMiddleware mwA = app.ctx().require(OidcMiddleware.class);   // tenantA's mid
 app.install(new OidcExtension(tenantB));
 OidcMiddleware mwB = app.ctx().require(OidcMiddleware.class);   // tenantB's middleware
 
-app.get("/a/dashboard", (req, res) -> { ... }, mwA.protect());
-app.get("/b/dashboard", (req, res) -> { ... }, mwB.protect());
+app.get("/a/dashboard", (req, res) -> { ... }).with(mwA.protect());
+app.get("/b/dashboard", (req, res) -> { ... }).with(mwB.protect());
 ```
 
 Class-based handlers annotated with `@Authenticated` / `@RolesAllowed` get the last

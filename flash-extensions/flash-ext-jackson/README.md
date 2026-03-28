@@ -23,7 +23,7 @@ Jackson JSON integration for the Flash HTTP server.
 Install before any extension that needs JSON (e.g. `flash-ext-openapi`, `flash-ext-oidc`):
 
 ```java
-FlashApp.of(new HttpServer(config))
+FlashApp.create(8080)
     .install(new JacksonExtension())
     // ... other extensions
 ```
@@ -36,7 +36,7 @@ ObjectMapper mapper = JsonMapper.builder()
     .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
     .build();
 
-FlashApp.of(new HttpServer(config))
+FlashApp.create(8080)
     .install(new JacksonExtension(mapper));
 ```
 
