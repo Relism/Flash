@@ -2,71 +2,76 @@ package dev.relism.ext.jackson;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import dev.relism.exceptions.HttpException;
-import dev.relism.extension.ExtensionContext;
+import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
-import dev.relism.http.ContentType;
 
 /**
- * Registers Jackson into the extension layer.
+ * Registers JSON support into the Flash extension layer.
  *
- * <p>What this installs:
- * <ul>
- *   <li>Exposes the {@link ObjectMapper} in {@link ExtensionContext} — consumed by
- *       {@code flash-ext-openapi} and any extension that needs JSON serialization.</li>
- *   <li>Sets a global exception handler that maps {@link HttpException} to a JSON
- *       error body and catches all other exceptions as 500.</li>
- *   <li>Injects the mapper into {@link JacksonHandler} so all subclasses gain
- *       {@code bodyAs} and {@code json} without constructor boilerplate.</li>
- * </ul>
+ * <p>Exposes a {@link Json} utility instance in the {@link FlashContext} under
+ * {@code Json.class}. Any handler or extension in the same scope can retrieve
+ * it via {@code require(Json.class)} inside {@code onInit()}.
  *
+ * <p>The raw {@link ObjectMapper} is also registered under {@code ObjectMapper.class}
+ * for extensions that need direct mapper access (e.g. OpenAPI schema generation).
+ *
+ * <h3>Usage — composition (preferred)</h3>
  * <pre>{@code
- * FlashApp.of(new HttpServer(config))
- *     .install(new JacksonExtension());
+ * // No mandatory base class. Works from any RequestHandler.
+ * public class MyHandler extends RequestHandler {
+ *     private Json json;
  *
- * // Custom mapper:
+ *     @Override protected void onInit() {
+ *         json = require(Json.class);
+ *     }
+ *
+ *     public Object handle(Request req, Response res) throws Exception {
+ *         MyDto dto = json.body(req, MyDto.class);
+ *         return json.write(res, 201, dto);
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h3>Usage — convenience base class</h3>
+ * <pre>{@code
+ * // JacksonHandler remains available as a thin opt-in wrapper.
+ * public class MyHandler extends JacksonHandler {
+ *     public Object handle(Request req, Response res) throws Exception {
+ *         return json(res, service.findAll());
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h3>Custom mapper</h3>
+ * <pre>{@code
  * ObjectMapper mapper = JsonMapper.builder()
- *     .addModule(new JavaTimeModule())
- *     .build();
- * .install(new JacksonExtension(mapper));
+ *         .addModule(new JavaTimeModule())
+ *         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+ *         .build();
+ *
+ * FlashApp.create(8080)
+ *         .install(new JacksonExtension(mapper));
  * }</pre>
  */
 public class JacksonExtension implements FlashExtension {
 
     private final ObjectMapper mapper;
 
+    /** Installs with a default {@link JsonMapper} (no extra modules). */
     public JacksonExtension() {
         this(JsonMapper.builder().build());
     }
 
+    /** Installs with a fully configured custom {@link ObjectMapper}. */
     public JacksonExtension(ObjectMapper mapper) {
         this.mapper = mapper;
     }
 
     @Override
-    public void install(FlashRegistrar app, ExtensionContext ctx) {
-        ctx.provide(ObjectMapper.class, mapper);
-        JacksonHandler.mapper = mapper;
-
-        app.onException((ex, req, res) -> {
-            if (ex instanceof HttpException e) {
-                res.setStatusCode(e.status());
-                res.setContentType(ContentType.JSON);
-                return "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}";
-            }
-            res.setStatusCode(500);
-            res.setContentType(ContentType.JSON);
-            return "{\"error\":\"Internal Server Error\"}";
-        });
-    }
-
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+    public void install(FlashRegistrar app, FlashContext ctx) {
+        Json json = new Json(mapper);
+        ctx.provide(Json.class,         json);
+        ctx.provide(ObjectMapper.class, mapper);   // backward compat for extensions (OpenAPI, etc.)
     }
 }

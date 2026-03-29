@@ -1,7 +1,7 @@
 package dev.relism.ext.routeviewer;
 
 import dev.relism.ext.routeviewer.model.RouteGraph;
-import dev.relism.extension.ExtensionContext;
+import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.ContentType;
@@ -36,7 +36,7 @@ import dev.relism.http.ContentType;
  * }</pre>
  *
  * <p>All route metadata is collected once at boot time via
- * {@link ExtensionContext#addRouteListener}. Zero overhead on the request hot-path.
+ * {@link FlashContext#addRouteListener}. Zero overhead on the request hot-path.
  */
 public class RouteViewerExtension implements FlashExtension {
 
@@ -55,7 +55,7 @@ public class RouteViewerExtension implements FlashExtension {
     public RouteViewerExtension(String path) { this.path = path; }
 
     @Override
-    public void install(FlashRegistrar app, ExtensionContext ctx) {
+    public void install(FlashRegistrar app, FlashContext ctx) {
         RouteViewerHandler     shell = new RouteViewerHandler();
         RouteViewerDataHandler data  = new RouteViewerDataHandler(graph);
 

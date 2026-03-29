@@ -8,22 +8,17 @@ import dev.relism.models.Response;
 import dev.relism.models.SimpleHandler;
 import org.junit.jupiter.api.Test;
 
-import java.nio.charset.StandardCharsets;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class AbstractRouterTest {
 
-    // A minimal concrete router for testing base-class functionality
     static class DummyRouter extends AbstractRouter {
         RequestHandler lastAddedHandler;
         HttpMethod     lastAddedMethod;
         String         lastAddedPath;
 
         @Override
-        public RequestHandler route(Request request) {
-            return null;
-        }
+        public RequestHandler route(Request request) { return null; }
 
         @Override
         protected AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler) {
@@ -34,31 +29,15 @@ class AbstractRouterTest {
         }
     }
 
-    // --- namespace ---
-
     @Test
-    void setNamespace_updatesStringAndBytes() {
+    void doRegister_sanitizesPathAndWrapsHandler() {
         DummyRouter router = new DummyRouter();
-        assertEquals("/", router.getNamespace());
-
-        router.setNamespace("/api");
-        assertEquals("/api", router.getNamespace());
-        assertArrayEquals("/api".getBytes(StandardCharsets.UTF_8), router.getNamespaceBytes());
-    }
-
-    // --- doRegister (infrastructure method used by FlashApp/FlashScope) ---
-
-    @Test
-    void doRegister_lambda_sanitizesPathAndWrapsHandler() {
-        DummyRouter router = new DummyRouter();
-        SimpleHandler.FunctionalHandler func = (req, res) -> "OK";
-
-        router.doRegister(HttpMethod.GET, "users/", func, new Middleware[0]);
+        router.doRegister(HttpMethod.GET, "users/", new SimpleHandler((req, res) -> "OK"), new Middleware[0]);
         assertEquals(HttpMethod.GET, router.lastAddedMethod);
         assertEquals("/users", router.lastAddedPath);
         assertNotNull(router.lastAddedHandler);
 
-        router.doRegister(HttpMethod.DELETE, "//delete//", func, new Middleware[0]);
+        router.doRegister(HttpMethod.DELETE, "//delete//", new SimpleHandler((req, res) -> "OK"), new Middleware[0]);
         assertEquals(HttpMethod.DELETE, router.lastAddedMethod);
         assertEquals("/delete", router.lastAddedPath);
     }
@@ -69,17 +48,13 @@ class AbstractRouterTest {
         public Object handle(Request request, Response response) { return null; }
     }
 
-    static class UnannotatedHandler extends RequestHandler {
-        @Override
-        public Object handle(Request request, Response response) { return null; }
-    }
-
     @Test
-    void doRegister_annotatedHandler_addsRoute() {
+    void doRegister_classBasedHandler_addsRoute() {
         DummyRouter router = new DummyRouter();
         ProfileHandler handler = new ProfileHandler();
+        Route ann = ProfileHandler.class.getAnnotation(Route.class);
 
-        router.doRegister(handler, new Middleware[0]);
+        router.doRegister(ann.method(), ann.path(), handler, new Middleware[0]);
 
         assertEquals(HttpMethod.POST, router.lastAddedMethod);
         assertEquals("/profile", router.lastAddedPath);
@@ -87,27 +62,16 @@ class AbstractRouterTest {
     }
 
     @Test
-    void doRegister_unannotatedHandler_doesNothing() {
+    void defaultNotFoundHandler_returns404() throws Exception {
         DummyRouter router = new DummyRouter();
-        router.doRegister(new UnannotatedHandler(), new Middleware[0]);
-        assertNull(router.lastAddedMethod);
-    }
-
-    // --- error handlers ---
-
-    @Test
-    void defaultNotFoundHandler_returns404Html() throws Exception {
-        DummyRouter router = new DummyRouter();
-        Response res = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
-
         assertNotNull(router.getNotFoundHandler());
 
         router.onNotFound((req, resp) -> "Custom 404");
-        assertEquals("Custom 404", router.getNotFoundHandler().handle(null, res));
+        assertEquals("Custom 404", router.getNotFoundHandler().handle(null, null));
     }
 
     @Test
-    void defaultExceptionHandler_canBeOverridden() throws Exception {
+    void defaultExceptionHandler_canBeOverridden() {
         DummyRouter router = new DummyRouter();
         assertNotNull(router.getExceptionHandler());
 

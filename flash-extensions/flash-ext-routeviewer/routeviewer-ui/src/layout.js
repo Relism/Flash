@@ -16,7 +16,7 @@ const ROOT_GAP    = 48   // vertical gap between independent subtrees (different
 const MARGIN_X    = 60
 const MARGIN_Y    = 60
 
-const ABSTRACT_W  = 160
+const ABSTRACT_W  = 220
 const ABSTRACT_H  = 50
 const CONCRETE_W  = 260
 const LAMBDA_W    = 230

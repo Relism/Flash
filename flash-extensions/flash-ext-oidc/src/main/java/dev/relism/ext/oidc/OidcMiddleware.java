@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Request-level OIDC middleware. Exposed in the {@link dev.relism.extension.ExtensionContext}
+ * Request-level OIDC middleware. Exposed in the {@link dev.relism.extension.FlashContext}
  * for manual use on lambda routes; injected automatically for handlers annotated with
  * {@link Authenticated} or {@link RolesAllowed}.
  *

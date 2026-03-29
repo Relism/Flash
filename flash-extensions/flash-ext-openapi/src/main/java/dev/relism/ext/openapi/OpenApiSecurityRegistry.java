@@ -7,7 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Mutable registry of {@link OpenApiSecurityContributor}s.
  *
- * <p>Created and provided to the {@link dev.relism.extension.ExtensionContext} by
+ * <p>Created and provided to the {@link dev.relism.extension.FlashContext} by
  * {@link OpenApiExtension} at install time. Other extensions (e.g. {@code flash-ext-oidc})
  * retrieve it via {@code ctx.find(OpenApiSecurityRegistry.class)} and register their
  * contributor — the OpenAPI extension then picks it up lazily at spec-generation time.

@@ -1,14 +1,15 @@
 package dev.relism.extension;
 
 import dev.relism.ServerHandle;
+import dev.relism.exceptions.InitializationException;
 import dev.relism.http.HttpMethod;
 import dev.relism.models.RequestHandler;
 import dev.relism.models.SimpleHandler;
 import dev.relism.routing.AbstractRouter;
-import dev.relism.routing.GlobalRouter;
 import dev.relism.routing.Middleware;
 import dev.relism.routing.Route;
 import dev.relism.routing.RouteHandle;
+import dev.relism.routing.routers.fastpathrouter.FastPathRouterImpl;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -16,98 +17,62 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 /**
- * Primary entry point for Flash. Creates and owns both the {@link GlobalRouter} and
- * the {@link HttpServer} (pure I/O transport). All route registration goes through
- * {@code FlashApp} or a {@link FlashScope} — never through the server or router directly.
+ * Single entry point for Flash. Owns one flat {@link FastPathRouterImpl} —
+ * all routes (app-level and scoped) compile into a single FSM at {@link #start()}.
  *
- * <p>Create via the static factories:
- * <pre>{@code
- * FlashApp app = FlashApp.create(8080);
- * FlashApp app = FlashApp.create(FlashConfiguration.builder().port(8080).build());
- * }</pre>
+ * <h3>Deferred routing</h3>
+ * Routes accumulate during the builder phase. At {@code start()}:
+ * <ol>
+ *   <li>Global middlewares are prepended to every route</li>
+ *   <li>Annotation processors run for class-based handlers</li>
+ *   <li>Handlers are bound to the {@link FlashContext}</li>
+ *   <li>All routes compile into one FSM — zero prefix scanning at runtime</li>
+ * </ol>
  *
- * <p>Install extensions, register routes, mount namespaces, then start:
  * <pre>{@code
  * FlashApp.create(8080)
  *     .install(new JacksonExtension())
- *     .install(new OidcExtension(config))
+ *     .use(cors)
  *     .get("/ping", (req, res) -> "pong")
- *     .get("/me",   (req, res) -> ClaimsHolder.user().email()).with(oidc.protect())
- *     .register(new HomePage())                 // @Route + annotation processors applied
- *     .scan("dev.example.handlers")             // classpath scan, no-arg constructors
- *     .mount("/api", scope -> {
- *         scope.register(new UserHandler());    // @Authenticated works here
- *         scope.get("/health", (req, res) -> "ok");
- *     })
+ *     .scan("dev.example.handlers")
+ *     .mount("/api", scope -> scope.get("/health", (req, res) -> "ok"))
  *     .start();
  * }</pre>
- *
- * <h3>Auto-flush</h3>
- * Calling any registration method returns a {@link RouteHandle}. Calling
- * {@link RouteHandle#with} is optional — if omitted, the route is registered
- * automatically before the next operation or at {@link #start()}. This means
- * trailing {@code .with()} calls are never required for routes with no middleware.
  */
 public final class FlashApp implements FlashRegistrar {
 
-    private final GlobalRouter     router;
-    private final ServerHandle     server;
-    private final ExtensionContext ctx = new ExtensionContext();
+    private final AbstractRouter          router = new FastPathRouterImpl();
+    private final ServerHandle            server;
+    private final FlashContext         ctx    = new FlashContext();
+    private final List<Middleware>         globalMiddlewares = new ArrayList<>();
+    private final List<RouteDefinition>   deferredRoutes    = new ArrayList<>();
 
-    /** The last returned RouteHandle not yet registered — auto-flushed before the next operation. */
     private RouteHandle<?> pending;
 
-    /**
-     * Global middlewares applied to every route, regardless of how it is registered
-     * (lambda, class-based, or via {@link #scan}).
-     * Accumulated via {@link #use}; applied outermost in the chain (before injected and
-     * explicit middlewares).
-     */
-    private final List<Middleware> globalMiddlewares = new ArrayList<>();
-
     private FlashApp(FlashConfiguration config) {
-        this.router = new GlobalRouter();
         try {
             this.server = ServerHandle.create(config, router);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to bind server socket on port " + config.getPort(), e);
+            throw new InitializationException("Failed to bind on port " + config.getPort(), e);
         }
     }
 
     // ── Factories ─────────────────────────────────────────────────────────────
 
-    /**
-     * Creates a {@code FlashApp} listening on {@code port} with default configuration.
-     *
-     * @param port the TCP port to bind
-     */
     public static FlashApp create(int port) {
         return create(FlashConfiguration.builder().port(port).build());
     }
 
-    /**
-     * Creates a {@code FlashApp} with full server configuration.
-     *
-     * @param config server configuration (port, host, buffer sizes, etc.)
-     */
     public static FlashApp create(FlashConfiguration config) {
         return new FlashApp(config);
     }
 
     // ── Pending flush ─────────────────────────────────────────────────────────
 
-    /**
-     * Registers any pending route (from the previous {@code get/post/register} call)
-     * with no middleware if it has not already been committed via {@link RouteHandle#with}.
-     */
     private void flushPending() {
-        if (pending != null) {
-            pending.ensureRegistered();
-            pending = null;
-        }
+        if (pending != null) { pending.ensureRegistered(); pending = null; }
     }
 
     private <P> RouteHandle<P> track(RouteHandle<P> handle) {
@@ -116,15 +81,8 @@ public final class FlashApp implements FlashRegistrar {
         return handle;
     }
 
-    // ── FlashRegistrar — extension installation ───────────────────────────────
+    // ── Extension installation ────────────────────────────────────────────────
 
-    /**
-     * Installs an extension. Extensions receive this {@code FlashApp} as a
-     * {@link FlashRegistrar} so they can register routes and expose services.
-     *
-     * @param ext the extension to install
-     * @return {@code this} for chaining
-     */
     @Override
     public FlashApp install(FlashExtension ext) {
         flushPending();
@@ -132,34 +90,12 @@ public final class FlashApp implements FlashRegistrar {
         return this;
     }
 
-    // ── Global middleware ──────────────────────────────────────────────────────
+    // ── Global middleware ─────────────────────────────────────────────────────
 
     /**
-     * Registers one or more global middlewares applied to <em>every</em> route on this app,
-     * regardless of how the route is registered (lambda, class-based, or via {@link #scan}).
-     *
-     * <p>Global middlewares execute outermost — before annotation-injected middlewares
-     * (e.g. {@code @Authenticated}) and before any explicit {@link RouteHandle#with} chain.
-     * Execution order mirrors the declaration order: the first argument wraps everything else.
-     *
-     * <p>Must be called before {@link #start()}. Calling {@code use} after routes have already
-     * been registered will not retroactively affect those routes.
-     *
-     * <pre>{@code
-     * Middleware cors = next -> (req, res) -> {
-     *     res.header("Access-Control-Allow-Origin", "*");
-     *     if (req.method() == HttpMethod.OPTIONS) { res.status(204); return null; }
-     *     return next.handle(req, res);
-     * };
-     *
-     * FlashApp.create(8080)
-     *     .use(cors)
-     *     .scan("dev.example.handlers")
-     *     .start();
-     * }</pre>
-     *
-     * @param middlewares one or more middlewares to apply globally
-     * @return {@code this} for chaining
+     * Registers global middlewares applied to <em>every</em> route — including
+     * routes registered before this call and routes inside mounted scopes.
+     * Order-independent: resolved at {@link #start()}.
      */
     public FlashApp use(Middleware... middlewares) {
         flushPending();
@@ -167,182 +103,157 @@ public final class FlashApp implements FlashRegistrar {
         return this;
     }
 
-    /**
-     * Prepends global middlewares to an explicit per-route array.
-     * Returns {@code explicit} unchanged when no global middlewares have been registered
-     * (zero-allocation fast path).
-     */
-    private Middleware[] withGlobal(Middleware[] explicit) {
-        if (globalMiddlewares.isEmpty()) return explicit;
-        return Stream.concat(globalMiddlewares.stream(), Arrays.stream(explicit))
-                     .toArray(Middleware[]::new);
-    }
+    // ── Route registration (deferred) ─────────────────────────────────────────
 
-    // ── FlashRegistrar — route registration ───────────────────────────────────
+    @Override public RouteHandle<FlashApp> get    (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.GET,     path, h); }
+    @Override public RouteHandle<FlashApp> post   (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.POST,    path, h); }
+    @Override public RouteHandle<FlashApp> put    (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.PUT,     path, h); }
+    @Override public RouteHandle<FlashApp> delete (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.DELETE,  path, h); }
+    @Override public RouteHandle<FlashApp> patch  (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.PATCH,   path, h); }
+    @Override public RouteHandle<FlashApp> options(String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.OPTIONS, path, h); }
+    @Override public RouteHandle<FlashApp> head   (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.HEAD,    path, h); }
+    @Override public RouteHandle<FlashApp> trace  (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.TRACE,   path, h); }
+    @Override public RouteHandle<FlashApp> connect(String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.CONNECT, path, h); }
+    @Override public RouteHandle<FlashApp> purge  (String path, SimpleHandler.FunctionalHandler h) { return lambda(HttpMethod.PURGE,   path, h); }
 
-    @Override public RouteHandle<FlashApp> get    (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.GET,     path, h); }
-    @Override public RouteHandle<FlashApp> post   (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.POST,    path, h); }
-    @Override public RouteHandle<FlashApp> put    (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.PUT,     path, h); }
-    @Override public RouteHandle<FlashApp> delete (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.DELETE,  path, h); }
-    @Override public RouteHandle<FlashApp> patch  (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.PATCH,   path, h); }
-    @Override public RouteHandle<FlashApp> options(String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.OPTIONS, path, h); }
-    @Override public RouteHandle<FlashApp> head   (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.HEAD,    path, h); }
-    @Override public RouteHandle<FlashApp> trace  (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.TRACE,   path, h); }
-    @Override public RouteHandle<FlashApp> connect(String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.CONNECT, path, h); }
-    @Override public RouteHandle<FlashApp> purge  (String path, SimpleHandler.FunctionalHandler h) { return routeLambda(HttpMethod.PURGE,   path, h); }
+    private static final Middleware[] NO_MW = new Middleware[0];
 
-    private RouteHandle<FlashApp> routeLambda(HttpMethod method, String path, SimpleHandler.FunctionalHandler h) {
-        return track(new RouteHandle<>(this, m -> {
-            Middleware[] all = withGlobal(m);
-            emit(method, path, null, List.of(), all);
-            router.doRegister(method, path, h, all);
-        }));
+    private RouteHandle<FlashApp> lambda(HttpMethod method, String path, SimpleHandler.FunctionalHandler h) {
+        return track(new RouteHandle<>(this, mw ->
+                deferredRoutes.add(new RouteDefinition(method, path, new SimpleHandler(h), NO_MW, mw, false, ctx, "/"))));
     }
 
     /**
-     * Begins registration of a class-based handler. The class must carry a
-     * {@link Route @Route} annotation. All registered {@link AnnotationProcessor}s
-     * are run (e.g. to inject {@code @Authenticated} / {@code @RolesAllowed} middleware).
-     * Injected middlewares are prepended outermost to any explicit ones passed via
-     * {@link RouteHandle#with}.
-     *
-     * <p>Calling {@link RouteHandle#with} is optional — the route is registered
-     * automatically before the next operation or at {@link #start()}.
+     * Registers a class-based handler annotated with {@link Route @Route}.
+     * App-level only — not part of {@link FlashRegistrar}.
      */
-    @Override
     public RouteHandle<FlashApp> register(RequestHandler handler) {
-        return track(new RouteHandle<>(this, explicit -> {
-            List<Middleware> injected = ctx.processors().stream()
-                    .flatMap(p -> p.process(handler.getClass()).stream())
-                    .toList();
-            Middleware[] all = Stream.concat(
-                    globalMiddlewares.stream(),
-                    Stream.concat(injected.stream(), Arrays.stream(explicit))
-            ).toArray(Middleware[]::new);
-            Route ann = handler.getClass().getAnnotation(Route.class);
-            if (ann != null) emit(ann.method(), ann.path(), handler.getClass(), injected, withGlobal(explicit));
-            router.doRegister(handler, all);
-        }));
+        Route ann = handler.getClass().getAnnotation(Route.class);
+        if (ann == null)
+            throw new InitializationException(
+                    handler.getClass().getName() + " is missing @Route");
+        return track(new RouteHandle<>(this, mw ->
+                deferredRoutes.add(new RouteDefinition(ann.method(), ann.path(), handler, NO_MW, mw, true, ctx, "/"))));
     }
 
-    /**
-     * Scans {@code packageName} for classes that extend {@link RequestHandler} and
-     * carry {@link Route @Route}. Each is instantiated via its no-arg constructor,
-     * run through annotation processors, and registered.
-     *
-     * <pre>{@code
-     * FlashApp.create(8080)
-     *     .install(new OidcExtension(config))
-     *     .scan("dev.example.handlers");  // @Authenticated / @RolesAllowed auto-applied
-     * }</pre>
-     */
     @Override
     public FlashApp scan(String packageName) {
         flushPending();
-        PackageScanner.findHandlers(packageName).forEach(cls -> register(instantiate(cls)).ensureRegistered());
+        PackageScanner.findHandlers(packageName).forEach(cls ->
+                register(instantiate(cls)).ensureRegistered());
         return this;
     }
 
-    // ── Namespace mounting ────────────────────────────────────────────────────
+    // ── Namespace mounting (syntactic sugar — routes go into same flat router) ─
 
     /**
-     * Mounts a scoped sub-router under {@code namespace}. The {@code configure} consumer
-     * receives a {@link FlashScope} that has its own child {@link ExtensionContext}
-     * inheriting all parent services and annotation processors.
-     *
-     * <p>Routes registered on the scope automatically get the namespace prefix prepended.
-     * Annotation processors (e.g. from OIDC) apply identically inside the scope.
-     *
-     * <pre>{@code
-     * app.mount("/api", scope -> {
-     *     scope.register(new UserHandler());    // @Authenticated works
-     *     scope.get("/health", (req, res) -> "ok");
-     *     scope.scan("dev.example.api");
-     * });
-     * }</pre>
-     *
-     * @param namespace the path prefix (e.g. {@code "/api"})
-     * @param configure consumer that registers routes on the scope
+     * Mounts a scoped group of routes under {@code namespace}. The scope is a
+     * pure builder — it prepends the namespace to each path and collects
+     * {@link RouteDefinition}s that merge into this app's single flat router.
      */
     public FlashApp mount(String namespace, Consumer<FlashScope> configure) {
         flushPending();
-        FlashScope scope = new FlashScope(new dev.relism.routing.routers.fastpathrouter.FastPathRouterImpl(),
-                namespace, ctx);
+        FlashScope scope = new FlashScope(namespace, ctx);
         configure.accept(scope);
         scope.flush();
-        router.mount(namespace, scope.router());
+        deferredRoutes.addAll(scope.routes());
         return this;
     }
 
-    // ── FlashRegistrar — error handlers ──────────────────────────────────────
+    // ── Error handlers ────────────────────────────────────────────────────────
 
-    @Override
     public FlashApp onException(AbstractRouter.ExceptionHandler handler) {
         flushPending();
         router.onException(handler);
         return this;
     }
 
-    @Override
     public FlashApp onNotFound(SimpleHandler.FunctionalHandler handler) {
         flushPending();
         router.onNotFound(handler);
         return this;
     }
 
-    // ── FlashRegistrar — context ──────────────────────────────────────────────
-
     @Override
-    public ExtensionContext ctx() {
-        return ctx;
-    }
+    public FlashContext ctx() { return ctx; }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     /**
-     * Flushes any pending route registration and starts the HTTP server.
-     *
-     * @return a future that completes once the accept loop is running
+     * Compiles all deferred routes into the flat FSM router, then starts
+     * the HTTP transport. One pass, one router, zero prefix scanning.
      */
     public CompletableFuture<Void> start() {
         flushPending();
+        compile();
         return server.start();
     }
 
-    /** Stops the HTTP server and closes all active connections. */
-    public CompletableFuture<Void> stop() {
-        return server.stop();
+    public CompletableFuture<Void> stop() { return server.stop(); }
+
+    // ── Compilation ──────────────────────────────────────────────────────────
+
+    /**
+     * Compiles all deferred routes. Middleware chain order:
+     * Global → Scope → Annotation (class-based only) → Explicit (.with).
+     */
+    private void compile() {
+        for (RouteDefinition def : deferredRoutes) {
+            List<Middleware> injected;
+            if (def.classBasedHandler()) {
+                injected = def.ctx().processors().stream()
+                        .flatMap(p -> p.process(def.handler().getClass()).stream())
+                        .toList();
+                def.handler().bind(def.ctx());
+            } else {
+                injected = List.of();
+            }
+
+            Middleware[] all = concat(globalMiddlewares, def.scopeMiddlewares(),
+                    injected, def.explicitMiddlewares());
+            emitEvent(def, all);
+            router.doRegister(def.method(), def.path(), def.handler(), all);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void emitEvent(RouteDefinition def, Middleware[] allMiddlewares) {
+        List<RouteListener> listeners = def.ctx().routeListeners();
+        if (listeners.isEmpty()) return;
+
+        List<Class<? extends Middleware>> chain = new ArrayList<>(allMiddlewares.length);
+        for (Middleware m : allMiddlewares)
+            chain.add((Class<? extends Middleware>) m.getClass());
+
+        Class<?> handlerClass = def.classBasedHandler() ? def.handler().getClass() : null;
+        RouteEvent event = new RouteEvent(def.method(), def.path(), def.namespace(),
+                "FlashApp", handlerClass, List.copyOf(chain));
+        listeners.forEach(l -> l.onRoute(event));
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
+    private static Middleware[] concat(List<Middleware> global, Middleware[] scope,
+                                       List<Middleware> injected, Middleware[] explicit) {
+        int total = global.size() + scope.length + injected.size() + explicit.length;
+        if (total == 0) return NO_MW;
+        if (total == explicit.length && scope.length == 0) return explicit;
+        Middleware[] all = new Middleware[total];
+        int i = 0;
+        for (Middleware m : global)   all[i++] = m;
+        for (Middleware m : scope)    all[i++] = m;
+        for (Middleware m : injected) all[i++] = m;
+        System.arraycopy(explicit, 0, all, i, explicit.length);
+        return all;
+    }
+
     private static RequestHandler instantiate(Class<?> cls) {
         try {
             return (RequestHandler) cls.getDeclaredConstructor().newInstance();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to instantiate handler: " + cls.getName() +
+            throw new InitializationException(
+                    "Failed to instantiate " + cls.getName() +
                     " — ensure it has a public no-arg constructor", e);
         }
-    }
-
-    /**
-     * Emits a {@link RouteEvent} to all registered {@link RouteListener}s.
-     * No-op if no listener has been registered (fast empty-list check).
-     * Called once per route at boot time — never on the request hot-path.
-     */
-    @SuppressWarnings("unchecked")
-    private void emit(HttpMethod method, String path, Class<?> handlerClass,
-                      List<Middleware> injected, Middleware[] explicit) {
-        List<RouteListener> listeners = ctx.routeListeners();
-        if (listeners.isEmpty()) return;
-        Middleware[] routerMws = router.routerMiddlewares();
-        List<Class<? extends Middleware>> chain = new ArrayList<>(routerMws.length + injected.size() + explicit.length);
-        for (Middleware m : routerMws) chain.add((Class<? extends Middleware>) m.getClass());
-        for (Middleware m : injected)  chain.add((Class<? extends Middleware>) m.getClass());
-        for (Middleware m : explicit)  chain.add((Class<? extends Middleware>) m.getClass());
-        RouteEvent event = new RouteEvent(method, path, router.getNamespace(),
-                router.getClass().getSimpleName(), handlerClass, List.copyOf(chain));
-        listeners.forEach(l -> l.onRoute(event));
     }
 }

@@ -9,8 +9,6 @@ import dev.relism.http.HttpMethod;
 import dev.relism.models.Request;
 import dev.relism.models.RequestHandler;
 import dev.relism.routing.AbstractRouter;
-import dev.relism.routing.Middleware;
-import dev.relism.routing.PathUtils;
 
 /**
  * Router backed by the {@code fpr-core} byte-level state machine. Routes are compiled lazily
@@ -23,8 +21,7 @@ public class FastPathRouterImpl extends AbstractRouter {
     private volatile FastPathRouter<ByteView, RequestHandler> router;
     private          String[]                                 cachedParamNames;
 
-    public FastPathRouterImpl(Middleware... middlewares) { super(middlewares); }
-    public FastPathRouterImpl()                          { super(); }
+    public FastPathRouterImpl() {}
 
     private static final class FastPathRouterContext {
         private static final ThreadLocal<MatchResult<RequestHandler>> RESULT_HOLDER =
@@ -43,8 +40,7 @@ public class FastPathRouterImpl extends AbstractRouter {
 
     @Override
     protected AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler) {
-        String fullPath = PathUtils.join(namespace, path);
-        builder.add(StringRouteParser.parse(method.name() + fullPath), handler);
+        builder.add(StringRouteParser.parse(method.name() + path), handler);
         this.router = null;
         return this;
     }

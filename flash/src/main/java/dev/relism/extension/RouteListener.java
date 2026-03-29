@@ -3,7 +3,7 @@ package dev.relism.extension;
 /**
  * Observer notified once for each route registered on a {@link FlashApp} or {@link FlashScope}.
  *
- * <p>Register via {@link ExtensionContext#addRouteListener}. The listener is called
+ * <p>Register via {@link FlashContext#addRouteListener}. The listener is called
  * <em>once per route at boot time</em>, before the route is handed to the routing engine.
  * There is zero overhead on the request hot-path.
  *

@@ -47,6 +47,11 @@ public record RouteRecord(
     /**
      * Walks the superclass chain, stopping before {@code RequestHandler}.
      * {@code RequestHandler} is the universal root — showing it adds no information.
+     *
+     * <p>Names are produced by {@link #displayName(Class)} so that static inner classes
+     * appear as {@code OuterClass.InnerClass} (e.g. {@code PostHandlers.List}) rather
+     * than the ambiguous simple name ({@code List}). This guarantees globally unique
+     * display labels in the React Flow graph regardless of inner-class naming collisions.
      */
     private static List<String> buildAbstractionChain(Class<?> cls) {
         if (cls == null) return List.of();
@@ -54,10 +59,29 @@ public record RouteRecord(
         Class<?> c = cls;
         while (c != null && !c.equals(Object.class)) {
             if (ROOT_HANDLER.equals(c.getSimpleName())) break;
-            chain.add(c.getSimpleName());
+            chain.add(displayName(c));
             c = c.getSuperclass();
         }
         return List.copyOf(chain);
+    }
+
+    /**
+     * Returns a human-readable, globally unique display name for a handler class.
+     *
+     * <ul>
+     *   <li>Top-level class {@code HtmlHandler} → {@code "HtmlHandler"}</li>
+     *   <li>Static inner class {@code PostHandlers$List} → {@code "PostHandlers.List"}</li>
+     *   <li>Deeply nested {@code A$B$C} → {@code "A.B.C"}</li>
+     * </ul>
+     *
+     * Strategy: take {@code c.getName()} (binary name with {@code $} separators),
+     * strip the package prefix, then replace {@code $} with {@code .}.
+     */
+    private static String displayName(Class<?> c) {
+        String binary = c.getName();                          // e.g. dev.relism.bench.handler.api.PostHandlers$List
+        int lastDot = binary.lastIndexOf('.');
+        String local = lastDot >= 0 ? binary.substring(lastDot + 1) : binary;  // PostHandlers$List
+        return local.replace('$', '.');                       // PostHandlers.List
     }
 
     private static List<String> buildPointcuts(Class<?> cls) {

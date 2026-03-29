@@ -18,6 +18,8 @@
         <module>flash-ext-openapi</module>
         <module>flash-ext-oidc</module>
         <module>flash-ext-routeviewer</module>
+        <module>flash-ext-view</module>
+        <module>flash-ext-limiter</module>
     </modules>
 
     <dependencyManagement>

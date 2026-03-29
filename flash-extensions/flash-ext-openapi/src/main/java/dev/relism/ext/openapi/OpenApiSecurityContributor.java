@@ -8,7 +8,7 @@ import java.util.Map;
  *
  * <p>Extensions that enforce authentication (e.g. {@code flash-ext-oidc}) implement
  * this interface and register an instance into {@link OpenApiSecurityRegistry} via the
- * {@link dev.relism.extension.ExtensionContext}. {@link OpenApiExtension} picks it up
+ * {@link dev.relism.extension.FlashContext}. {@link OpenApiExtension} picks it up
  * at spec-generation time — no coupling between the two extensions at install time.
  *
  * <p>Multi-tenant: multiple contributors may coexist. For handlers secured by
