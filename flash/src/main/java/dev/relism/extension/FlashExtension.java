@@ -3,17 +3,17 @@ package dev.relism.extension;
 /**
  * Contract for all Flash extensions. An extension receives a {@link FlashRegistrar}
  * (either a {@link FlashApp} or a {@link FlashScope}) so it can register routes and
- * expose shared services via {@link ExtensionContext}.
+ * expose shared services via {@link FlashContext}.
  *
  * <p>Extensions work identically whether installed at the top-level app or inside a
  * mounted scope:
  *
  * <pre>{@code
  * public class RateLimitExtension implements FlashExtension {
- *     public void install(FlashRegistrar app, ExtensionContext ctx) {
+ *     public void install(FlashRegistrar app, FlashContext ctx) {
  *         RateLimiter limiter = new RateLimiter(100);
  *         ctx.provide(RateLimiter.class, limiter);
- *         app.onException((ex, req, res) -> { ... });
+ *         app.get("/rate-info", (req, res) -> limiter.info());
  *     }
  * }
  *
@@ -28,5 +28,5 @@ package dev.relism.extension;
  */
 @FunctionalInterface
 public interface FlashExtension {
-    void install(FlashRegistrar app, ExtensionContext ctx);
+    void install(FlashRegistrar app, FlashContext ctx);
 }

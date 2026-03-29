@@ -124,7 +124,7 @@ app.mount("/api", scope -> {
 ## Extensions
 
 Extensions are installed before route registration. Each extension receives the `FlashRegistrar`
-and `ExtensionContext` — it can register routes, expose services, and register annotation processors.
+and `FlashContext` — it can register routes, expose services, and register annotation processors.
 
 ```java
 FlashApp.create(8080)

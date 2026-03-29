@@ -1,5 +1,11 @@
 import { Handle, Position } from '@xyflow/react'
 
+// Invisible handles — React Flow needs them as edge anchor points,
+// but they must not appear as interactive dots in the read-only graph.
+const HANDLE_STYLE = { opacity: 0, width: 6, height: 6, pointerEvents: 'none', border: 'none', background: 'transparent' }
+const TARGET_HANDLE = <Handle type="target" position={Position.Left}  style={HANDLE_STYLE} />
+const SOURCE_HANDLE = <Handle type="source" position={Position.Right} style={HANDLE_STYLE} />
+
 const METHOD_COLORS = {
   GET:     { bg: '#0d4429', color: '#4ade80' },
   POST:    { bg: '#172554', color: '#60a5fa' },
@@ -10,15 +16,17 @@ const METHOD_COLORS = {
   HEAD:    { bg: '#1c1917', color: '#a8a29e' },
 }
 
-// Handles for LR layout: parent flows in from the LEFT, children exit to the RIGHT
-const TARGET_HANDLE = <Handle type="target" position={Position.Left}
-  style={{ left: 0, top: '50%', transform: 'translateY(-50%)' }} />
-const SOURCE_HANDLE = <Handle type="source" position={Position.Right}
-  style={{ right: 0, top: '50%', transform: 'translateY(-50%)' }} />
+// Shared truncation style — applied to any single-line text that can overflow.
+const TRUNCATE = {
+  overflow:     'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace:   'nowrap',
+}
 
 /**
  * Unified handler node — three modes: ABSTRACT, CONCRETE, LAMBDA.
- * Handles are Left (in) / Right (out) for Left-to-Right DAG layout.
+ * No connection handles: the graph is a read-only visualisation.
+ * Text is clamped to the node width and truncated with an ellipsis.
  */
 export default function HandlerNode({ data, selected }) {
 
@@ -30,16 +38,17 @@ export default function HandlerNode({ data, selected }) {
         border: selected ? '2px solid #60a5fa' : '1px solid #ef4444',
         borderRadius: 8,
         padding: '8px 14px',
-        width: 160,
-        fontFamily: 'system-ui, sans-serif',
+        width: 220,
+        overflow: 'hidden',
         boxSizing: 'border-box',
+        fontFamily: 'system-ui, sans-serif',
       }}>
         {TARGET_HANDLE}
         {SOURCE_HANDLE}
         <div style={{ fontSize: 9, color: '#ef4444', fontWeight: 700, letterSpacing: 0.5, marginBottom: 3 }}>
           ABSTRACT
         </div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace', ...TRUNCATE }}>
           {data.name}
         </div>
       </div>
@@ -48,9 +57,9 @@ export default function HandlerNode({ data, selected }) {
 
   // ── LAMBDA ────────────────────────────────────────────────────────────
   if (data.isLambda) {
-    const method = data.method || 'GET'
-    const path   = data.path   || '/'
-    const m      = METHOD_COLORS[method] || METHOD_COLORS.OPTIONS
+    const method   = data.method || 'GET'
+    const path     = data.path   || '/'
+    const m        = METHOD_COLORS[method] || METHOD_COLORS.OPTIONS
     const pathHtml = path.replace(/\{([^}]+)\}/g, '<span style="color:#a78bfa">{$1}</span>')
 
     return (
@@ -60,15 +69,16 @@ export default function HandlerNode({ data, selected }) {
         borderRadius: 8,
         padding: '10px 12px',
         width: 230,
-        fontFamily: 'system-ui, sans-serif',
+        overflow: 'hidden',
         boxSizing: 'border-box',
+        fontFamily: 'system-ui, sans-serif',
       }}>
         {TARGET_HANDLE}
         {SOURCE_HANDLE}
         <div style={{ fontSize: 9, color: '#60a5fa', fontWeight: 700, letterSpacing: 0.5, marginBottom: 7 }}>
           LAMBDA
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
           <span style={{
             background: m.bg, color: m.color,
             fontSize: 9, fontWeight: 700, padding: '2px 5px',
@@ -77,7 +87,7 @@ export default function HandlerNode({ data, selected }) {
             {method}
           </span>
           <span
-            style={{ fontSize: 10, fontFamily: 'monospace', color: '#8892a4' }}
+            style={{ fontSize: 10, fontFamily: 'monospace', color: '#8892a4', ...TRUNCATE }}
             dangerouslySetInnerHTML={{ __html: pathHtml }}
           />
         </div>
@@ -88,6 +98,7 @@ export default function HandlerNode({ data, selected }) {
                 background: '#1f1a0e', color: '#f6ad55',
                 fontSize: 8, fontWeight: 600, padding: '1px 4px',
                 borderRadius: 2, fontFamily: 'monospace',
+                ...TRUNCATE, maxWidth: '100%',
               }}>{mw}</span>
             ))}
           </div>
@@ -104,18 +115,18 @@ export default function HandlerNode({ data, selected }) {
       borderRadius: 8,
       padding: '10px 12px',
       width: 260,
-      fontFamily: 'system-ui, sans-serif',
+      overflow: 'hidden',
       boxSizing: 'border-box',
+      fontFamily: 'system-ui, sans-serif',
     }}>
       {TARGET_HANDLE}
       {SOURCE_HANDLE}
-
       {/* Header */}
       <div style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 9, color: '#60a5fa', fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>
           HANDLER
         </div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', fontFamily: 'monospace' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', fontFamily: 'monospace', ...TRUNCATE }}>
           {data.name}
         </div>
       </div>
@@ -125,7 +136,7 @@ export default function HandlerNode({ data, selected }) {
       {/* Routes */}
       <div style={{ marginBottom: data.middleware?.length > 0 ? 8 : 0 }}>
         {data.routes?.map((route, i) => {
-          const m = METHOD_COLORS[route.method] || METHOD_COLORS.OPTIONS
+          const m        = METHOD_COLORS[route.method] || METHOD_COLORS.OPTIONS
           const pathHtml = (route.path || '/').replace(
             /\{([^}]+)\}/g,
             '<span style="color:#a78bfa">{$1}</span>'
@@ -134,6 +145,7 @@ export default function HandlerNode({ data, selected }) {
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 6,
               marginBottom: i < data.routes.length - 1 ? 5 : 0,
+              overflow: 'hidden',
             }}>
               <span style={{
                 background: m.bg, color: m.color,
@@ -143,7 +155,7 @@ export default function HandlerNode({ data, selected }) {
                 {route.method}
               </span>
               <span
-                style={{ fontSize: 10, fontFamily: 'monospace', color: '#8892a4' }}
+                style={{ fontSize: 10, fontFamily: 'monospace', color: '#8892a4', ...TRUNCATE }}
                 dangerouslySetInnerHTML={{ __html: pathHtml }}
               />
             </div>
@@ -159,6 +171,7 @@ export default function HandlerNode({ data, selected }) {
               background: '#1f1a0e', color: '#f6ad55',
               fontSize: 8, fontWeight: 600, padding: '1px 4px',
               borderRadius: 2, fontFamily: 'monospace',
+              ...TRUNCATE, maxWidth: '100%',
             }}>{mw}</span>
           ))}
         </div>

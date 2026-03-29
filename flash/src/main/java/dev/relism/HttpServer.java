@@ -5,11 +5,12 @@ import dev.relism.http.ContentType;
 import dev.relism.http.HttpStatus;
 import dev.relism.models.*;
 import dev.relism.extension.FlashConfiguration;
-import dev.relism.routing.GlobalRouter;
+import dev.relism.routing.AbstractRouter;
 
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -21,32 +22,32 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread executor,
- * and the keep-alive accept loop. All routing is delegated to the {@link GlobalRouter}
- * supplied at construction time.
+ * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread
+ * executor, and the keep-alive accept loop. Routing is delegated to a single
+ * {@link AbstractRouter}.
  *
- * <p>This class is package-private — use {@link dev.relism.extension.FlashApp} as the
- * single entry point for creating and configuring a Flash server.
+ * <p>Package-private : use {@link dev.relism.extension.FlashApp} as the single
+ * entry point.
  */
 @Slf4j
 class HttpServer implements ServerHandle {
 
     private final FlashConfiguration configuration;
-    private final ServerSocket            serverSocket;
-    private final GlobalRouter            globalRouter;
-    private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
-    private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
+    private final ServerSocket       serverSocket;
+    private final AbstractRouter     router;
+    private final ExecutorService    executorService = Executors.newVirtualThreadPerTaskExecutor();
+    private final Set<Socket>        activeSockets   = ConcurrentHashMap.newKeySet();
     private volatile boolean stopped = false;
     private final CompletableFuture<Void> readyFuture = new CompletableFuture<>();
 
-    private static final byte[] HTTP_1_1           = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CRLF               = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONTENT_TYPE       = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONTENT_LENGTH     = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONNECTION_CLOSE    = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] HTTP_1_1             = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CRLF                 = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONTENT_TYPE         = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONTENT_LENGTH       = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CONNECTION_CLOSE     = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION_KEEPALIVE = "Connection: keep-alive\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] TRANSFER_CHUNKED    = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] FINAL_CHUNK         = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] TRANSFER_CHUNKED     = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] FINAL_CHUNK          = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] UNKNOWN_STATUS_SUFFIX = " Unknown".getBytes(StandardCharsets.UTF_8);
 
     private static final byte[][] DIGITS = new byte[10][1];
@@ -55,20 +56,12 @@ class HttpServer implements ServerHandle {
             DIGITS[i] = String.valueOf(i).getBytes(StandardCharsets.UTF_8);
     }
 
-    /**
-     * Creates the transport with a pre-built router. Called exclusively by
-     * {@link dev.relism.extension.FlashApp}.
-     *
-     * @param configuration server configuration (port, host, buffer sizes)
-     * @param globalRouter  the fully-wired router to dispatch requests to
-     */
-    HttpServer(FlashConfiguration configuration, GlobalRouter globalRouter) throws IOException {
+    HttpServer(FlashConfiguration configuration, AbstractRouter router) throws IOException {
         this.configuration = configuration;
         this.serverSocket  = new ServerSocket(configuration.getPort());
-        this.globalRouter  = globalRouter;
+        this.router        = router;
     }
 
-    /** Returns a future that completes once the accept loop is running and the server is ready. */
     @Override
     public CompletableFuture<Void> start() {
         Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run);
@@ -90,15 +83,10 @@ class HttpServer implements ServerHandle {
         }
     }
 
-    /** Closes all active connections and shuts down the executor. Returns when complete. */
     @Override
     public CompletableFuture<Void> stop() {
         stopped = true;
-        try {
-            serverSocket.close();
-        } catch (IOException e) {
-            log.error("Error closing server socket", e);
-        }
+        try { serverSocket.close(); } catch (IOException e) { log.error("Error closing server socket", e); }
         activeSockets.forEach(s -> { try { s.close(); } catch (IOException ignored) {} });
         executorService.shutdown();
         try {
@@ -111,7 +99,7 @@ class HttpServer implements ServerHandle {
         return CompletableFuture.completedFuture(null);
     }
 
-    // ── Hot-path ──────────────────────────────────────────────────────────────
+    // ── Hot-path ─────────────────────────────────────────────────────────────
 
     private void process(Socket socket) {
         activeSockets.add(socket);
@@ -119,36 +107,32 @@ class HttpServer implements ServerHandle {
             try (socket;
                     InputStream in = socket.getInputStream();
                     OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
-                RequestParser parser = new RequestParser(configuration.getMaxHeaderBufferSize());
+                RequestParser parser = new RequestParser(
+                        configuration.getMaxHeaderBufferSize(),
+                        (InetSocketAddress) socket.getRemoteSocketAddress());
                 while (!stopped) {
                     Request request = parser.parse(in);
-                    if (request == null)
-                        break;
+                    if (request == null) break;
 
                     boolean keepAlive = isKeepAlive(request);
-
                     Response response = new Response(200, ContentType.TEXT_PLAIN);
-                    RequestHandler handler = globalRouter.route(request);
+
+                    RequestHandler handler = router.route(request);
+                    if (handler == null) handler = router.getNotFoundHandler();
 
                     try {
                         Object result = handler.handle(request, response);
-                        if (result instanceof Response r)
-                            response = r;
-                        else if (result != null)
-                            response.setBody(result);
+                        if (result instanceof Response r) response = r;
+                        else if (result != null) response.setBody(result);
                     } catch (Exception ex) {
-                        Object result = globalRouter.resolveExceptionHandler(request).handle(ex, request, response);
-                        if (result instanceof Response r)
-                            response = r;
-                        else if (result != null)
-                            response.setBody(result);
+                        Object result = router.getExceptionHandler().handle(ex, request, response);
+                        if (result instanceof Response r) response = r;
+                        else if (result != null) response.setBody(result);
                     }
 
                     writeResponse(out, response, keepAlive);
                     request.drain();
-
-                    if (!keepAlive)
-                        break;
+                    if (!keepAlive) break;
                 }
             } catch (IOException e) {
                 if (!stopped) {
@@ -170,11 +154,6 @@ class HttpServer implements ServerHandle {
                 || request.headerEquals("Connection", "keep-alive");
     }
 
-    /**
-     * Writes a complete HTTP response. The fixed-body path (the common case for simple handlers
-     * like /plaintext) is kept inline; streaming and chunked bodies are delegated to
-     * {@link #writeStreamingBody} so the JIT can optimise this method aggressively.
-     */
     private static void writeResponse(OutputStream out, Response response, boolean keepAlive) throws IOException {
         out.write(HTTP_1_1);
         byte[] statusBytes = response.getStatusBytes();

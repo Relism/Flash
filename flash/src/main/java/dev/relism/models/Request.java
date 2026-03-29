@@ -10,6 +10,7 @@ import lombok.Value;
 import lombok.experimental.NonFinal;
 
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -43,24 +44,42 @@ public class Request {
     @NonFinal @Setter PathParams  pathParams;
     @NonFinal @Setter QueryParams queryParams;
 
-    private Request(RequestLine requestLine, RequestBody body) {
-        this.requestLine = requestLine;
-        this.body        = body;
-        this.pathParams  = null;
-        this.queryParams = null;
+    /**
+     * Remote socket address of the connected client. Set once at connection time from
+     * {@link java.net.Socket#getRemoteSocketAddress()} — the {@link InetSocketAddress}
+     * object already exists in the JDK and is passed by reference: zero allocation,
+     * zero copy. {@code null} only in test-constructed requests.
+     *
+     * <p>Use {@link #remoteAddress()} to access it. String conversion
+     * ({@code .getAddress().getHostAddress()}) is deferred to the caller — lazy and
+     * only paid when actually needed.
+     */
+    @Getter(lombok.AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    InetSocketAddress remoteAddress;
+
+    private Request(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress) {
+        this.requestLine   = requestLine;
+        this.body          = body;
+        this.pathParams    = null;
+        this.queryParams   = null;
+        this.remoteAddress = remoteAddress;
     }
 
+    /** Test / manual constructor — {@code remoteAddress()} returns {@code null}. */
     public Request(RequestLine requestLine, byte[] body) {
-        this(requestLine, RequestBody.of(body));
+        this(requestLine, RequestBody.of(body), null);
     }
 
     public static Request forParsed(RequestLine requestLine, InputStream stream,
                                     long contentLength, byte[] headerBuf,
-                                    int bodyStart, int preBufLen) {
+                                    int bodyStart, int preBufLen,
+                                    InetSocketAddress remoteAddress) {
         RequestBody rb = contentLength > 0  ? new RequestBody(stream, contentLength, headerBuf, bodyStart, preBufLen)
                        : contentLength == 0 ? RequestBody.empty()
                        : /* chunked */        new RequestBody(stream, -1L, null, 0, 0);
-        return new Request(requestLine, rb);
+        return new Request(requestLine, rb, remoteAddress);
     }
 
     // ── Request line ──────────────────────────────────────────────────────────
@@ -125,6 +144,22 @@ public class Request {
      * Returns an empty list if the parameter is absent.
      */
     public List<String> queries(String name) { return resolveQueryParams().getAll(name); }
+
+    // ── Remote address ────────────────────────────────────────────────────────
+
+    /**
+     * Returns the remote socket address of the connected client, or {@code null}
+     * for test-constructed requests.
+     *
+     * <p>The {@link InetSocketAddress} is the JDK object created during
+     * {@link java.net.ServerSocket#accept()} — no allocation occurs here.
+     * To obtain the IP string (lazy, allocates once):
+     * <pre>{@code
+     * InetSocketAddress addr = req.remoteAddress();
+     * if (addr != null) String ip = addr.getAddress().getHostAddress();
+     * }</pre>
+     */
+    public InetSocketAddress remoteAddress() { return remoteAddress; }
 
     // ── Body ──────────────────────────────────────────────────────────────────
 

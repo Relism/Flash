@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.util.Arrays;
 
 /**
@@ -21,15 +22,18 @@ import java.util.Arrays;
 public class RequestParser {
     private static final int INITIAL_BUFFER_SIZE = 8192;
 
-    private final int maxHeaderBufferSize;
-    private final HeaderMap headerMap = new HeaderMap();
+    private final int             maxHeaderBufferSize;
+    private final InetSocketAddress remoteAddress;        // set once per connection, never changes
+    private final HeaderMap       headerMap = new HeaderMap();
     private byte[] buffer;
     private int bufBase = 0;  // absolute start of valid data in buffer
     private int bufLen  = 0;  // number of valid bytes from bufBase
 
-    public RequestParser() { this(64 * 1024); }
-    public RequestParser(int maxHeaderBufferSize) {
+    public RequestParser() { this(64 * 1024, null); }
+    public RequestParser(int maxHeaderBufferSize) { this(maxHeaderBufferSize, null); }
+    public RequestParser(int maxHeaderBufferSize, InetSocketAddress remoteAddress) {
         this.maxHeaderBufferSize = maxHeaderBufferSize;
+        this.remoteAddress       = remoteAddress;
         this.buffer = new byte[Math.min(INITIAL_BUFFER_SIZE, maxHeaderBufferSize)];
     }
 
@@ -133,9 +137,9 @@ public class RequestParser {
         RequestLine requestLine = new RequestLine(method, pathView, queryView, protocolView, headerMap);
 
         if (isChunked) {
-            return Request.forParsed(requestLine, new ChunkedInputStream(in, buffer, bodyStart, preBufLen), -1L, null, 0, 0);
+            return Request.forParsed(requestLine, new ChunkedInputStream(in, buffer, bodyStart, preBufLen), -1L, null, 0, 0, remoteAddress);
         }
-        return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen);
+        return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress);
     }
 
     private static int findEndOfHeader(byte[] buf, int from, int len) {

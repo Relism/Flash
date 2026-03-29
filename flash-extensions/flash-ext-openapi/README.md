@@ -121,7 +121,7 @@ builder picks it up automatically — no coupling between extensions.
 
 ### How it works
 
-1. `OpenApiExtension` creates an `OpenApiSecurityRegistry` and exposes it in the `ExtensionContext`.
+1. `OpenApiExtension` creates an `OpenApiSecurityRegistry` and exposes it in the `FlashContext`.
 2. `flash-ext-oidc` calls `ctx.find(OpenApiSecurityRegistry.class)` and registers its contributor.
 3. At spec build time, `OpenApiBuilder` iterates contributors and injects `security` entries on each
    operation whose handler class carries `@Authenticated` or `@RolesAllowed`.

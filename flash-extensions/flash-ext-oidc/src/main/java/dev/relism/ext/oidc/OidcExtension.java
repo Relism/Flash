@@ -1,6 +1,6 @@
 package dev.relism.ext.oidc;
 
-import dev.relism.extension.ExtensionContext;
+import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
 
@@ -59,7 +59,7 @@ public class OidcExtension implements FlashExtension {
     }
 
     @Override
-    public void install(FlashRegistrar app, ExtensionContext ctx) {
+    public void install(FlashRegistrar app, FlashContext ctx) {
 
         // 1. Build the shared HttpClient (optionally with TLS verification disabled)
         HttpClient http = buildHttpClient(config);
@@ -294,7 +294,7 @@ public class OidcExtension implements FlashExtension {
      * If not present, the {@link NoClassDefFoundError} is caught at the call site.
      */
     private static final class OpenApiIntegration {
-        static void register(dev.relism.extension.ExtensionContext ctx,
+        static void register(dev.relism.extension.FlashContext ctx,
                              OidcConfig config, OidcProviderMetadata meta) {
             ctx.find(dev.relism.ext.openapi.OpenApiSecurityRegistry.class)
                .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiSecurityContributor() {

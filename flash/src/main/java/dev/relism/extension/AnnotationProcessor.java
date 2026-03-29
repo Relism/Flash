@@ -14,7 +14,7 @@ import java.util.List;
  * valid — processors may also use the call purely for side effects
  * (e.g. collecting OpenAPI metadata).
  *
- * <p>Register processors via {@link ExtensionContext#addAnnotationProcessor}.
+ * <p>Register processors via {@link FlashContext#addAnnotationProcessor}.
  */
 @FunctionalInterface
 public interface AnnotationProcessor {
