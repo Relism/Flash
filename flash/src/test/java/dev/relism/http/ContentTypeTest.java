@@ -21,7 +21,11 @@ class ContentTypeTest {
     void getBytes_instancesAreNotNull() {
         for (ContentType ct : ContentType.values()) {
             assertNotNull(ct.getBytes());
-            assertTrue(ct.getBytes().length > 0);
+            if (ct == ContentType.NONE) {
+                assertEquals(0, ct.getBytes().length);
+            } else {
+                assertTrue(ct.getBytes().length > 0);
+            }
         }
     }
 }

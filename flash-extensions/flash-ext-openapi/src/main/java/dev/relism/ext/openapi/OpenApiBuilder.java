@@ -4,19 +4,45 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonProperty.Access;
+import dev.relism.http.ContentType;
+import dev.relism.http.HttpStatus;
+import dev.relism.models.Request;
+import dev.relism.models.Response;
 import dev.relism.routing.Route;
 
-import java.lang.reflect.*;
-import java.time.*;
-import java.util.*;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 /**
  * OpenAPI document assembler.
- *
- * Collects operation metadata at route registration time and renders an OpenAPI 3.0.3 map.
- * Response schemas are resolved automatically into components.schemas.
  */
 public final class OpenApiBuilder {
+
+    private static final String OPENAPI_VERSION = "3.0.3";
 
     private String title = "API";
     private String version = "1.0.0";
@@ -26,7 +52,6 @@ public final class OpenApiBuilder {
     private final Map<String, Map<String, Class<?>>> operationHandlers = new LinkedHashMap<>();
     private final SchemaRegistry schemas = new SchemaRegistry();
     private OpenApiSecurityRegistry securityRegistry;
-    // Build cache: OpenAPI is rendered only when the document revision changes.
     private int revision;
     private int builtRevision = -1;
     private Map<String, Object> cachedSpec;
@@ -87,7 +112,7 @@ public final class OpenApiBuilder {
         }
 
         Map<String, Object> spec = new LinkedHashMap<>();
-        spec.put("openapi", "3.0.3");
+        spec.put("openapi", OPENAPI_VERSION);
         spec.put("info", info);
         spec.put("paths", renderedPaths);
 
@@ -126,16 +151,21 @@ public final class OpenApiBuilder {
             i = close + 1;
         }
 
-        for (ApiParam ann : cls.getAnnotationsByType(ApiParam.class)) {
+        for (Parameter ann : cls.getAnnotationsByType(Parameter.class)) {
             Map<String, Object> p = new LinkedHashMap<>();
             p.put("name", ann.name());
-            p.put("in", ann.in());
+            p.put("in", ann.in().wireValue());
             p.put("required", ann.required());
             if (!ann.description().isEmpty()) p.put("description", ann.description());
+            if (!ann.style().isEmpty()) p.put("style", ann.style());
+            if (ann.explode()) p.put("explode", true);
+            if (ann.allowEmptyValue()) p.put("allowEmptyValue", true);
+
             Map<String, Object> schema = new LinkedHashMap<>();
-            schema.put("type", ann.type());
+            schema.put("type", ann.type().wireValue());
             if (!ann.example().isEmpty()) schema.put("example", ann.example());
             p.put("schema", schema);
+            if (ann.examples().length > 0) p.put("examples", toExamples(ann.examples()));
             params.add(p);
         }
 
@@ -143,68 +173,107 @@ public final class OpenApiBuilder {
     }
 
     private void buildResponses(Map<String, Object> op, Class<?> cls) {
-        ApiResponse[] anns = cls.getAnnotationsByType(ApiResponse.class);
-        Map<String, Object> responses = new LinkedHashMap<>();
+        APIResponse[] anns = cls.getAnnotationsByType(APIResponse.class);
+        Map<Integer, Map<String, Object>> responseByCode = new LinkedHashMap<>();
 
-        if (anns.length == 0) {
-            responses.put("200", Map.of("description", "OK"));
-            op.put("responses", responses);
-            return;
+        for (APIResponse ann : anns) {
+            int code = parseStatus(ann.responseCode());
+            responseByCode.put(code, buildAnnotatedResponse(code, ann, cls));
         }
 
-        for (ApiResponse ann : anns) {
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("description", ann.description().isEmpty() ? httpPhrase(ann.status()) : ann.description());
-
-            Class<?> schemaType = resolveSchemaType(ann, cls);
-            if (schemaType != null && schemaType != Void.class) {
-                r.put("content", Map.of(
-                        "application/json", Map.of("schema", schemas.referenceFor(schemaType))
-                ));
+        for (OpenApiSecurityContributor c : securityContributors()) {
+            for (var auto : c.autoResponsesFor(cls).entrySet()) {
+                responseByCode.putIfAbsent(auto.getKey(), Map.of("description", auto.getValue()));
             }
-            responses.put(String.valueOf(ann.status()), r);
         }
 
+        if (responseByCode.isEmpty()) {
+            responseByCode.put(200, Map.of("description", "OK"));
+        }
+
+        Map<String, Object> responses = new LinkedHashMap<>();
+        responseByCode.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
+                .forEach(e -> responses.put(String.valueOf(e.getKey()), e.getValue()));
         op.put("responses", responses);
     }
 
-    private static Class<?> resolveSchemaType(ApiResponse ann, Class<?> handlerClass) {
-        if (ann.schema() != Void.class) return ann.schema();
-        if (!ann.useReturnType()) return null;
+    private List<OpenApiSecurityContributor> securityContributors() {
+        return securityRegistry != null ? securityRegistry.contributors() : List.of();
+    }
+
+    private Map<String, Object> buildAnnotatedResponse(int code, APIResponse ann, Class<?> handlerClass) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("description", ann.description().isEmpty() ? defaultDescription(code) : ann.description());
+
+        Content content = ann.content();
+        if (content.contentType() == ContentType.NONE) return out;
+
+        Map<String, Object> schema = resolveResponseSchema(content, handlerClass);
+        if (schema == null || schema.isEmpty()) return out;
+
+        out.put("content", Map.of(mediaTypeOf(content.contentType()), Map.of("schema", schema)));
+        return out;
+    }
+
+    private static int parseStatus(String code) {
         try {
-            Method handle = handlerClass.getMethod("handle", dev.relism.models.Request.class, dev.relism.models.Response.class);
+            return Integer.parseInt(code.trim());
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid APIResponse.responseCode: " + code);
+        }
+    }
+
+    private Map<String, Object> resolveResponseSchema(Content content, Class<?> handlerClass) {
+        if (content.schema() != Void.class) {
+            Map<String, Object> base = schemas.referenceFor(content.schema());
+            return content.array() ? asArraySchema(base) : base;
+        }
+
+        try {
+            Method handle = handlerClass.getMethod("handle", Request.class, Response.class);
             Type ret = handle.getGenericReturnType();
             Class<?> raw = rawType(ret);
-            if (raw == null || raw == Object.class || raw == dev.relism.models.Response.class || raw == Void.class || raw == void.class)
+            if (raw == null || raw == Object.class || raw == Response.class || raw == Void.class || raw == void.class)
                 return null;
-            return raw;
+
+            Map<String, Object> inferred = schemas.schemaForType(ret);
+            if (inferred == null || inferred.isEmpty()) return null;
+            if (content.array() && !"array".equals(inferred.get("type"))) return asArraySchema(inferred);
+            return inferred;
         } catch (NoSuchMethodException e) {
             return null;
         }
+    }
+
+    private static Map<String, Object> asArraySchema(Map<String, Object> itemSchema) {
+        return Map.of("type", "array", "items", itemSchema);
+    }
+
+    private static String mediaTypeOf(ContentType type) {
+        byte[] bytes = type.getBytes();
+        return bytes.length == 0 ? "application/octet-stream" : new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static Map<String, Object> toExamples(String[] examples) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (int i = 0; i < examples.length; i++) {
+            out.put("ex" + (i + 1), Map.of("value", examples[i]));
+        }
+        return out;
     }
 
     private static String normalizePath(String path) {
         return path.startsWith("/") ? path : "/" + path;
     }
 
-    private static String httpPhrase(int status) {
-        return switch (status) {
-            case 200 -> "OK";
-            case 201 -> "Created";
-            case 204 -> "No Content";
-            case 400 -> "Bad Request";
-            case 401 -> "Unauthorized";
-            case 403 -> "Forbidden";
-            case 404 -> "Not Found";
-            case 409 -> "Conflict";
-            case 422 -> "Unprocessable Entity";
-            case 500 -> "Internal Server Error";
-            default -> "";
-        };
+    private static String defaultDescription(int status) {
+        String reason = HttpStatus.reasonForCode(status);
+        return reason == null ? "" : reason;
     }
 
     private static List<Map<String, List<String>>> buildOperationSecurity(List<OpenApiSecurityContributor> contributors,
-                                                                          Class<?> handlerClass) {
+                                                                           Class<?> handlerClass) {
         List<Map<String, List<String>>> security = new ArrayList<>();
         for (OpenApiSecurityContributor c : contributors) {
             List<String> scopes = c.requiredFor(handlerClass);
@@ -236,6 +305,10 @@ public final class OpenApiBuilder {
         private final Set<Class<?>> resolving = new HashSet<>();
 
         Map<String, Object> referenceFor(Class<?> type) {
+            return schemaFor(type);
+        }
+
+        Map<String, Object> schemaForType(Type type) {
             return schemaFor(type);
         }
 
@@ -283,6 +356,7 @@ public final class OpenApiBuilder {
             names.put(cls, name);
 
             if (resolving.contains(cls)) return name;
+
             resolving.add(cls);
             docs.put(name, buildPojoSchema(cls));
             resolving.remove(cls);
@@ -298,7 +372,7 @@ public final class OpenApiBuilder {
 
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("type", "object");
-            if (typeSchema != null && !typeSchema.description().isEmpty()) out.put("description", typeSchema.description());
+            if (typeSchema != null) applySchemaHints(out, typeSchema);
 
             Map<String, Object> properties = new LinkedHashMap<>();
             List<String> required = new ArrayList<>();
@@ -338,18 +412,24 @@ public final class OpenApiBuilder {
             return out;
         }
 
-        private static void applySchemaHints(Map<String, Object> property, Schema schema) {
-            if (!schema.description().isEmpty()) property.put("description", schema.description());
-            if (!schema.format().isEmpty()) property.put("format", schema.format());
-            if (!schema.example().isEmpty()) property.put("example", schema.example());
-            if (schema.nullable()) property.put("nullable", true);
+        private static void applySchemaHints(Map<String, Object> target, Schema schema) {
+            if (!schema.title().isEmpty()) target.put("title", schema.title());
+            if (!schema.description().isEmpty()) target.put("description", schema.description());
+            if (!schema.format().isEmpty()) target.put("format", schema.format());
+            if (!schema.example().isEmpty()) target.put("example", schema.example());
+            if (schema.enumeration().length > 0) target.put("enum", Arrays.asList(schema.enumeration()));
+            if (schema.nullable()) target.put("nullable", true);
+            if (schema.deprecated()) target.put("deprecated", true);
         }
 
-        private static void applySchemaHints(Map<String, Object> property, SchemaProperty schema) {
-            if (!schema.description().isEmpty()) property.put("description", schema.description());
-            if (!schema.format().isEmpty()) property.put("format", schema.format());
-            if (!schema.example().isEmpty()) property.put("example", schema.example());
-            if (schema.nullable()) property.put("nullable", true);
+        private static void applySchemaHints(Map<String, Object> target, SchemaProperty schema) {
+            if (!schema.title().isEmpty()) target.put("title", schema.title());
+            if (!schema.description().isEmpty()) target.put("description", schema.description());
+            if (!schema.format().isEmpty()) target.put("format", schema.format());
+            if (!schema.example().isEmpty()) target.put("example", schema.example());
+            if (schema.enumeration().length > 0) target.put("enum", Arrays.asList(schema.enumeration()));
+            if (schema.nullable()) target.put("nullable", true);
+            if (schema.deprecated()) target.put("deprecated", true);
         }
 
         private Map<String, Object> withArrayType(Map<String, Object> property, ArraySchema array) {
@@ -378,24 +458,55 @@ public final class OpenApiBuilder {
             return cls.getSimpleName();
         }
 
-        private Map<String, Object> simpleSchema(Class<?> cls) {
-            if (cls == String.class || cls == CharSequence.class || cls == UUID.class) return Map.of("type", "string");
-            if (cls == boolean.class || cls == Boolean.class) return Map.of("type", "boolean");
-            if (cls == byte.class || cls == Byte.class || cls == short.class || cls == Short.class ||
-                    cls == int.class || cls == Integer.class) return Map.of("type", "integer", "format", "int32");
-            if (cls == long.class || cls == Long.class) return Map.of("type", "integer", "format", "int64");
-            if (cls == float.class || cls == Float.class) return Map.of("type", "number", "format", "float");
-            if (cls == double.class || cls == Double.class) return Map.of("type", "number", "format", "double");
+        private static Map<String, Object> simpleSchema(Class<?> cls) {
+            if (!SIMPLE.contains(cls) && !cls.isEnum()) return null;
+
+            if (cls == String.class || CharSequence.class.isAssignableFrom(cls)) return Map.of("type", "string");
+            if (cls == Boolean.class || cls == boolean.class) return Map.of("type", "boolean");
+            if (cls == Integer.class || cls == int.class || cls == Long.class || cls == long.class ||
+                    cls == Short.class || cls == short.class || cls == Byte.class || cls == byte.class) {
+                return Map.of("type", "integer");
+            }
+            if (cls == Float.class || cls == float.class || cls == Double.class || cls == double.class) {
+                return Map.of("type", "number");
+            }
+            if (cls == UUID.class) return Map.of("type", "string", "format", "uuid");
             if (cls == LocalDate.class) return Map.of("type", "string", "format", "date");
             if (cls == LocalDateTime.class || cls == OffsetDateTime.class || cls == Instant.class)
                 return Map.of("type", "string", "format", "date-time");
             if (cls.isEnum()) {
                 Object[] constants = cls.getEnumConstants();
                 List<String> values = new ArrayList<>(constants.length);
-                for (Object c : constants) values.add(((Enum<?>) c).name());
+                for (Object c : constants) values.add(String.valueOf(c));
                 return Map.of("type", "string", "enum", values);
             }
-            if (!SIMPLE.contains(cls) && cls.getName().startsWith("java.")) return Map.of("type", "string");
+            return null;
+        }
+    }
+
+    static Route routeOf(Class<?> cls) {
+        Route direct = cls.getAnnotation(Route.class);
+        if (direct != null) return direct;
+        for (Annotation ann : cls.getAnnotations()) {
+            Route meta = ann.annotationType().getAnnotation(Route.class);
+            if (meta == null) continue;
+            String path = readPathValue(ann);
+            if (path == null) continue;
+            dev.relism.http.HttpMethod method = meta.method();
+            return new Route() {
+                @Override public dev.relism.http.HttpMethod method() { return method; }
+                @Override public String path() { return path; }
+                @Override public Class<? extends Annotation> annotationType() { return Route.class; }
+            };
+        }
+        return null;
+    }
+
+    private static String readPathValue(Annotation ann) {
+        try {
+            Object v = ann.annotationType().getMethod("value").invoke(ann);
+            return v instanceof String s ? s : null;
+        } catch (ReflectiveOperationException ignored) {
             return null;
         }
     }

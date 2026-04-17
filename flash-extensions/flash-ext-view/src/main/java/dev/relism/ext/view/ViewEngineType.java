@@ -22,8 +22,8 @@ package dev.relism.ext.view;
  * In all other cases caching is enabled (production default).
  *
  * <h3>Adding your own engine</h3>
- * For unsupported engines, implement {@link ViewEngine} directly and use
- * {@link ViewExtension#ViewExtension(ViewEngine)} instead.
+ * For unsupported engines, implement {@link ViewEngineAdapter} and pass it to
+ * {@link ViewExtension#ViewExtension(ViewEngineAdapter)}.
  */
 public enum ViewEngineType {
 
@@ -47,8 +47,8 @@ public enum ViewEngineType {
     // ── Factory ───────────────────────────────────────────────────────────────
 
     /**
-     * Instantiates and configures the {@link ViewEngine} for this type.
-     * Called once at {@link ViewExtension#install} time — never on the hot-path.
+     * Instantiates and configures the {@link ViewEngineAdapter} for this type.
+     * Called once at extension setup time — never on the hot-path.
      *
      * @param cacheEnabled whether the engine should cache compiled templates
      * @throws IllegalStateException if the required library is not on the classpath
@@ -57,12 +57,6 @@ public enum ViewEngineType {
         return switch (this) {
             case THYMELEAF -> createThymeleaf(cacheEnabled);
         };
-    }
-
-    ViewEngine createEngine(boolean cacheEnabled) {
-        ViewEngineAdapter adapter = createAdapter(cacheEnabled);
-        if (adapter instanceof ViewEngine engine) return engine;
-        throw new IllegalStateException("Selected engine does not expose legacy ViewEngine interface: " + this);
     }
 
     // ── Engine factories ──────────────────────────────────────────────────────

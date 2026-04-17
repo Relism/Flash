@@ -10,10 +10,13 @@ import java.lang.annotation.Target;
 @Target({ElementType.TYPE, ElementType.FIELD, ElementType.METHOD})
 public @interface Schema {
     String name() default "";
+    String title() default "";
     String description() default "";
     String format() default "";
     String example() default "";
+    String[] enumeration() default {};
     boolean nullable() default false;
     boolean required() default false;
+    boolean deprecated() default false;
     boolean hidden() default false;
 }

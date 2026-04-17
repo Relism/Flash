@@ -5,9 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Container for repeated {@link ApiParam} annotations. */
+/** Container for repeated {@link Parameter} annotations. */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface ApiParams {
-    ApiParam[] value();
+public @interface Parameters {
+    Parameter[] value();
 }

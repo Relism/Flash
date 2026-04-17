@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 @Getter
 public enum ContentType {
 
+    NONE                (""),
+
     // Text
     TEXT_PLAIN          ("text/plain"),
     TEXT_HTML           ("text/html"),

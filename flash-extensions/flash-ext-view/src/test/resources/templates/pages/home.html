@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+<body>
+<h1 th:text="${title}">fallback</h1>
+<a th:href="@{/users/{id}(id=${id},page=${page})}">user</a>
+<div th:fragment="content" th:text="'content-' + ${title}">content</div>
+<div th:fragment="rows" th:attr="id=${'row-' + id}">row</div>
+</body>
+</html>

@@ -51,18 +51,22 @@ public enum HttpStatus {
 
     private static final int MAX_STATUS_CODE = 504;
     private static final byte[][] INDEX = new byte[MAX_STATUS_CODE + 1][];
+    private static final String[] REASONS = new String[MAX_STATUS_CODE + 1];
 
     static {
         for (HttpStatus s : values()) {
             INDEX[s.code] = s.bytes;
+            REASONS[s.code] = s.reason;
         }
     }
 
     private final int    code;
+    private final String reason;
     private final byte[] bytes;
 
     HttpStatus(int code, String reason) {
         this.code  = code;
+        this.reason = reason;
         this.bytes = (code + " " + reason).getBytes(StandardCharsets.UTF_8);
     }
 
@@ -72,6 +76,9 @@ public enum HttpStatus {
     /** Pre-encoded {@code "200 OK"} bytes — zero allocation on the write path. */
     public byte[] bytes() { return bytes; }
 
+    /** Reason phrase (e.g. {@code "OK"}). */
+    public String reason() { return reason; }
+
     /**
      * Returns pre-compiled status bytes for the given code.
      * Access is O(1) and generates zero garbage.
@@ -79,6 +86,14 @@ public enum HttpStatus {
     public static byte[] bytesForCode(int code) {
         if (code >= 0 && code <= MAX_STATUS_CODE) {
             return INDEX[code];
+        }
+        return null;
+    }
+
+    /** Returns reason phrase for the given code, or null if unknown. */
+    public static String reasonForCode(int code) {
+        if (code >= 0 && code <= MAX_STATUS_CODE) {
+            return REASONS[code];
         }
         return null;
     }

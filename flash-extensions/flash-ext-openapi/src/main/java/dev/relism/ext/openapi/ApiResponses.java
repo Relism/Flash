@@ -5,9 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Container for repeated {@link ApiResponse} annotations. */
+/** Container for repeated {@link APIResponse} annotations. */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface ApiResponses {
-    ApiResponse[] value();
+public @interface APIResponses {
+    APIResponse[] value();
 }

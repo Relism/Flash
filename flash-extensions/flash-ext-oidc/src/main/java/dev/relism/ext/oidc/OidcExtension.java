@@ -295,7 +295,41 @@ public class OidcExtension implements FlashExtension {
                     public java.util.List<String> requiredFor(Class<?> handlerClass) {
                         return OidcAuthPolicy.openApiScopesFor(handlerClass);
                     }
+
+                    @Override
+                    public java.util.Map<Integer, String> autoResponsesFor(Class<?> handlerClass) {
+                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
+                        if (policy == null || policy.optionalAuth()) return java.util.Map.of();
+
+                        java.util.LinkedHashMap<Integer, String> out = new java.util.LinkedHashMap<>();
+                        out.put(401, "Authentication required");
+
+                        String[] roles = policy.requiredRoles();
+                        String[] scopes = policy.requiredScopes();
+                        if (roles.length == 0 && scopes.length == 0) return out;
+
+                        String roleMessage = roles.length == 0 ? null : roleRequiredMessage(roles);
+                        String scopeMessage = scopes.length == 0 ? null : scopeRequiredMessage(scopes);
+                        if (roleMessage != null && scopeMessage != null) {
+                            out.put(403, roleMessage + "; " + scopeMessage);
+                        } else if (roleMessage != null) {
+                            out.put(403, roleMessage);
+                        } else {
+                            out.put(403, scopeMessage);
+                        }
+                        return out;
+                    }
                 }));
+        }
+
+        private static String roleRequiredMessage(String[] roles) {
+            if (roles.length == 1) return "\"" + roles[0] + "\" role required";
+            return "Roles \"" + String.join(", ", roles) + "\" are required";
+        }
+
+        private static String scopeRequiredMessage(String[] scopes) {
+            if (scopes.length == 1) return "\"" + scopes[0] + "\" scope required";
+            return "Scopes \"" + String.join(", ", scopes) + "\" are required";
         }
     }
 }
