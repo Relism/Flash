@@ -31,4 +31,13 @@ class HttpStatusTest {
         assertArrayEquals("301 Moved Permanently".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(301));
         assertArrayEquals("400 Bad Request".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(400));
     }
+
+    @Test
+    void reasonForCode_validAndUnknownCodes() {
+        assertEquals("OK", HttpStatus.reasonForCode(200));
+        assertEquals("Not Found", HttpStatus.reasonForCode(404));
+        assertEquals("Internal Server Error", HttpStatus.reasonForCode(500));
+        assertNull(HttpStatus.reasonForCode(999));
+        assertNull(HttpStatus.reasonForCode(0));
+    }
 }

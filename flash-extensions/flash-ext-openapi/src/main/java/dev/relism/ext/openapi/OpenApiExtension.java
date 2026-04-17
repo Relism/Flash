@@ -6,11 +6,9 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
+import dev.relism.extension.RouteEvent;
 import dev.relism.http.ContentType;
-import dev.relism.http.HttpMethod;
 import dev.relism.routing.Route;
-
-import java.lang.annotation.Annotation;
 
 /**
  * Generates and serves an OpenAPI 3.0 spec and Swagger UI under a configurable base path.
@@ -74,13 +72,9 @@ public class OpenApiExtension implements FlashExtension {
         ctx.provide(OpenApiBuilder.class,          builder);
         builder.setSecurityRegistry(secRegistry);
 
-        // Collect operation metadata at handler-registration time (no middleware injected).
-        ctx.addAnnotationProcessor(handlerClass -> {
-            ApiOperation op    = handlerClass.getAnnotation(ApiOperation.class);
-            Route        route = routeOf(handlerClass);
-            if (op != null && route != null) builder.addOperation(route, op, handlerClass);
-            return java.util.List.of();
-        });
+        // Collect operation metadata from final compiled routes.
+        // This guarantees full runtime paths (namespaces/prefixes/rewrites) in the spec.
+        ctx.addRouteListener(event -> addOperationFromEvent(builder, event));
     }
 
     @Override
@@ -126,30 +120,21 @@ public class OpenApiExtension implements FlashExtension {
                "</html>";
     }
 
-    private static Route routeOf(Class<?> cls) {
-        Route direct = cls.getAnnotation(Route.class);
-        if (direct != null) return direct;
-        for (Annotation ann : cls.getAnnotations()) {
-            Route meta = ann.annotationType().getAnnotation(Route.class);
-            if (meta == null) continue;
-            String path = readPathValue(ann);
-            if (path == null) continue;
-            HttpMethod method = meta.method();
-            return new Route() {
-                @Override public HttpMethod method() { return method; }
-                @Override public String path() { return path; }
-                @Override public Class<? extends Annotation> annotationType() { return Route.class; }
-            };
-        }
-        return null;
+    private static void addOperationFromEvent(OpenApiBuilder builder, RouteEvent event) {
+        Class<?> handlerClass = event.handlerClass();
+        if (handlerClass == null) return; // lambda route: no annotation metadata
+
+        ApiOperation op = handlerClass.getAnnotation(ApiOperation.class);
+        if (op == null) return;
+
+        builder.addOperation(routeOf(event), op, handlerClass);
     }
 
-    private static String readPathValue(Annotation ann) {
-        try {
-            Object v = ann.annotationType().getMethod("value").invoke(ann);
-            return v instanceof String s ? s : null;
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
+    private static Route routeOf(RouteEvent event) {
+        return new Route() {
+            @Override public dev.relism.http.HttpMethod method() { return event.method(); }
+            @Override public String path() { return event.path(); }
+            @Override public Class<? extends java.lang.annotation.Annotation> annotationType() { return Route.class; }
+        };
     }
 }

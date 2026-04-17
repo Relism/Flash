@@ -6,13 +6,12 @@
 
     <groupId>dev.relism</groupId>
     <artifactId>flash-parent</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.1-indev5</version>
     <packaging>pom</packaging>
 
     <modules>
         <module>flash</module>
         <module>flash-extensions</module>
-        <module>flash-bench</module>
     </modules>
 
     <distributionManagement>

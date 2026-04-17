@@ -1,161 +1,126 @@
 # flash-ext-openapi
 
-OpenAPI 3.0 spec generation and Swagger UI for the Flash HTTP server.
+OpenAPI 3.0.3 generation + Swagger UI for Flash.
 
 ## What it provides
 
 | Route | Description |
 |---|---|
-| `GET /openapi.json` | OpenAPI 3.0.3 spec as JSON |
-| `GET /openapi.yaml` | OpenAPI 3.0.3 spec as YAML |
-| `GET /openapi/swagger` | Swagger UI (loaded from unpkg CDN) |
+| `GET /openapi.json` | OpenAPI spec JSON |
+| `GET /openapi.yaml` | OpenAPI spec YAML |
+| `GET /openapi/swagger` | Swagger UI |
 
-The base path is configurable. Operations are collected automatically at handler-registration time
-from class-based handlers annotated with `@ApiOperation`.
-
-## Dependencies
-
-Requires `flash-ext-jackson` (shares its `ObjectMapper` from context).
-If `flash-ext-oidc` is also installed, OIDC security schemes are injected automatically.
-Install order is irrelevant — the two-phase extension model handles dependency ordering.
-
-```xml
-<dependency>
-    <groupId>dev.relism</groupId>
-    <artifactId>flash-ext-openapi</artifactId>
-    <version>1.0-SNAPSHOT</version>
-</dependency>
-```
-
-## Installation
+## Install
 
 ```java
 FlashApp.create(8080)
     .install(new JacksonExtension())
-    .install(new OpenApiExtension("/openapi", "My API", "2.0.0", "Optional description"))
-    .register(new MyHandler());
+    .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
+    .scan("com.acme.handlers")
+    .startAndBlock();
 ```
 
-### Constructors
+## Operation annotation
 
 ```java
-new OpenApiExtension()                                     // base path: /openapi, title: API, version: 1.0.0
-new OpenApiExtension("/docs")                              // custom base path
-new OpenApiExtension("/docs", "My API", "2.0.0")          // title + version
-new OpenApiExtension("/docs", "My API", "2.0.0", "desc")  // full
-```
-
-## Annotating handlers
-
-All annotations target the **handler class** (`@Target(ElementType.TYPE)`).
-
-### @ApiOperation
-
-```java
-@GET("/api/blogs")
-@ApiOperation(
-    summary     = "List all blogs",
-    description = "Returns a paginated list of published blog posts.",
-    tags        = {"blogs"},
-    operationId = "listBlogs",
-    deprecated  = false
+@GET("/users/{id}")
+@ApiOperation(summary = "Get user", description = "Returns one user", tags = {"users"})
+@Parameter(name = "expand", in = ParameterIn.QUERY, type = SchemaType.STRING, examples = {"roles", "permissions"})
+@APIResponse(
+    responseCode = "200",
+    description = "User found",
+    content = @Content(contentType = ContentType.JSON, schema = UserDto.class)
 )
-public class ListBlogs extends JacksonHandler { ... }
+public final class GetUser extends RequestHandler { ... }
 ```
 
-| Field | Default | Description |
-|---|---|---|
-| `summary` | `""` | Short one-liner shown in the operation title |
-| `description` | `""` | Longer Markdown description |
-| `tags` | `{}` | Groups operations in the Swagger UI sidebar |
-| `operationId` | `""` | Unique machine-readable ID |
-| `deprecated` | `false` | Marks the operation with a strikethrough |
+## Response patterns
 
-### @ApiResponse
-
-Repeatable — annotate as many status codes as the handler can return.
+### Single object
 
 ```java
-@ApiResponse(status = 200, description = "Blog created", schema = Blog.class)
-@ApiResponse(status = 400, description = "Invalid input")
-@ApiResponse(status = 409, description = "Slug already exists")
-public class CreateBlog extends JacksonHandler { ... }
+@APIResponse(
+    responseCode = "200",
+    description = "User found",
+    content = @Content(contentType = ContentType.JSON, schema = UserDto.class)
+)
 ```
 
-`schema` references `#/components/schemas/<ClassName>` — you are responsible for populating
-`components.schemas` if you need full model documentation (not yet auto-generated).
-
-`@ApiResponse` is repeatable. The container `@ApiResponses({ @ApiResponse(...), ... })` is also available.
-
-### @ApiParam
-
-Repeatable — declare query, path, header, or cookie parameters explicitly.
+### Array
 
 ```java
-@ApiParam(name = "limit",  in = "query",   type = "integer", description = "Max results (default 20)")
-@ApiParam(name = "offset", in = "query",   type = "integer", description = "Pagination offset")
-@ApiParam(name = "slug",   in = "path",    type = "string",  required = true)
-@ApiParam(name = "X-Trace-Id", in = "header", type = "string")
-public class GetBlog extends JacksonHandler { ... }
+@APIResponse(
+    responseCode = "200",
+    description = "Users listed",
+    content = @Content(contentType = ContentType.JSON, schema = UserDto.class, array = true)
+)
 ```
 
-> Path parameters in the route (e.g. `@GET("/blogs/{id}")` or `@Route(path = "/blogs/{id}")`) are extracted automatically
-> as required path parameters — you only need `@ApiParam` for query / header / cookie params.
-
-`@ApiParam` is repeatable. If you prefer grouping them, `@ApiParams({ @ApiParam(...), @ApiParam(...) })` is
-the container annotation.
-
-| Field | Default | Description |
-|---|---|---|
-| `name` | — | Parameter name |
-| `in` | `"query"` | Location: `"query"`, `"path"`, `"header"`, `"cookie"` |
-| `type` | `"string"` | OpenAPI primitive: `"string"`, `"integer"`, `"number"`, `"boolean"` |
-| `description` | `""` | Human-readable description |
-| `required` | `false` | Whether the parameter is mandatory |
-| `example` | `""` | Inline example value shown in Swagger UI |
-
-## Security integration
-
-`flash-ext-openapi` defines the `OpenApiSecurityContributor` / `OpenApiSecurityRegistry` contracts.
-Security extensions (e.g. `flash-ext-oidc`) register a contributor at install time; the spec
-builder picks it up automatically — no coupling between extensions.
-
-### How it works
-
-1. `OpenApiExtension` creates an `OpenApiSecurityRegistry` and exposes it in the `FlashContext`.
-2. `flash-ext-oidc` calls `ctx.find(OpenApiSecurityRegistry.class)` and registers its contributor.
-3. At spec build time, `OpenApiBuilder` iterates contributors and injects `security` entries on each
-   operation whose handler class carries `@Authenticated` or `@RolesAllowed`.
-
-### Implementing a custom contributor
+### No content
 
 ```java
-public class MyAuthContributor implements OpenApiSecurityContributor {
+@APIResponse(
+    responseCode = "204",
+    description = "Deleted",
+    content = @Content(contentType = ContentType.NONE)
+)
+```
 
-    @Override
-    public String schemeName() { return "myScheme"; }
+### Inferred from handler return type
 
-    @Override
-    public Map<String, Object> schemeDefinition() {
-        return Map.of("type", "apiKey", "in", "header", "name", "X-API-Key");
-    }
+```java
+@APIResponse(
+    responseCode = "200",
+    content = @Content
+)
+```
 
-    @Override
-    public List<String> requiredFor(Class<?> handlerClass) {
-        if (handlerClass.isAnnotationPresent(MyAuth.class)) return List.of();
-        return null; // not secured by this contributor
-    }
+If `content.schema` is omitted, schema is inferred from the handler `handle(...)` return type.
+Explicit `content.schema` always wins over inference.
+
+Inference defaults:
+
+- `UserDto` -> object schema for `UserDto`
+- `List<UserDto>` / `Set<UserDto>` / `UserDto[]` -> `array` with `items: UserDto`
+- `Map<String, UserDto>` -> `object` with `additionalProperties: UserDto`
+
+## DTO schema metadata
+
+```java
+@Schema(name = "User", title = "User DTO", description = "Public user", deprecated = false)
+public class UserDto {
+
+    @SchemaProperty(title = "ID", required = true, example = "USR-100", enumeration = {"USR-100", "USR-101"})
+    public String id;
+
+    @SchemaProperty(hidden = true)
+    public String internalDebug;
 }
-
-// Register during extension install:
-ctx.find(OpenApiSecurityRegistry.class)
-   .ifPresent(r -> r.add(new MyAuthContributor()));
 ```
 
-Return values from `requiredFor`:
+Supported field-level exclusion:
 
-| Return | Meaning |
-|---|---|
-| `null` | Handler is not secured by this contributor — skip |
-| `List.of()` | Requires authentication, no specific scopes |
-| `List.of("admin", "user")` | Requires one of these scopes (OpenAPI OR semantics) |
+- `@Schema(hidden = true)` / `@SchemaProperty(hidden = true)`
+- `@JsonIgnore`
+- `@JsonIgnoreProperties(...)`
+- `transient` / `static`
+
+## OIDC interop
+
+When `flash-ext-oidc` is installed, OpenAPI integrates automatically:
+
+- security scheme under `components.securitySchemes`
+- per-operation `security`
+- auto responses (class-based handlers):
+  - `401 Authentication required`
+  - `403` role/scope required messages when applicable
+
+Manual `@APIResponse` for the same status code always wins.
+
+## Notes
+
+- Operations are collected from final boot-time routes for class-based handlers with `@ApiOperation`.
+- Documented paths always match runtime paths (including scope namespaces/prefixes/rewrites).
+- Route path params are auto-discovered from `/{id}`.
+- Parameter annotations are mainly for query/header/cookie enrichment.
+- Output responses are sorted by numeric status code.

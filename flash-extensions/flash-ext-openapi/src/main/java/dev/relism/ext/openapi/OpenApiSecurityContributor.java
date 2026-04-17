@@ -46,4 +46,12 @@ public interface OpenApiSecurityContributor {
      * </ul>
      */
     List<String> requiredFor(Class<?> handlerClass);
+
+    /**
+     * Optional auto-injected operation responses for handlers secured by this contributor.
+     * Key = HTTP status code, value = description.
+     */
+    default Map<Integer, String> autoResponsesFor(Class<?> handlerClass) {
+        return Map.of();
+    }
 }

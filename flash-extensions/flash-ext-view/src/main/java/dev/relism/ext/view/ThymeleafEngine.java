@@ -1,6 +1,5 @@
 package dev.relism.ext.view;
 
-import org.thymeleaf.IEngineConfiguration;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.context.IExpressionContext;
@@ -11,9 +10,10 @@ import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * {@link ViewEngine} bridge for Thymeleaf 3.x.
+ * Thymeleaf 3.x adapter for Flash SSR views.
  *
  * <p>Package-private — instantiated exclusively by {@link ViewEngineType#THYMELEAF}.
  *
@@ -41,12 +41,10 @@ import java.util.Map;
  *   <li>{@code null} model → empty context.</li>
  * </ul>
  */
-final class ThymeleafEngine implements ViewEngine, ViewEngineAdapter {
+final class ThymeleafEngine implements ViewEngineAdapter {
 
     private static final String PREFIX   = "/templates/";
     private static final String SUFFIX   = ".html";
-    private static final String FRAGMENT = " :: content";
-
     private final TemplateEngine engine;
 
     ThymeleafEngine(boolean cacheEnabled) {
@@ -65,13 +63,6 @@ final class ThymeleafEngine implements ViewEngine, ViewEngineAdapter {
     }
 
     @Override
-    public String render(String template, Object model, boolean fragment) {
-        Context ctx = new Context();
-        populateContext(ctx, model);
-        return engine.process(fragment ? template + FRAGMENT : template, ctx);
-    }
-
-    @Override
     public EngineCapabilities capabilities() {
         return new EngineCapabilities(true);
     }
@@ -80,16 +71,18 @@ final class ThymeleafEngine implements ViewEngine, ViewEngineAdapter {
     public RenderOutput render(ViewTarget target, Map<String, Object> model,
                                dev.relism.models.Request req,
                                dev.relism.models.Response res) {
-        String selector;
+        String template = target.template();
         if (target.kind() == ViewKind.PAGE) {
-            selector = target.template();
+            Context ctx = new Context();
+            populateContext(ctx, model);
+            return RenderOutput.html(engine.process(template, ctx));
         } else {
             String slot = target.slot();
-            selector = target.template() + " :: " + ((slot == null || slot.isBlank()) ? "content" : slot);
+            String fragment = (slot == null || slot.isBlank()) ? "content" : slot;
+            Context ctx = new Context();
+            populateContext(ctx, model);
+            return RenderOutput.html(engine.process(template, Set.of(fragment), ctx));
         }
-        Context ctx = new Context();
-        populateContext(ctx, model);
-        return RenderOutput.html(engine.process(selector, ctx));
     }
 
     private static void populateContext(Context ctx, Object model) {

@@ -1,24 +1,19 @@
 package dev.relism.ext.openapi;
 
-import java.lang.annotation.*;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * Declares a single response for an operation. Repeatable — use multiple
- * {@code @ApiResponse} annotations on the same handler to document several status codes.
- *
- * <pre>{@code
- * @ApiResponse(status = 200, description = "Blog created", schema = Blog.class)
- * @ApiResponse(status = 400, description = "Invalid input")
- * @ApiResponse(status = 409, description = "Slug already exists")
- * public class CreateBlog extends JacksonHandler { ... }
- * }</pre>
+ * Declares one OpenAPI response for a class-based handler operation.
  */
-@Repeatable(ApiResponses.class)
+@Repeatable(APIResponses.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface ApiResponse {
-    int    status();
+public @interface APIResponse {
+    String responseCode();
     String description() default "";
-    Class<?> schema()    default Void.class;
-    boolean useReturnType() default false;
+    Content content() default @Content;
 }

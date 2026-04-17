@@ -1,14 +1,44 @@
 # flash-ext-jackson
 
-Jackson JSON integration for the Flash HTTP server.
+Jackson JSON integration for Flash with an opinionated auto-marshal middleware.
 
 ## What it provides
 
 | Component | Description |
 |---|---|
-| `JacksonExtension` | Installs Jackson into the extension layer |
-| `JacksonHandler` | Base class for handlers that need JSON I/O |
-| Global exception handler | Maps `HttpException` → JSON error; all other exceptions → 500 |
+| `JacksonExtension` | Registers JSON services into `FlashContext` |
+| `Json` | JSON read/write helper (`body`, `bodyFrom`, `write`, `writeView`) |
+| `ObjectMapper` | Raw mapper escape hatch for advanced usage |
+| `JacksonMiddleware` | `autoJson()` middleware for automatic outbound JSON marshalling |
+
+Default mapper behavior (`new JacksonExtension()`):
+
+- auto-discovers Jackson modules on classpath (`findAndAddModules()`)
+- includes Java Time support (`jackson-datatype-jsr310`)
+- writes date/time values as ISO-8601 strings (not numeric timestamps)
+
+## Recommended default
+
+Install the extension, then apply `autoJson()` once at app or scope level.
+
+```java
+JacksonExtension jackson = new JacksonExtension();
+
+FlashApp app = FlashApp.create(8080)
+    .install(jackson)
+    .use(jackson.autoJson());
+
+app.startAndBlock();
+```
+
+Behavior of `autoJson()`:
+
+- pass-through: `null`, `Response`, `byte[]`, `String`, `CharSequence`
+- any other return value: serialize to JSON `byte[]`
+- sets `Content-Type: application/json` for marshalled responses
+- serialization failures throw `IllegalStateException`
+
+This keeps handlers concise while preserving Flash's direct byte write path.
 
 ## Installation
 
@@ -16,21 +46,43 @@ Jackson JSON integration for the Flash HTTP server.
 <dependency>
     <groupId>dev.relism</groupId>
     <artifactId>flash-ext-jackson</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.1-indev2</version>
 </dependency>
 ```
 
+## Json helper API
+
+Use `Json` when you want explicit, local control in a handler.
+
 ```java
-FlashApp.create(8080)
-    .install(new JacksonExtension())
-    .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
-    .start();
+@POST("/users")
+public final class CreateUser extends RequestHandler {
+    private Json json;
+
+    @Override
+    protected void onInit() {
+        json = require(Json.class);
+    }
+
+    @Override
+    public Object handle(Request req, Response res) throws Exception {
+        CreateUserBody body = json.body(req, CreateUserBody.class);
+        UserDto created = service.create(body);
+        res.status(201);
+        return json.write(res, created);
+    }
+}
 ```
 
-Install order is irrelevant — Flash's two-phase extension model ensures `ObjectMapper` is
-resolved before any extension that calls `ctx.require(ObjectMapper.class)` needs it.
+Methods:
 
-### Custom mapper
+- `body(req, Type.class)` -> parse from `req.body().bytes()`
+- `bodyFrom(req, Type.class)` -> parse from `req.body().stream()`
+- `write(res, obj)` -> writes JSON string and sets JSON content type
+- `writeView(res, obj, View.class)` -> JSON with Jackson `@JsonView`
+- `mapper()` -> raw `ObjectMapper`
+
+## Custom mapper
 
 ```java
 ObjectMapper mapper = JsonMapper.builder()
@@ -42,63 +94,23 @@ FlashApp.create(8080)
     .install(new JacksonExtension(mapper));
 ```
 
-## JacksonHandler
+## Scope usage
 
-Extend `JacksonHandler` to get `bodyAs` and `json` helpers without constructor boilerplate.
-The `ObjectMapper` is injected once at startup and shared across all subclasses.
-
-```java
-@Route(method = HttpMethod.POST, path = "/api/blogs")
-@ApiOperation(summary = "Create blog")
-@ApiResponse(status = 201, description = "Created", schema = Blog.class)
-@ApiResponse(status = 400, description = "Invalid body")
-public class CreateBlog extends JacksonHandler {
-
-    @Override
-    public Object handle(Request req, Response res) throws Exception {
-        CreateBlogRequest body = bodyAs(req, CreateBlogRequest.class);
-        Blog created = service.create(body);
-        res.status(201);
-        return json(res, created);         // sets Content-Type: application/json
-    }
-}
-```
-
-### Methods
-
-| Method | Description |
-|---|---|
-| `bodyAs(req, Type.class)` | Deserializes the request body; throws `HttpException` 400 on parse errors |
-| `json(res, obj)` | Serializes `obj`, sets `Content-Type: application/json`, returns the JSON string |
-| `jsonView(res, obj, View.class)` | Like `json` but applies a Jackson `@JsonView` filter |
-
-## Exception handling
-
-`JacksonExtension` installs a global exception handler that applies to every route:
-
-```
-HttpException(status, message)  →  HTTP <status>  {"error": "<message>"}
-Any other Throwable             →  HTTP 500        {"error": "Internal Server Error"}
-```
-
-To throw a handled HTTP error from any handler:
+`autoJson()` works the same at scope level:
 
 ```java
-throw HttpException.notFound("Blog not found");
-throw HttpException.badRequest("Missing field: title");
-throw HttpException.unauthorized();
-throw HttpException.forbidden();
-```
+JacksonExtension jackson = new JacksonExtension();
 
-## Lambda routes
-
-For lambda-style routes, use the `ObjectMapper` directly from the context:
-
-```java
-ObjectMapper mapper = app.ctx().require(ObjectMapper.class);
-
-app.get("/api/status", (req, res) -> {
-    res.type(ContentType.JSON);
-    return mapper.writeValueAsString(Map.of("status", "ok"));
+app.mount("/api", api -> {
+    api.use(jackson.autoJson());
+    api.get("/health", (req, res) -> Map.of("ok", true));
 });
 ```
+
+If you need to pull it from context, `JacksonMiddleware` is also provided as a service
+after the app boots (same lifecycle model as other extension-provided services).
+
+## Notes
+
+- Install order is irrelevant (Flash two-phase extension lifecycle).
+- `autoJson()` and OpenAPI are intentionally decoupled.

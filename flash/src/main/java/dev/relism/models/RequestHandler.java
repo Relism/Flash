@@ -106,7 +106,7 @@ public abstract class RequestHandler {
     /**
      * Looks up an optional service from the {@link FlashContext}.
      * Identical to {@link #find} — prefer this name for expressive call sites
-     * ({@code optional(ViewEngine.class).ifPresent(...)}).
+     * ({@code optional(MyService.class).ifPresent(...)}).
      *
      * @param type the service class
      * @param <T>  the service type

@@ -53,4 +53,31 @@ class ViewModelTest {
         assertTrue(list instanceof List<?>);
         assertTrue(((List<?>) list).getFirst() instanceof Map<?, ?>);
     }
+
+    @Test
+    void with_nullKey_throws() {
+        ViewModel model = ViewModel.empty();
+        assertThrows(NullPointerException.class, () -> model.with(null, 1));
+    }
+
+    @Test
+    void withAll_nullOrEmpty_noop() {
+        ViewModel model = ViewModel.of("a", 1);
+
+        model.withAll(null);
+        model.withAll(Map.of());
+
+        assertEquals(1, model.toMap().size());
+        assertEquals(1, model.toMap().get("a"));
+    }
+
+    @Test
+    void merge_nullOther_returnsCopy() {
+        ViewModel base = ViewModel.of("a", 1);
+
+        ViewModel merged = base.merge(null);
+
+        assertNotSame(base, merged);
+        assertEquals(1, merged.toMap().get("a"));
+    }
 }

@@ -7,6 +7,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Mutable view-model builder used by the SSR view runtime.
+ *
+ * <p>Instances are typically created per request in {@code ViewHandler.render(...)} then passed
+ * to the renderer. The internal map preserves insertion order and is exposed as an immutable
+ * snapshot through {@link #toMap()}.
+ */
 public final class ViewModel {
     private final LinkedHashMap<String, Object> values;
 
@@ -22,11 +29,13 @@ public final class ViewModel {
         return empty().with(key, value);
     }
 
+    /** Adds or replaces a model entry. Nested maps/lists/view-models are normalized recursively. */
     public ViewModel with(String key, Object value) {
         values.put(Objects.requireNonNull(key, "key"), unwrapValue(value));
         return this;
     }
 
+    /** Bulk variant of {@link #with(String, Object)}. */
     public ViewModel withAll(Map<String, Object> values) {
         if (values == null || values.isEmpty()) return this;
         for (Map.Entry<String, Object> e : values.entrySet()) {
@@ -35,12 +44,17 @@ public final class ViewModel {
         return this;
     }
 
+    /**
+     * Creates a merged copy where {@code other} wins on key collisions.
+     * Both source models remain unchanged.
+     */
     public ViewModel merge(ViewModel other) {
         ViewModel merged = new ViewModel(new LinkedHashMap<>(this.values));
         if (other != null && !other.values.isEmpty()) merged.values.putAll(other.values);
         return merged;
     }
 
+    /** Immutable view over current values. */
     public Map<String, Object> toMap() {
         return Collections.unmodifiableMap(values);
     }
@@ -48,6 +62,10 @@ public final class ViewModel {
     static ViewModel copyOf(ViewModel source) {
         if (source == null || source.values.isEmpty()) return empty();
         return new ViewModel(new LinkedHashMap<>(source.values));
+    }
+
+    static ViewModel owned(LinkedHashMap<String, Object> values) {
+        return new ViewModel(values);
     }
 
     static Object unwrapValue(Object value) {

@@ -1,6 +1,5 @@
 package dev.relism.ext.view;
 
-import dev.relism.http.ContentType;
 import dev.relism.models.Request;
 import dev.relism.models.RequestHandler;
 import dev.relism.models.Response;
@@ -29,9 +28,9 @@ class ViewTargetResolverTest {
         }
     }
 
-    @GET("/legacy")
-    @View(value = "legacy/home", contentType = ContentType.TEXT_PLAIN, fragment = true)
-    static class LegacyHandler extends RequestHandler {
+    @GET("/partial-default-slot")
+    @Partial(template = "fragments/card")
+    static class DefaultSlotPartialHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -72,13 +71,30 @@ class ViewTargetResolverTest {
     }
 
     @Test
-    void resolve_legacyView_mapsToResolvedTarget() {
-        ViewTargetResolver.ResolvedView resolved = ViewTargetResolver.resolve(LegacyHandler.class, EngineCapabilities.NONE);
+    void resolve_partial_withoutSlot_defaultsToEmptySlot() {
+        ViewTargetResolver.ResolvedView resolved = ViewTargetResolver.resolve(DefaultSlotPartialHandler.class, new EngineCapabilities(true));
 
         assertNotNull(resolved);
-        assertTrue(resolved.legacy());
-        assertEquals(ContentType.TEXT_PLAIN, resolved.contentType());
         assertEquals(ViewKind.PARTIAL, resolved.target().kind());
+        assertEquals("", resolved.target().slot());
+    }
+
+    @GET("/blank-page")
+    @Page("   ")
+    static class BlankPageHandler extends RequestHandler {
+        @Override
+        public Object handle(Request request, Response response) {
+            return null;
+        }
+    }
+
+    @GET("/blank-partial")
+    @Partial(template = "   ")
+    static class BlankPartialTemplateHandler extends RequestHandler {
+        @Override
+        public Object handle(Request request, Response response) {
+            return null;
+        }
     }
 
     @Test
@@ -91,5 +107,17 @@ class ViewTargetResolverTest {
     void resolve_viewAnnotationWithoutRoute_fails() {
         assertThrows(IllegalStateException.class,
                 () -> ViewTargetResolver.resolve(NoRouteHandler.class, new EngineCapabilities(true)));
+    }
+
+    @Test
+    void resolve_blankPageTemplate_fails() {
+        assertThrows(IllegalStateException.class,
+                () -> ViewTargetResolver.resolve(BlankPageHandler.class, new EngineCapabilities(true)));
+    }
+
+    @Test
+    void resolve_blankPartialTemplate_fails() {
+        assertThrows(IllegalStateException.class,
+                () -> ViewTargetResolver.resolve(BlankPartialTemplateHandler.class, new EngineCapabilities(true)));
     }
 }
