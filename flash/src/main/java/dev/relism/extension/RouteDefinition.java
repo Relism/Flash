@@ -4,6 +4,8 @@ import dev.relism.http.HttpMethod;
 import dev.relism.models.RequestHandler;
 import dev.relism.routing.Middleware;
 
+import java.util.List;
+
 /**
  * Immutable snapshot of a route captured during the builder phase.
  *
@@ -15,7 +17,7 @@ import dev.relism.routing.Middleware;
  * @param path                fully resolved path (namespace already prepended for scope routes)
  * @param handler             SimpleHandler for lambdas, user handler for class-based
  * @param scopeMiddlewares    middlewares from {@link FlashScope#use} (empty for app-level routes)
- * @param explicitMiddlewares middlewares from {@link dev.relism.routing.RouteHandle#with}
+ * @param explicitMiddlewares middlewares passed inline at registration ({@code app.get(path, handler, mw...)})
  * @param classBasedHandler   true → needs annotation processing + context binding
  * @param ctx                 the FlashContext for this route's binding and processors
  * @param namespace           logical namespace for route events ("/" for app, "/api" for scope, etc.)
@@ -24,8 +26,8 @@ record RouteDefinition(
         HttpMethod method,
         String path,
         RequestHandler handler,
-        Middleware[] scopeMiddlewares,
-        Middleware[] explicitMiddlewares,
+        List<Middleware> scopeMiddlewares,
+        List<Middleware> explicitMiddlewares,
         boolean classBasedHandler,
         FlashContext ctx,
         String namespace

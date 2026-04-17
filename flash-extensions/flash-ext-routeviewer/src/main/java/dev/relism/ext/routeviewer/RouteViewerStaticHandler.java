@@ -28,11 +28,11 @@ class RouteViewerStaticHandler {
     Object handle(Request req, Response res) throws IOException {
         if (cached == null) cached = load();
         if (cached == null) {
-            res.setStatusCode(404);
+            res.status(404);
             return null;
         }
-        res.setStatusCode(200);
-        res.setContentType(contentType);
+        res.status(200);
+        res.type(contentType);
         res.header("Cache-Control", "public, max-age=3600");
         return cached;
     }

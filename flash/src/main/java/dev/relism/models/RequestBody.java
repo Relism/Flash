@@ -41,19 +41,16 @@ public final class RequestBody {
         this.preBufLen     = preBufLen;
     }
 
-    static RequestBody of(byte[] bytes) {
-        RequestBody b = new RequestBody(null, bytes.length, null, 0, 0);
-        b.resolved = bytes;
-        return b;
+    /** Pre-resolved body: test payloads and empty body — skips all I/O. */
+    private RequestBody(byte[] preResolved) {
+        this(null, preResolved.length, null, 0, 0);
+        this.resolved = preResolved;
     }
 
-    private static final RequestBody EMPTY_INSTANCE;
-    static {
-        EMPTY_INSTANCE = new RequestBody(null, 0, null, 0, 0);
-        EMPTY_INSTANCE.resolved = EMPTY_BYTES;
-    }
+    private static final RequestBody EMPTY = new RequestBody(EMPTY_BYTES);
 
-    static RequestBody empty() { return EMPTY_INSTANCE; }
+    static RequestBody of(byte[] bytes) { return new RequestBody(bytes); }
+    static RequestBody empty()          { return EMPTY; }
 
     /** {@code true} if the body has zero bytes ({@code Content-Length: 0} or no body). */
     public boolean isEmpty() { return contentLength == 0; }

@@ -16,17 +16,15 @@ import java.util.concurrent.TimeUnit;
  * time — the resolver lambda is captured directly from the registry (no runtime map lookup):
  * <pre>{@code
  * // 50 req/s per IP — fixed window (default)
- * app.get("/api/search", handler)
- *    .with(guard.limit("ip", 50, 1, TimeUnit.SECONDS));
+ * app.get("/api/search", handler, guard.limit("ip", 50, 1, TimeUnit.SECONDS));
  *
  * // 10 req/min per authenticated user — token bucket
- * app.post("/api/export", handler)
- *    .with(guard.limit("auth_user", 10, 1, TimeUnit.MINUTES, LimitStrategy.TOKEN_BUCKET));
+ * app.post("/api/export", handler, guard.limit("auth_user", 10, 1, TimeUnit.MINUTES, LimitStrategy.TOKEN_BUCKET));
  * }</pre>
  *
- * <p>The resolver name is looked up once here (at {@code .with(guard.limit(...))} call time,
- * i.e. during app wiring, not on each request). If the name is not registered,
- * {@link dev.relism.exceptions.InitializationException} is thrown immediately.
+ * <p>The resolver name is looked up once here (at wiring time, not on each request).
+ * If the name is not registered, {@link dev.relism.exceptions.InitializationException}
+ * is thrown immediately.
  */
 public final class Guard {
 

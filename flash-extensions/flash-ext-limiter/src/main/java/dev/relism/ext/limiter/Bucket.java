@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * <ul>
  *   <li><b>FIXED_WINDOW</b>: {@code slot0} = packed {@code (epoch << 32 | count)},
  *       {@code slot1} unused.</li>
+ *   <li><b>SLIDING_WINDOW</b>: {@code slot0} = packed {@code (epoch << 32 | count)},
+ *       {@code slot1} = request count from the immediately preceding epoch.</li>
  *   <li><b>TOKEN_BUCKET</b>: {@code slot0} = tokens × 1000 (scaled),
  *       {@code slot1} = last-refill timestamp (ms since epoch).</li>
  * </ul>

@@ -46,7 +46,7 @@ class HttpServerConcurrencyTest {
             return new Response(200, body, ContentType.TEXT_PLAIN);
         });
 
-        app.start().get(5, TimeUnit.SECONDS);
+        app.start();
 
         httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -188,7 +188,7 @@ class HttpServerConcurrencyTest {
             freshApp.get("/route" + idx, (req, res) -> "handler" + idx);
         }
 
-        freshApp.start().get(5, TimeUnit.SECONDS);
+        freshApp.start();
 
         int count = 20;
         ExecutorService pool = Executors.newFixedThreadPool(count);

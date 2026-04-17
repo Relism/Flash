@@ -58,10 +58,23 @@ class ResponseTest {
     }
 
     @Test
-    void setBody_withObjectConvertedToString() {
+    void setBody_withString() {
         Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
-        r.setBody(12345);
-        assertArrayEquals("12345".getBytes(StandardCharsets.UTF_8), r.getBody());
+        r.setBody("hello");
+        assertArrayEquals("hello".getBytes(StandardCharsets.UTF_8), r.getBody());
+    }
+
+    @Test
+    void setBody_withCharSequence() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        r.setBody(new StringBuilder("hi"));
+        assertArrayEquals("hi".getBytes(StandardCharsets.UTF_8), r.getBody());
+    }
+
+    @Test
+    void setBody_withUnsupportedType_throws() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        assertThrows(IllegalArgumentException.class, () -> r.setBody(12345));
     }
 
     @Test

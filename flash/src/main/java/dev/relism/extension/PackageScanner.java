@@ -2,7 +2,7 @@ package dev.relism.extension;
 
 import dev.relism.exceptions.InitializationException;
 import dev.relism.models.RequestHandler;
-import dev.relism.routing.Route;
+import dev.relism.routing.Routes;
 
 import java.io.File;
 import java.net.URL;
@@ -14,7 +14,8 @@ import java.util.jar.JarFile;
 
 /**
  * Minimal classpath scanner used by {@link FlashApp#scan} and {@link FlashScope#scan}.
- * Finds all classes in a package that extend {@link RequestHandler} and carry {@link Route @Route}.
+ * Finds {@link RequestHandler} subclasses in a package that carry a routing annotation
+ * ({@link Route @Route} or shorthand {@code @GET}, {@code @POST}, …).
  * Supports both exploded directories (development) and fat JARs (deployment).
  *
  * <p><b>Fail-fast:</b> if the package does not exist, contains no handlers, or a handler
@@ -26,8 +27,7 @@ final class PackageScanner {
     private PackageScanner() {}
 
     /**
-     * Returns all {@link RequestHandler} subclasses in {@code packageName} that carry
-     * {@link Route @Route}.
+     * Handlers in {@code packageName} that have {@link Routes#of(Class) resolvable} route metadata.
      *
      * @throws InitializationException if the package is empty, does not exist, or a
      *                                  handler class fails to load
@@ -76,8 +76,8 @@ final class PackageScanner {
 
         if (result.isEmpty())
             throw new InitializationException(
-                    "scan(\"" + packageName + "\") — no @Route handlers found. " +
-                    "Ensure handler classes extend RequestHandler, carry @Route, are not abstract, " +
+                    "scan(\"" + packageName + "\") — no routable handlers found. " +
+                    "Ensure classes extend RequestHandler, declare @Route or @GET/@POST/…, are not abstract, " +
                     "and have a public no-arg constructor.");
 
         return result;
@@ -99,10 +99,11 @@ final class PackageScanner {
 
     private static void scanJar(JarFile jar, String resourcePath, String packageName,
                                   ClassLoader cl, List<Class<?>> result, List<String> errors) {
+        String prefix = resourcePath + "/";
         Enumeration<JarEntry> entries = jar.entries();
         while (entries.hasMoreElements()) {
             String name = entries.nextElement().getName();
-            if (name.startsWith(resourcePath) && name.endsWith(".class") && !isAnonymous(name)) {
+            if (name.startsWith(prefix) && name.endsWith(".class") && !isAnonymous(name)) {
                 String className = name.replace('/', '.').replace(".class", "");
                 tryLoad(className, cl, result, errors);
             }
@@ -129,7 +130,7 @@ final class PackageScanner {
             Class<?> cls = cl.loadClass(className);
             if (!RequestHandler.class.isAssignableFrom(cls)) return;
             if (java.lang.reflect.Modifier.isAbstract(cls.getModifiers())) return;
-            if (!cls.isAnnotationPresent(Route.class)) return;
+            if (Routes.of(cls) == null) return;
 
             // Verify no-arg constructor exists — fail-fast if missing
             try {

@@ -20,4 +20,5 @@ public @interface ApiResponse {
     int    status();
     String description() default "";
     Class<?> schema()    default Void.class;
+    boolean useReturnType() default false;
 }

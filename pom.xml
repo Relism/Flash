@@ -15,6 +15,13 @@
         <module>flash-bench</module>
     </modules>
 
+    <distributionManagement>
+        <repository>
+            <id>Personal</id>
+            <url>https://maven.relism.dev/releases</url>
+        </repository>
+    </distributionManagement>
+
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
@@ -66,6 +73,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-limiter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-web-bundler</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

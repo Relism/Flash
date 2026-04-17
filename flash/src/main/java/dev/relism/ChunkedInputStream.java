@@ -49,17 +49,16 @@ final class ChunkedInputStream extends InputStream {
     }
 
     private int readChunkSize() throws IOException {
-        int size = 0, b;
+        long size = 0;
+        int  b;
         while ((b = src.read()) != -1) {
-            if      (b >= '0' && b <= '9') size = size * 16 + (b - '0');
-            else if (b >= 'a' && b <= 'f') size = size * 16 + (b - 'a' + 10);
-            else if (b >= 'A' && b <= 'F') size = size * 16 + (b - 'A' + 10);
-            else { // ';' (extensions) or '\r' — skip to end of line
-                while ((b = src.read()) != -1 && b != '\n');
-                break;
-            }
+            if      (b >= '0' && b <= '9') size = (size << 4) | (b - '0');
+            else if (b >= 'a' && b <= 'f') size = (size << 4) | (b - 'a' + 10);
+            else if (b >= 'A' && b <= 'F') size = (size << 4) | (b - 'A' + 10);
+            else { while ((b = src.read()) != -1 && b != '\n'); break; } // ext or \r\n
+            if (size > Integer.MAX_VALUE) throw new IOException("Chunk size exceeds 2 GB limit");
         }
-        return size;
+        return (int) size;
     }
 
     // Reads and discards trailer headers until the empty line that terminates the chunked body.

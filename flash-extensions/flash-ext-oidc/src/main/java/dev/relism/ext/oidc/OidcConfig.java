@@ -17,6 +17,7 @@ package dev.relism.ext.oidc;
  *         "https://keycloak.example.com/realms/myrealm",
  *         "my-app", "secret", "/auth/callback")
  *     .rolesClaimPath("realm_access.roles")   // Keycloak default
+ *     .scopeClaimPaths("scope,scp")           // default; supports many IdPs
  *     .build();
  *
  * // Authelia
@@ -24,6 +25,7 @@ package dev.relism.ext.oidc;
  *         "https://auth.example.com",
  *         "my-app", "secret", "/auth/callback")
  *     .rolesClaimPath("groups")
+ *     .scopeClaimPaths("scope,scp")
  *     .build();
  *
  * // Two tenants on one server
@@ -45,6 +47,7 @@ public final class OidcConfig {
     private final String           routePrefix;
     private final String           selfScheme;
     private final String           rolesClaimPath;
+    private final String           scopeClaimPaths;
     private final String           algorithm;
     private final String           postLogoutRedirectUri;
     private final OidcSessionStore sessionStore;
@@ -61,6 +64,7 @@ public final class OidcConfig {
         this.routePrefix           = b.routePrefix;
         this.selfScheme            = b.selfScheme;
         this.rolesClaimPath        = b.rolesClaimPath;
+        this.scopeClaimPaths       = b.scopeClaimPaths;
         this.algorithm             = b.algorithm;
         this.postLogoutRedirectUri = b.postLogoutRedirectUri;
         this.sessionStore          = b.sessionStore != null ? b.sessionStore
@@ -80,6 +84,8 @@ public final class OidcConfig {
     public String           routePrefix()           { return routePrefix; }
     public String           selfScheme()            { return selfScheme; }
     public String           rolesClaimPath()        { return rolesClaimPath; }
+    /** Comma-separated claim paths used to read OAuth2 scopes (default: {@code "scope,scp"}). */
+    public String           scopeClaimPaths()       { return scopeClaimPaths; }
     public String           algorithm()             { return algorithm; }
     public String           postLogoutRedirectUri() { return postLogoutRedirectUri; }
     public OidcSessionStore sessionStore()          { return sessionStore; }
@@ -102,6 +108,7 @@ public final class OidcConfig {
      * OIDC_ROUTE_PREFIX         default: /auth
      * OIDC_SELF_SCHEME          default: http
      * OIDC_ROLES_CLAIM          default: realm_access.roles
+     * OIDC_SCOPE_CLAIMS         default: scope,scp
      * OIDC_ALGORITHM            default: RS256
      * OIDC_POST_LOGOUT_REDIRECT default: /
      * </pre>
@@ -113,6 +120,7 @@ public final class OidcConfig {
                 .routePrefix          (envOr("OIDC_ROUTE_PREFIX",          "/auth"))
                 .selfScheme           (envOr("OIDC_SELF_SCHEME",           "http"))
                 .rolesClaimPath       (envOr("OIDC_ROLES_CLAIM",           "realm_access.roles"))
+                .scopeClaimPaths      (envOr("OIDC_SCOPE_CLAIMS",          "scope,scp"))
                 .algorithm            (envOr("OIDC_ALGORITHM",             "RS256"))
                 .postLogoutRedirectUri(envOr("OIDC_POST_LOGOUT_REDIRECT",  "/"))
                 .clientAuthMethod(ClientAuthMethod.valueOf(
@@ -179,6 +187,7 @@ public final class OidcConfig {
         private String           routePrefix           = "/auth";
         private String           selfScheme            = "http";
         private String           rolesClaimPath        = "realm_access.roles";
+        private String           scopeClaimPaths       = "scope,scp";
         private String           algorithm             = "RS256";
         private String           postLogoutRedirectUri = "/";
         private OidcSessionStore sessionStore;
@@ -203,6 +212,8 @@ public final class OidcConfig {
         public Builder https()                                      { return selfScheme("https"); }
         /** Dot-separated path to the roles array in JWT claims (default: {@code realm_access.roles}). */
         public Builder rolesClaimPath(String path)                  { this.rolesClaimPath = path;                         return this; }
+        /** Comma-separated claim paths used to resolve OAuth2 scopes (default: {@code scope,scp}). */
+        public Builder scopeClaimPaths(String paths)                { this.scopeClaimPaths = paths;                       return this; }
         /** JWS algorithm (default: {@code RS256}). */
         public Builder algorithm(String algorithm)                  { this.algorithm = algorithm;                         return this; }
         /** Where to redirect after logout (default: {@code /}). */

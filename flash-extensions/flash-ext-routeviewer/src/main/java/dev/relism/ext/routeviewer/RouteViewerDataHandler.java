@@ -23,7 +23,7 @@ class RouteViewerDataHandler {
 
     Object handle(Request req, Response res) {
         if (cachedJson == null) cachedJson = GraphSerializer.toJson(graph);
-        res.setContentType(ContentType.JSON);
+        res.type(ContentType.JSON);
         res.header("Cache-Control", "no-cache");
         return cachedJson;
     }

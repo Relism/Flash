@@ -15,8 +15,9 @@ from class-based handlers annotated with `@ApiOperation`.
 
 ## Dependencies
 
-Requires `flash-ext-jackson` installed **before** this extension (shares its `ObjectMapper` from context).
-If `flash-ext-oidc` is installed **after** this extension, OIDC security schemes are injected automatically.
+Requires `flash-ext-jackson` (shares its `ObjectMapper` from context).
+If `flash-ext-oidc` is also installed, OIDC security schemes are injected automatically.
+Install order is irrelevant — the two-phase extension model handles dependency ordering.
 
 ```xml
 <dependency>
@@ -51,7 +52,7 @@ All annotations target the **handler class** (`@Target(ElementType.TYPE)`).
 ### @ApiOperation
 
 ```java
-@Route(method = HttpMethod.GET, path = "/api/blogs")
+@GET("/api/blogs")
 @ApiOperation(
     summary     = "List all blogs",
     description = "Returns a paginated list of published blog posts.",
@@ -98,7 +99,7 @@ Repeatable — declare query, path, header, or cookie parameters explicitly.
 public class GetBlog extends JacksonHandler { ... }
 ```
 
-> Path parameters declared in `@Route(path = "/blogs/{id}")` are extracted and added automatically
+> Path parameters in the route (e.g. `@GET("/blogs/{id}")` or `@Route(path = "/blogs/{id}")`) are extracted automatically
 > as required path parameters — you only need `@ApiParam` for query / header / cookie params.
 
 `@ApiParam` is repeatable. If you prefer grouping them, `@ApiParams({ @ApiParam(...), @ApiParam(...) })` is

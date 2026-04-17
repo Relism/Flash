@@ -137,6 +137,16 @@ public class Response {
         return this;
     }
 
+    /**
+     * Adds a pre-encoded header (e.g. a static {@code "X-RateLimit-Limit: 100\r\n"} byte array
+     * pre-built at boot time). Zero-alloc on both the call path and the write path.
+     */
+    public Response header(byte[] preEncoded) {
+        if (headers == null) headers = new ArrayList<>();
+        headers.add(preEncoded);
+        return this;
+    }
+
     // -------------------------------------------------------------------------
     // State queries
     // -------------------------------------------------------------------------
@@ -147,14 +157,21 @@ public class Response {
     // Internal setters used by HttpServer for handler return values
     // -------------------------------------------------------------------------
 
-    /** Sets the body from an arbitrary handler return value. */
+    /**
+     * Sets the body from a handler return value. Accepted types: {@code byte[]},
+     * {@link String}, {@link CharSequence}. Any other non-null type throws
+     * {@link IllegalArgumentException} — return a {@code Response} directly, or
+     * serialize to {@code String}/{@code byte[]} before returning.
+     */
     public Response setBody(Object body) {
-        if (body instanceof byte[] bytes) this.body = bytes;
-        else if (body != null)            this.body = body.toString().getBytes(StandardCharsets.UTF_8);
+        if (body instanceof byte[] bytes)   { this.body = bytes; return this; }
+        if (body instanceof String s)       { this.body = s.getBytes(StandardCharsets.UTF_8); return this; }
+        if (body instanceof CharSequence s) { this.body = s.toString().getBytes(StandardCharsets.UTF_8); return this; }
+        if (body != null) throw new IllegalArgumentException(
+                "Handler returned unsupported type: " + body.getClass().getName()
+                + " — return String, byte[], Response, or null");
         return this;
     }
-
-    public void setContentType(ContentType ct) { this.contentType = ct.getBytes(); }
 
     /** Returns custom headers, or an empty list if none were added. */
     public List<byte[]> getHeaders() { return headers != null ? headers : List.of(); }
@@ -162,6 +179,6 @@ public class Response {
     /** Writes pre-encoded custom headers directly to {@code out}. Zero-alloc when no headers are set. */
     public void writeHeaders(OutputStream out) throws IOException {
         if (headers == null) return;
-        for (int i = 0, n = headers.size(); i < n; i++) out.write(headers.get(i));
+        for (byte[] header : headers) out.write(header);
     }
 }

@@ -1,6 +1,5 @@
 package dev.relism.routing;
 
-import dev.relism.http.ContentType;
 import dev.relism.http.HttpMethod;
 import dev.relism.models.Request;
 import dev.relism.models.RequestHandler;
@@ -52,7 +51,7 @@ class AbstractRouterTest {
     void doRegister_classBasedHandler_addsRoute() {
         DummyRouter router = new DummyRouter();
         ProfileHandler handler = new ProfileHandler();
-        Route ann = ProfileHandler.class.getAnnotation(Route.class);
+        Route ann = Routes.of(ProfileHandler.class);
 
         router.doRegister(ann.method(), ann.path(), handler, new Middleware[0]);
 

@@ -20,13 +20,15 @@ Jackson JSON integration for the Flash HTTP server.
 </dependency>
 ```
 
-Install before any extension that needs JSON (e.g. `flash-ext-openapi`, `flash-ext-oidc`):
-
 ```java
 FlashApp.create(8080)
     .install(new JacksonExtension())
-    // ... other extensions
+    .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
+    .start();
 ```
+
+Install order is irrelevant — Flash's two-phase extension model ensures `ObjectMapper` is
+resolved before any extension that calls `ctx.require(ObjectMapper.class)` needs it.
 
 ### Custom mapper
 
@@ -56,7 +58,7 @@ public class CreateBlog extends JacksonHandler {
     public Object handle(Request req, Response res) throws Exception {
         CreateBlogRequest body = bodyAs(req, CreateBlogRequest.class);
         Blog created = service.create(body);
-        res.setStatusCode(201);
+        res.status(201);
         return json(res, created);         // sets Content-Type: application/json
     }
 }
@@ -96,7 +98,7 @@ For lambda-style routes, use the `ObjectMapper` directly from the context:
 ObjectMapper mapper = app.ctx().require(ObjectMapper.class);
 
 app.get("/api/status", (req, res) -> {
-    res.setContentType(ContentType.JSON);
+    res.type(ContentType.JSON);
     return mapper.writeValueAsString(Map.of("status", "ok"));
 });
 ```

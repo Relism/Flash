@@ -1,15 +1,16 @@
 package dev.relism.models;
 
-import lombok.RequiredArgsConstructor;
-
 /**
- * A concrete implementation of {@link RequestHandler} that delegates to a functional interface.
- * This allows the use of lambdas while keeping the base {@link RequestHandler} as an abstract class.
+ * Delegates {@link #handle} to a {@link FunctionalHandler} so lambdas can be used without
+ * relying on Lombok-generated constructors (IDE-safe, annotation-processing independent).
  */
-@RequiredArgsConstructor
 public class SimpleHandler extends RequestHandler {
 
     private final FunctionalHandler delegate;
+
+    public SimpleHandler(FunctionalHandler delegate) {
+        this.delegate = delegate;
+    }
 
     @Override
     public Object handle(Request request, Response response) throws Exception {

@@ -21,20 +21,21 @@ import java.util.UUID;
 /**
  * Full OIDC Authorization Code + PKCE flow for Flash.
  *
- * <p>On {@link #install}, the extension:
+ * <p>At {@link #provide}, the extension:
  * <ol>
  *   <li>Fetches the provider discovery document — fail-fast at startup.</li>
- *   <li>Registers three routes on the {@link FlashApp}:
- *     <ul>
- *       <li>{@code GET  {prefix}/login}    — builds the authorization URL and redirects.</li>
- *       <li>{@code GET  {prefix}/callback} — exchanges the code, creates a session, redirects.</li>
- *       <li>{@code POST {prefix}/logout}   — invalidates the session, redirects to the provider's
- *           end-session endpoint (if available) or to {@link OidcConfig#postLogoutRedirectUri()}.</li>
- *     </ul>
- *   </li>
  *   <li>Provides {@link OidcMiddleware} and {@link JwtValidator} in the context.</li>
- *   <li>Registers an annotation processor for {@link Authenticated} and {@link RolesAllowed}.</li>
+ *   <li>Registers annotation processors for {@link Authenticated}, {@link RolesAllowed}
+ *       and {@link ScopesAllowed}.</li>
  * </ol>
+ *
+ * <p>At {@link #routes}, three routes are registered:
+ * <ul>
+ *   <li>{@code GET  {prefix}/login}    — builds the authorization URL and redirects.</li>
+ *   <li>{@code GET  {prefix}/callback} — exchanges the code, creates a session, redirects.</li>
+ *   <li>{@code POST {prefix}/logout}   — invalidates the session, redirects to provider
+ *       end-session endpoint (if available) or to {@link OidcConfig#postLogoutRedirectUri()}.</li>
+ * </ul>
  *
  * <pre>{@code
  * // Keycloak
@@ -54,41 +55,48 @@ public class OidcExtension implements FlashExtension {
 
     private final OidcConfig config;
 
+    // Initialized in provide(), used in routes() — private to this extension instance.
+    private OidcProviderMetadata meta;
+    private OidcStateStore       stateStore;
+    private TokenClient          tokenClient;
+    private JwtValidator         validator;
+    private OidcMiddleware       oidcMw;
+
     public OidcExtension(OidcConfig config) {
         this.config = config;
     }
 
-    @Override
-    public void install(FlashRegistrar app, FlashContext ctx) {
+    // ── Phase 1: services ─────────────────────────────────────────────────────
 
-        // 1. Build the shared HttpClient (optionally with TLS verification disabled)
+    @Override
+    public void provide(FlashContext ctx) {
         HttpClient http = buildHttpClient(config);
 
-        // 2. Discover provider endpoints (blocking; fail fast at startup)
-        OidcProviderMetadata meta;
+        // Discover provider endpoints (blocking; fail fast at startup).
         try {
             meta = DiscoveryClient.fetch(config.issuer(), http);
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "OIDC discovery failed for issuer: " + config.issuer(), e);
+            throw new IllegalStateException("OIDC discovery failed for issuer: " + config.issuer(), e);
         }
 
-        // 3. JWKS-backed access-token validator
-        JwtValidator validator = new JwtValidator(
-                meta.jwksUri(), config.issuer(), config.clientId(),
-                config.algorithm(), http);
+        validator   = new JwtValidator(meta.jwksUri(), config.issuer(), config.clientId(), config.algorithm(), http);
+        stateStore  = new OidcStateStore();
+        tokenClient = new TokenClient(http, config);
+        oidcMw      = new OidcMiddleware(validator, config, meta, tokenClient);
 
-        // 4. PKCE state store (per extension instance — safe for multi-tenant)
-        OidcStateStore stateStore = new OidcStateStore();
-
-        // 5. Shared token client (injected into middleware for refresh)
-        TokenClient tokenClient = new TokenClient(http, config);
-
-        // 6. Middleware (also exposed in context for manual lambda-route protection)
-        OidcMiddleware oidcMw = new OidcMiddleware(validator, config, meta, tokenClient);
         ctx.provide(OidcMiddleware.class, oidcMw);
         ctx.provide(JwtValidator.class,   validator);
 
+        ctx.addAnnotationProcessor(handlerClass -> {
+            OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
+            return policy != null ? List.of(oidcMw.policyMiddleware(policy)) : List.of();
+        });
+    }
+
+    // ── Phase 2: routes ───────────────────────────────────────────────────────
+
+    @Override
+    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
         String prefix = config.routePrefix();
 
         // ── GET {prefix}/login ────────────────────────────────────────────────
@@ -97,11 +105,10 @@ public class OidcExtension implements FlashExtension {
         app.get(prefix + "/login", (req, res) -> {
             String verifier  = PkceUtils.generateVerifier();
             String challenge = PkceUtils.computeChallenge(verifier);
-            String state     = UUID.randomUUID().toString(); // CSRF protection
-            String nonce     = UUID.randomUUID().toString(); // ID token replay protection
+            String state     = UUID.randomUUID().toString();
+            String nonce     = UUID.randomUUID().toString();
 
             String redirect = req.query("redirect");
-            // Only allow relative paths — prevents open-redirect attacks
             if (redirect == null || !redirect.startsWith("/")) redirect = "/";
 
             stateStore.put(state, redirect, verifier, nonce);
@@ -118,7 +125,7 @@ public class OidcExtension implements FlashExtension {
 
             res.redirect(authUrl);
             return null;
-        }).with();
+        });
 
         // ── GET {prefix}/callback ─────────────────────────────────────────────
         // Validates state, exchanges code for tokens, creates session, redirects.
@@ -154,32 +161,24 @@ public class OidcExtension implements FlashExtension {
             }
 
             Map<String, Object> claims = mergeClaims(tokens);
-
             OidcSession session = new OidcSession(
                     UUID.randomUUID().toString(),
-                    tokens.accessToken(),
-                    tokens.idToken(),
-                    tokens.refreshToken(),
-                    Instant.now().plusSeconds(tokens.expiresIn()),
-                    claims
-            );
+                    tokens.accessToken(), tokens.idToken(), tokens.refreshToken(),
+                    Instant.now().plusSeconds(tokens.expiresIn()), claims);
             config.sessionStore().save(session);
 
             res.header("Set-Cookie", sessionCookie(session.id()))
                .redirect(entry.originalUrl());
             return null;
-        }).with();
+        });
 
         // ── POST {prefix}/logout ──────────────────────────────────────────────
-        // Invalidates the local session and redirects to the provider's
-        // end_session_endpoint (with id_token_hint) if available.
+        // Invalidates the local session and redirects to end_session_endpoint.
         app.post(prefix + "/logout", (req, res) -> {
             String sessionId   = OidcMiddleware.cookieValue(req, "oidc_session");
             String idTokenHint = null;
 
             if (sessionId != null) {
-                config.sessionStore().find(sessionId)
-                        .ifPresent(s -> {});          // capture id_token before delete
                 OidcSession session = config.sessionStore().find(sessionId).orElse(null);
                 if (session != null) idTokenHint = session.idToken();
                 config.sessionStore().delete(sessionId);
@@ -199,25 +198,11 @@ public class OidcExtension implements FlashExtension {
                 location = config.postLogoutRedirectUri();
             }
 
-            res.header("Set-Cookie", clearCookie)
-               .redirect(location);
+            res.header("Set-Cookie", clearCookie).redirect(location);
             return null;
-        }).with();
-
-        // 5. Annotation processor for @Authenticated / @RolesAllowed
-        ctx.addAnnotationProcessor(handlerClass -> {
-            RolesAllowed roles = handlerClass.getAnnotation(RolesAllowed.class);
-            if (roles != null) return List.of(oidcMw.rolesMiddleware(roles.value()));
-
-            Authenticated auth = handlerClass.getAnnotation(Authenticated.class);
-            if (auth != null) return List.of(auth.optional()
-                    ? oidcMw.optionalMiddleware()
-                    : oidcMw.authenticatedMiddleware());
-
-            return List.of();
         });
 
-        // Register OpenAPI security scheme if flash-ext-openapi is on the classpath
+        // Register OpenAPI security scheme if flash-ext-openapi is on the classpath.
         try {
             OpenApiIntegration.register(ctx, config, meta);
         } catch (NoClassDefFoundError ignored) {
@@ -225,24 +210,16 @@ public class OidcExtension implements FlashExtension {
         }
     }
 
-    // -- Helpers --------------------------------------------------------------
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
      * Merges claims from both the access token and the ID token.
-     * The access token carries provider-specific data like {@code realm_access.roles};
-     * the ID token carries standard identity claims (sub, email, name, …).
      * ID token values win on conflict so that verified identity claims are authoritative.
      */
     private static Map<String, Object> mergeClaims(OidcTokenResponse tokens) {
         Map<String, Object> merged = new HashMap<>();
-        // Access token first — provides roles, resource_access, etc.
-        if (tokens.accessToken() != null) {
-            merged.putAll(JwtUtils.parseClaims(tokens.accessToken()));
-        }
-        // ID token overrides — its identity claims (sub, email, name, …) take priority.
-        if (tokens.idToken() != null) {
-            merged.putAll(JwtUtils.parseClaims(tokens.idToken()));
-        }
+        if (tokens.accessToken() != null) merged.putAll(JwtUtils.parseClaims(tokens.accessToken()));
+        if (tokens.idToken()     != null) merged.putAll(JwtUtils.parseClaims(tokens.idToken()));
         return Map.copyOf(merged);
     }
 
@@ -255,22 +232,18 @@ public class OidcExtension implements FlashExtension {
         if (!config.insecureTls()) return HttpClient.newHttpClient();
         try {
             TrustManager[] trustAll = { new X509TrustManager() {
-                public X509Certificate[] getAcceptedIssuers()                          { return new X509Certificate[0]; }
-                public void checkClientTrusted(X509Certificate[] c, String a)          {}
-                public void checkServerTrusted(X509Certificate[] c, String a)          {}
+                public X509Certificate[] getAcceptedIssuers()                 { return new X509Certificate[0]; }
+                public void checkClientTrusted(X509Certificate[] c, String a) {}
+                public void checkServerTrusted(X509Certificate[] c, String a) {}
             }};
-            SSLContext ctx = SSLContext.getInstance("TLS");
-            ctx.init(null, trustAll, new SecureRandom());
-            return HttpClient.newBuilder().sslContext(ctx).build();
+            SSLContext sslCtx = SSLContext.getInstance("TLS");
+            sslCtx.init(null, trustAll, new SecureRandom());
+            return HttpClient.newBuilder().sslContext(sslCtx).build();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create trust-all SSLContext", e);
         }
     }
 
-    /**
-     * Resolves the configured {@code redirectUri}. If it starts with {@code /},
-     * prepends {@code selfScheme://Host} from the current request.
-     */
     private String absoluteRedirectUri(dev.relism.models.Request req) {
         return absoluteSelf(req, config.redirectUri());
     }
@@ -291,7 +264,6 @@ public class OidcExtension implements FlashExtension {
     /**
      * Loaded lazily so that {@code flash-ext-openapi} classes are only resolved at
      * runtime when {@link dev.relism.ext.openapi.OpenApiSecurityRegistry} is actually on the classpath.
-     * If not present, the {@link NoClassDefFoundError} is caught at the call site.
      */
     private static final class OpenApiIntegration {
         static void register(dev.relism.extension.FlashContext ctx,
@@ -304,9 +276,6 @@ public class OidcExtension implements FlashExtension {
 
                    @Override
                    public java.util.Map<String, Object> schemeDefinition() {
-                       // Declare only the authorizationCode flow so Swagger UI shows
-                       // a single clean "Authorize" dialog instead of expanding every
-                       // grant type from the discovery document.
                        java.util.Map<String, String> scopesMap = new java.util.LinkedHashMap<>();
                        for (String s : config.scopes().split("\\s+")) {
                            if (!s.isBlank()) scopesMap.put(s, s);
@@ -322,19 +291,11 @@ public class OidcExtension implements FlashExtension {
                        return scheme;
                    }
 
-                   @Override
-                   public java.util.List<String> requiredFor(Class<?> handlerClass) {
-                       dev.relism.ext.oidc.RolesAllowed roles =
-                               handlerClass.getAnnotation(dev.relism.ext.oidc.RolesAllowed.class);
-                       if (roles != null) return java.util.Arrays.asList(roles.value());
-
-                       dev.relism.ext.oidc.Authenticated auth =
-                               handlerClass.getAnnotation(dev.relism.ext.oidc.Authenticated.class);
-                       if (auth != null) return java.util.List.of();
-
-                       return null; // not secured by this contributor
-                   }
-               }));
+                    @Override
+                    public java.util.List<String> requiredFor(Class<?> handlerClass) {
+                        return OidcAuthPolicy.openApiScopesFor(handlerClass);
+                    }
+                }));
         }
     }
 }

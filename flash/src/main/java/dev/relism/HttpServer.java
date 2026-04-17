@@ -19,7 +19,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread
@@ -38,7 +40,7 @@ class HttpServer implements ServerHandle {
     private final ExecutorService    executorService = Executors.newVirtualThreadPerTaskExecutor();
     private final Set<Socket>        activeSockets   = ConcurrentHashMap.newKeySet();
     private volatile boolean stopped = false;
-    private final CompletableFuture<Void> readyFuture = new CompletableFuture<>();
+    private final AtomicReference<Thread> acceptThread = new AtomicReference<>();
 
     private static final byte[] HTTP_1_1             = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CRLF                 = "\r\n".getBytes(StandardCharsets.UTF_8);
@@ -50,11 +52,9 @@ class HttpServer implements ServerHandle {
     private static final byte[] FINAL_CHUNK          = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] UNKNOWN_STATUS_SUFFIX = " Unknown".getBytes(StandardCharsets.UTF_8);
 
-    private static final byte[][] DIGITS = new byte[10][1];
-    static {
-        for (int i = 0; i < 10; i++)
-            DIGITS[i] = String.valueOf(i).getBytes(StandardCharsets.UTF_8);
-    }
+    // Per-thread scratch buffers — allocated once per VT, reused for every request.
+    private static final ThreadLocal<byte[]> LONG_BUF  = ThreadLocal.withInitial(() -> new byte[20]);
+    private static final ThreadLocal<byte[]> CHUNK_BUF = ThreadLocal.withInitial(() -> new byte[8192]);
 
     HttpServer(FlashConfiguration configuration, AbstractRouter router) throws IOException {
         this.configuration = configuration;
@@ -63,88 +63,95 @@ class HttpServer implements ServerHandle {
     }
 
     @Override
-    public CompletableFuture<Void> start() {
-        Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run);
-        return readyFuture;
+    public void start() {
+        acceptThread.set(Thread.ofPlatform().name("flash-accept-loop").daemon(false).start(this::run));
+    }
+
+    @Override
+    public void startAndBlock() {
+        start();
+        try { acceptThread.get().join(); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     private void run() {
-        try (executorService) {
-            readyFuture.complete(null);
-            while (!stopped) {
-                Socket clientSocket = serverSocket.accept();
-                process(clientSocket);
-            }
-        } catch (IOException e) {
-            if (!stopped) {
-                readyFuture.completeExceptionally(e);
-                log.error("Accept loop error", e);
+        while (!stopped) {
+            try {
+                process(serverSocket.accept());
+            } catch (IOException e) {
+                if (!stopped) log.error("Accept loop error", e);
             }
         }
     }
 
     @Override
     public CompletableFuture<Void> stop() {
-        stopped = true;
-        try { serverSocket.close(); } catch (IOException e) { log.error("Error closing server socket", e); }
-        activeSockets.forEach(s -> { try { s.close(); } catch (IOException ignored) {} });
-        executorService.shutdown();
-        try {
-            if (!executorService.awaitTermination(30, TimeUnit.SECONDS))
+        return CompletableFuture.runAsync(() -> {
+            stopped = true;
+            try { serverSocket.close(); } catch (IOException e) { log.error("Error closing server socket", e); }
+            activeSockets.forEach(s -> { try { s.close(); } catch (IOException ignored) {} });
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(30, TimeUnit.SECONDS))
+                    executorService.shutdownNow();
+            } catch (InterruptedException e) {
                 executorService.shutdownNow();
-        } catch (InterruptedException e) {
-            executorService.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        return CompletableFuture.completedFuture(null);
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 
     // ── Hot-path ─────────────────────────────────────────────────────────────
 
     private void process(Socket socket) {
-        activeSockets.add(socket);
-        executorService.submit(() -> {
-            try (socket;
-                    InputStream in = socket.getInputStream();
-                    OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
-                RequestParser parser = new RequestParser(
-                        configuration.getMaxHeaderBufferSize(),
-                        (InetSocketAddress) socket.getRemoteSocketAddress());
-                while (!stopped) {
-                    Request request = parser.parse(in);
-                    if (request == null) break;
+        try {
+            executorService.submit(() -> {
+                activeSockets.add(socket);
+                try (socket;
+                        InputStream  in  = socket.getInputStream();
+                        OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
+                    RequestParser parser = new RequestParser(
+                            configuration.getMaxHeaderBufferSize(),
+                            (InetSocketAddress) socket.getRemoteSocketAddress());
+                    while (!stopped) {
+                        Request request = parser.parse(in);
+                        if (request == null) break;
 
-                    boolean keepAlive = isKeepAlive(request);
-                    Response response = new Response(200, ContentType.TEXT_PLAIN);
+                        boolean  keepAlive = isKeepAlive(request);
+                        Response response  = new Response(200, ContentType.TEXT_PLAIN);
 
-                    RequestHandler handler = router.route(request);
-                    if (handler == null) handler = router.getNotFoundHandler();
+                        RequestHandler handler = router.route(request);
+                        if (handler == null) handler = router.getNotFoundHandler();
 
-                    try {
-                        Object result = handler.handle(request, response);
-                        if (result instanceof Response r) response = r;
-                        else if (result != null) response.setBody(result);
-                    } catch (Exception ex) {
-                        Object result = router.getExceptionHandler().handle(ex, request, response);
-                        if (result instanceof Response r) response = r;
-                        else if (result != null) response.setBody(result);
+                        try {
+                            Object result = handler.handle(request, response);
+                            if (result instanceof Response r) response = r;
+                            else if (result != null) response.setBody(result);
+                        } catch (Exception ex) {
+                            Object result = router.getExceptionHandler().handle(ex, request, response);
+                            if (result instanceof Response r) response = r;
+                            else if (result != null) response.setBody(result);
+                        }
+
+                        writeResponse(out, response, keepAlive);
+                        request.drain();
+                        if (!keepAlive) break;
                     }
-
-                    writeResponse(out, response, keepAlive);
-                    request.drain();
-                    if (!keepAlive) break;
+                } catch (IOException e) {
+                    if (!stopped) {
+                        if (e instanceof java.net.SocketException)
+                            log.debug("Connection closed: {}", e.getMessage());
+                        else
+                            log.error("I/O error handling request", e);
+                    }
+                } finally {
+                    activeSockets.remove(socket);
                 }
-            } catch (IOException e) {
-                if (!stopped) {
-                    if (e instanceof java.net.SocketException)
-                        log.debug("Connection closed: {}", e.getMessage());
-                    else
-                        log.error("I/O error handling request", e);
-                }
-            } finally {
-                activeSockets.remove(socket);
-            }
-        });
+            });
+        } catch (RejectedExecutionException ignored) {
+            // Executor already shut down — close the socket so the client isn't left hanging.
+            try { socket.close(); } catch (IOException e) { log.debug("Error closing socket on shutdown", e); }
+        }
     }
 
     private static boolean isKeepAlive(Request request) {
@@ -202,15 +209,18 @@ class HttpServer implements ServerHandle {
     }
 
     private static void writeLong(OutputStream out, long value) throws IOException {
-        if (value == 0) { out.write(DIGITS[0]); return; }
-        if (value < 0)  { out.write('-'); value = -value; }
-        long divisor = 1;
-        while (value / divisor >= 10) divisor *= 10;
-        while (divisor > 0) { out.write(DIGITS[(int) ((value / divisor) % 10)]); divisor /= 10; }
+        if (value == 0) { out.write('0'); return; }
+        byte[] buf = LONG_BUF.get();
+        int pos = buf.length;
+        boolean neg = value < 0;
+        if (neg) value = -value;
+        do { buf[--pos] = (byte) ('0' + value % 10); value /= 10; } while (value > 0);
+        if (neg) buf[--pos] = '-';
+        out.write(buf, pos, buf.length - pos);
     }
 
     private static void writeChunked(OutputStream out, InputStream stream) throws IOException {
-        byte[] buf = new byte[8192];
+        byte[] buf = CHUNK_BUF.get();
         int n;
         while ((n = stream.read(buf)) > 0) {
             writeHex(out, n);

@@ -20,6 +20,7 @@
         <module>flash-ext-routeviewer</module>
         <module>flash-ext-view</module>
         <module>flash-ext-limiter</module>
+        <module>flash-web-bundler</module>
     </modules>
 
     <dependencyManagement>
@@ -48,6 +49,11 @@
                 <groupId>net.minidev</groupId>
                 <artifactId>json-smart</artifactId>
                 <version>2.5.1</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-web-bundler</artifactId>
+                <version>${project.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
