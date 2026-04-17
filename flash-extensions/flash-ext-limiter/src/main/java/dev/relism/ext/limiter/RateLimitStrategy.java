@@ -11,6 +11,7 @@ package dev.relism.ext.limiter;
  * <p>Called on every request — must not allocate on the hot path.
  *
  * @see dev.relism.ext.limiter.strategy.FixedWindowStrategy
+ * @see dev.relism.ext.limiter.strategy.SlidingWindowStrategy
  * @see dev.relism.ext.limiter.strategy.TokenBucketStrategy
  */
 public interface RateLimitStrategy {

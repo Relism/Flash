@@ -7,6 +7,7 @@ import dev.relism.routing.Middleware;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +16,7 @@ import java.util.Optional;
 /**
  * Request-level OIDC middleware. Exposed in the {@link dev.relism.extension.FlashContext}
  * for manual use on lambda routes; injected automatically for handlers annotated with
- * {@link Authenticated} or {@link RolesAllowed}.
+ * {@link Authenticated}, {@link RolesAllowed} or {@link ScopesAllowed}.
  *
  * <p>Resolution order on each request:
  * <ol>
@@ -36,10 +37,14 @@ import java.util.Optional;
  */
 public class OidcMiddleware {
 
+    private static final String BEARER = "Bearer";
+
     private final JwtValidator         validator;
     private final OidcConfig           config;
     private final OidcProviderMetadata meta;
     private final TokenClient          tokenClient;
+    private final String[]             roleClaimPathParts;
+    private final String[][]           scopeClaimPathParts;
 
     OidcMiddleware(JwtValidator validator, OidcConfig config,
                    OidcProviderMetadata meta, TokenClient tokenClient) {
@@ -47,6 +52,8 @@ public class OidcMiddleware {
         this.config      = config;
         this.meta        = meta;
         this.tokenClient = tokenClient;
+        this.roleClaimPathParts = splitClaimPath(config.rolesClaimPath());
+        this.scopeClaimPathParts = splitClaimPaths(config.scopeClaimPaths());
     }
 
     // -- Public API -----------------------------------------------------------
@@ -75,7 +82,7 @@ public class OidcMiddleware {
      * logged in (e.g. showing a username on a landing page).
      *
      * <pre>{@code
-     * app.get("/", handler).with(oidc.optional());
+     * app.get("/", handler, oidc.optional());
      * // Inside handler: ClaimsHolder.user() is non-null iff the user is logged in.
      * }</pre>
      */
@@ -92,15 +99,15 @@ public class OidcMiddleware {
     }
 
     /**
-     * Like {@link #protect()} but also enforces that the caller holds at least one
-     * of the given roles (OR semantics). Roles are extracted via
-     * {@link OidcConfig#rolesClaimPath()}.
+     * Compiled authorization policy path used by annotation-driven mounting.
+     * The policy is immutable and built once at boot.
      */
-    public Middleware requireRole(String... roles) {
+    public Middleware authorize(OidcAuthPolicy policy) {
+        if (policy.optionalAuth()) return optional();
         return next -> (req, res) -> {
             Map<String, Object> claims = resolve(req, res);
             if (claims == null) return null;
-            checkRoles(claims, roles);
+            enforcePolicy(claims, policy, res);
             ClaimsHolder.set(claims);
             try {
                 return next.handle(req, res);
@@ -110,11 +117,40 @@ public class OidcMiddleware {
         };
     }
 
+    /**
+     * Like {@link #protect()} but also enforces that the caller holds at least one
+     * of the given roles (OR semantics). Roles are extracted via
+     * {@link OidcConfig#rolesClaimPath()}.
+     */
+    public Middleware requireRole(String... roles) {
+        return authorize(OidcAuthPolicy.rolesAny(roles));
+    }
+
+    /**
+     * Requires all listed scopes to be present in the token.
+     * Scopes are resolved from configured claim paths (default: {@code scope,scp}).
+     */
+    public Middleware requireScopes(String... scopes) {
+        return authorize(OidcAuthPolicy.scopes(scopes, ScopesAllowed.Match.ALL));
+    }
+
+    /**
+     * Requires at least one of the listed scopes to be present in the token.
+     * Scopes are resolved from configured claim paths (default: {@code scope,scp}).
+     */
+    public Middleware requireAnyScope(String... scopes) {
+        return authorize(OidcAuthPolicy.scopes(scopes, ScopesAllowed.Match.ANY));
+    }
+
     // -- Package-private: AnnotationProcessor hooks ---------------------------
 
     Middleware authenticatedMiddleware()          { return protect(); }
     Middleware optionalMiddleware()               { return optional(); }
     Middleware rolesMiddleware(String[] required) { return requireRole(required); }
+    Middleware scopesMiddleware(String[] required, ScopesAllowed.Match match) {
+        return authorize(OidcAuthPolicy.scopes(required, match));
+    }
+    Middleware policyMiddleware(OidcAuthPolicy policy) { return authorize(policy); }
 
     // -- Internals ------------------------------------------------------------
 
@@ -123,9 +159,14 @@ public class OidcMiddleware {
      * when no valid credentials are present. Used by {@link #optional()}.
      */
     private Map<String, Object> resolveQuiet(Request req) {
-        String auth = req.header("Authorization");
-        if (auth != null && auth.startsWith("Bearer "))
-            return validator.validate(auth.substring(7));
+        String bearerToken = extractBearerToken(req.header("Authorization"));
+        if (bearerToken != null) {
+            try {
+                return validator.validate(bearerToken);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
 
         String sessionId = cookieValue(req, "oidc_session");
         if (sessionId != null) {
@@ -153,9 +194,15 @@ public class OidcMiddleware {
      */
     private Map<String, Object> resolve(Request req, dev.relism.models.Response res) {
         // 1. Bearer token
-        String auth = req.header("Authorization");
-        if (auth != null && auth.startsWith("Bearer "))
-            return validator.validate(auth.substring(7));
+        String bearerToken = extractBearerToken(req.header("Authorization"));
+        if (bearerToken != null) {
+            try {
+                return validator.validate(bearerToken);
+            } catch (HttpException e) {
+                res.header("WWW-Authenticate", invalidTokenChallenge());
+                throw e;
+            }
+        }
 
         // 2. Session cookie
         String sessionId = cookieValue(req, "oidc_session");
@@ -183,8 +230,10 @@ public class OidcMiddleware {
 
         // 3. No valid credentials
         String accept = req.header("Accept");
-        if (accept != null && accept.contains("application/json"))
+        if (accept != null && accept.contains("application/json")) {
+            res.header("WWW-Authenticate", bearerChallenge());
             throw HttpException.unauthorized();
+        }
 
         // Browser — redirect to login, preserving the original URL in state
         String loginUrl = config.routePrefix() + "/login?redirect="
@@ -209,25 +258,200 @@ public class OidcMiddleware {
         );
     }
 
+    private void enforcePolicy(Map<String, Object> claims, OidcAuthPolicy policy, dev.relism.models.Response res) {
+        checkRoles(claims, policy.requiredRoles());
+        checkScopes(claims, policy.requiredScopes(), policy.scopeMatch(), res);
+    }
+
     private void checkRoles(Map<String, Object> claims, String[] required) {
-        List<String> actual = extractRoles(claims);
-        for (String role : required) {
-            if (actual.contains(role)) return;
-        }
+        if (required.length == 0) return;
+        if (rolesAllowed(claims, required)) return;
         throw HttpException.forbidden();
     }
 
-    @SuppressWarnings("unchecked")
-    private List<String> extractRoles(Map<String, Object> claims) {
-        String[] parts   = config.rolesClaimPath().split("\\.");
-        Object   current = claims;
-        for (String part : parts) {
-            if (!(current instanceof Map<?, ?> m)) return List.of();
-            current = m.get(part);
+    private void checkScopes(Map<String, Object> claims, String[] required, ScopesAllowed.Match match,
+                             dev.relism.models.Response res) {
+        if (required.length == 0) return;
+        if (scopesAllowed(claims, required, match)) return;
+        res.header("WWW-Authenticate", insufficientScopeChallenge(required));
+        throw HttpException.forbidden();
+    }
+
+    static String extractBearerToken(String authorizationHeader) {
+        if (authorizationHeader == null) return null;
+        int len = authorizationHeader.length();
+        int start = 0;
+        while (start < len && Character.isWhitespace(authorizationHeader.charAt(start))) start++;
+        int schemeEnd = start + BEARER.length();
+        if (schemeEnd > len || !authorizationHeader.regionMatches(true, start, BEARER, 0, BEARER.length())) {
+            return null;
         }
-        if (current instanceof List<?> list)
-            return list.stream().map(Object::toString).toList();
-        return List.of();
+        if (schemeEnd == len || !Character.isWhitespace(authorizationHeader.charAt(schemeEnd))) {
+            return null;
+        }
+        int tokenStart = schemeEnd;
+        while (tokenStart < len && Character.isWhitespace(authorizationHeader.charAt(tokenStart))) tokenStart++;
+        if (tokenStart >= len) return null;
+        int tokenEnd = len;
+        while (tokenEnd > tokenStart && Character.isWhitespace(authorizationHeader.charAt(tokenEnd - 1))) tokenEnd--;
+        return tokenEnd > tokenStart ? authorizationHeader.substring(tokenStart, tokenEnd) : null;
+    }
+
+    String bearerChallenge() {
+        return BEARER + " realm=\"" + quoted(config.schemeName()) + "\"";
+    }
+
+    String invalidTokenChallenge() {
+        return bearerChallenge() + ", error=\"invalid_token\"";
+    }
+
+    String insufficientScopeChallenge(String[] requiredScopes) {
+        return bearerChallenge() + ", error=\"insufficient_scope\", scope=\""
+                + quoted(spaceDelimited(requiredScopes)) + "\"";
+    }
+
+    private static String spaceDelimited(String[] values) {
+        if (values == null || values.length == 0) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) sb.append(' ');
+            sb.append(values[i]);
+        }
+        return sb.toString();
+    }
+
+    private static String quoted(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 8);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '"' || c == '\\') out.append('\\');
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    boolean rolesAllowed(Map<String, Object> claims, String[] required) {
+        Object actual = valueAtPath(claims, roleClaimPathParts);
+        if (actual == null) return false;
+        for (String role : required) {
+            if (containsToken(actual, role)) return true;
+        }
+        return false;
+    }
+
+    boolean scopesAllowed(Map<String, Object> claims, String[] required, ScopesAllowed.Match match) {
+        if (match == ScopesAllowed.Match.ALL) {
+            for (String scope : required) {
+                if (!hasScope(claims, scope)) return false;
+            }
+            return true;
+        }
+        for (String scope : required) {
+            if (hasScope(claims, scope)) return true;
+        }
+        return false;
+    }
+
+    private boolean hasScope(Map<String, Object> claims, String scope) {
+        for (String[] pathParts : scopeClaimPathParts) {
+            Object value = valueAtPath(claims, pathParts);
+            if (value != null && containsToken(value, scope)) return true;
+        }
+        return false;
+    }
+
+    private static Object valueAtPath(Map<String, Object> claims, String[] pathParts) {
+        Object current = claims;
+        for (String part : pathParts) {
+            if (!(current instanceof Map<?, ?> map)) return null;
+            current = map.get(part);
+            if (current == null) return null;
+        }
+        return current;
+    }
+
+    private static boolean containsToken(Object source, String token) {
+        if (source instanceof String s) return containsDelimitedToken(s, token);
+        if (source instanceof List<?> list) {
+            for (Object item : list) {
+                if (item == null) continue;
+                if (tokenEquals(item.toString(), token)) return true;
+            }
+            return false;
+        }
+        if (source instanceof Object[] arr) {
+            for (Object item : arr) {
+                if (item == null) continue;
+                if (tokenEquals(item.toString(), token)) return true;
+            }
+            return false;
+        }
+        return tokenEquals(source.toString(), token);
+    }
+
+    private static boolean containsDelimitedToken(String value, String token) {
+        int len = value.length();
+        int i = 0;
+        while (i < len) {
+            while (i < len && isScopeDelimiter(value.charAt(i))) i++;
+            int start = i;
+            while (i < len && !isScopeDelimiter(value.charAt(i))) i++;
+            int end = i;
+            if (end > start && end - start == token.length() && value.regionMatches(start, token, 0, token.length())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean tokenEquals(String value, String token) {
+        int start = 0;
+        int end = value.length();
+        while (start < end && Character.isWhitespace(value.charAt(start))) start++;
+        while (end > start && Character.isWhitespace(value.charAt(end - 1))) end--;
+        return end - start == token.length() && value.regionMatches(start, token, 0, token.length());
+    }
+
+    private static boolean isScopeDelimiter(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',';
+    }
+
+    private static String[] splitClaimPath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalStateException("OIDC claim path cannot be blank");
+        }
+        List<String> parts = new ArrayList<>(4);
+        int start = 0;
+        int len = path.length();
+        for (int i = 0; i <= len; i++) {
+            if (i == len || path.charAt(i) == '.') {
+                String p = path.substring(start, i).trim();
+                if (!p.isEmpty()) parts.add(p);
+                start = i + 1;
+            }
+        }
+        if (parts.isEmpty()) {
+            throw new IllegalStateException("OIDC claim path cannot be blank");
+        }
+        return parts.toArray(String[]::new);
+    }
+
+    private static String[][] splitClaimPaths(String paths) {
+        String source = (paths == null || paths.isBlank()) ? "scope,scp" : paths;
+        List<String[]> out = new ArrayList<>(4);
+        int start = 0;
+        int len = source.length();
+        for (int i = 0; i <= len; i++) {
+            if (i == len || source.charAt(i) == ',') {
+                String raw = source.substring(start, i).trim();
+                if (!raw.isEmpty()) out.add(splitClaimPath(raw));
+                start = i + 1;
+            }
+        }
+        if (out.isEmpty()) {
+            return new String[][]{ splitClaimPath("scope"), splitClaimPath("scp") };
+        }
+        return out.toArray(String[][]::new);
     }
 
     private static Map<String, Object> mergeRefreshedClaims(OidcTokenResponse tokens, OidcSession old) {
@@ -246,10 +470,20 @@ public class OidcMiddleware {
     static String cookieValue(Request req, String name) {
         String header = req.header("Cookie");
         if (header == null || header.isBlank()) return null;
-        for (String part : header.split(";")) {
-            int eq = part.indexOf('=');
-            if (eq > 0 && part.substring(0, eq).strip().equals(name))
-                return part.substring(eq + 1).strip();
+        int len   = header.length();
+        int start = 0;
+        while (start < len) {
+            int semi = header.indexOf(';', start);
+            int end  = semi < 0 ? len : semi;
+            int eq   = header.indexOf('=', start);
+            if (eq > start && eq < end) {
+                int ns = start, ne = eq;
+                while (ns < ne && header.charAt(ns)   == ' ') ns++;
+                while (ne > ns && header.charAt(ne-1) == ' ') ne--;
+                if (ne - ns == name.length() && header.regionMatches(ns, name, 0, name.length()))
+                    return header.substring(eq + 1, end).strip();
+            }
+            start = end + 1;
         }
         return null;
     }

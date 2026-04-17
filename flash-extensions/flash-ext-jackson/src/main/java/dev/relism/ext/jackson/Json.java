@@ -91,16 +91,7 @@ public final class Json {
      * <p>The returned string is used as the response body by the Flash runtime.
      */
     public String write(Response res, Object obj) throws Exception {
-        res.setContentType(ContentType.JSON);
-        return mapper.writeValueAsString(obj);
-    }
-
-    /**
-     * Like {@link #write(Response, Object)} but also sets an explicit HTTP status code.
-     */
-    public String write(Response res, int status, Object obj) throws Exception {
-        res.status(status);
-        res.setContentType(ContentType.JSON);
+        res.type(ContentType.JSON);
         return mapper.writeValueAsString(obj);
     }
 
@@ -109,7 +100,7 @@ public final class Json {
      * restricting serialization to fields visible under {@code view}.
      */
     public String writeView(Response res, Object obj, Class<?> view) throws Exception {
-        res.setContentType(ContentType.JSON);
+        res.type(ContentType.JSON);
         return mapper.writerWithView(view).writeValueAsString(obj);
     }
 

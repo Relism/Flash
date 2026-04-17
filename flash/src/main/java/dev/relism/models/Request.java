@@ -4,7 +4,6 @@ import dev.relism.fpr.core.ByteView;
 import dev.relism.http.HttpMethod;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.ToString;
 import lombok.Value;
 import lombok.experimental.NonFinal;
@@ -16,7 +15,7 @@ import java.util.List;
 
 /**
  * Immutable view of an incoming HTTP/1.1 request. Constructed by {@link dev.relism.RequestParser}
- * and passed directly to route handlers — never modified after creation (path/query params are
+ * and passed directly to route handlers; never modified after creation (path/query params are
  * injected once by the router before the handler runs).
  *
  * <pre>{@code
@@ -41,17 +40,18 @@ public class Request {
     /** Internal: the parsed request line (method, path, query, protocol, headers). */
     RequestLine requestLine;
 
-    @NonFinal @Setter PathParams  pathParams;
-    @NonFinal @Setter QueryParams queryParams;
+    @NonFinal PathParams  pathParams;
+    @NonFinal QueryParams queryParams;
+    @NonFinal String cachedPath;
 
     /**
      * Remote socket address of the connected client. Set once at connection time from
-     * {@link java.net.Socket#getRemoteSocketAddress()} — the {@link InetSocketAddress}
+     * {@link java.net.Socket#getRemoteSocketAddress()} : the {@link InetSocketAddress}
      * object already exists in the JDK and is passed by reference: zero allocation,
      * zero copy. {@code null} only in test-constructed requests.
      *
      * <p>Use {@link #remoteAddress()} to access it. String conversion
-     * ({@code .getAddress().getHostAddress()}) is deferred to the caller — lazy and
+     * ({@code .getAddress().getHostAddress()}) is deferred to the caller, lazy and
      * only paid when actually needed.
      */
     @Getter(lombok.AccessLevel.NONE)
@@ -66,6 +66,13 @@ public class Request {
         this.queryParams   = null;
         this.remoteAddress = remoteAddress;
     }
+
+    /**
+     * Internal: injects path parameters after routing. Package-private so only
+     * {@link PathParams#inject} (same package) can call it — not user code.
+     * Use {@link PathParams#inject(Request, PathParams)} from routing code.
+     */
+    void setPathParams(PathParams p) { this.pathParams = p; }
 
     /** Test / manual constructor — {@code remoteAddress()} returns {@code null}. */
     public Request(RequestLine requestLine, byte[] body) {
@@ -92,10 +99,11 @@ public class Request {
      * Example: a request for {@code /users/42?page=1} returns {@code "/users/42"}.
      */
     public String path() {
+        if (cachedPath != null) return cachedPath;
         ByteView v = requestLine.getPath();
         byte[] buf = new byte[v.length()];
         for (int i = 0; i < v.length(); i++) buf[i] = v.byteAt(i);
-        return new String(buf, StandardCharsets.UTF_8);
+        return cachedPath = new String(buf, StandardCharsets.UTF_8);
     }
 
     // ── Headers ───────────────────────────────────────────────────────────────

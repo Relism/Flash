@@ -8,16 +8,16 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Declares the HTTP method and path for a class-based {@link dev.relism.models.RequestHandler}.
+ * HTTP method and path for a class-based {@link dev.relism.models.RequestHandler}.
+ * Path is relative to the mount namespace (e.g. {@code path = "/profile"} under {@code /api}
+ * → {@code /api/profile}).
  *
- * <p>The path is relative to the namespace of the router the handler is registered on.
- * For example, registering a handler with {@code path = "/profile"} on a router mounted
- * at {@code /api} results in the effective route {@code /api/profile}.
- *
- * <p>Used by {@link dev.relism.routing.AbstractRouter#register}.
+ * <p>Prefer shorthand ({@code @GET("/x")}, {@code @POST("/x")}, …); they are meta-annotated
+ * with {@code @Route} and resolve to the same metadata as an explicit {@code @Route(method=…, path=…)}
+ * via {@link Routes#of(Class)}.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
+@Target({ElementType.TYPE, ElementType.ANNOTATION_TYPE})
 public @interface Route {
     HttpMethod method() default HttpMethod.GET;
     String path();

@@ -17,9 +17,8 @@ import dev.relism.ext.limiter.RateLimitStrategy;
  *   <li>{@link Bucket#slot1} — last-refill timestamp in ms. 0 = not yet initialised.</li>
  * </ul>
  *
- * <p>Each request CAS-loops on {@code slot0}; {@code slot1} is updated best-effort after a
- * successful CAS. The resulting inaccuracy is bounded by the nanoseconds between the CAS
- * and the {@code set} — negligible and self-correcting for rate limiting purposes.
+ * <p>Each request CAS-loops on {@code slot0}; {@code slot1} is advanced monotonically via CAS
+ * after a successful token consumption — never regresses to an older timestamp under concurrent load.
  */
 public final class TokenBucketStrategy implements RateLimitStrategy {
 
@@ -57,8 +56,8 @@ public final class TokenBucketStrategy implements RateLimitStrategy {
 
             long newTokens = currentTokens - SCALE;
             if (bucket.slot0.compareAndSet(rawTokens, newTokens)) {
-                // Consumed successfully. Update refill baseline best-effort.
-                bucket.slot1.set(now);
+                // Advance refill baseline: CAS ensures we never regress to an older timestamp.
+                if (lastMs < now) bucket.slot1.compareAndSet(lastMs, now);
                 out[0] = newTokens / SCALE;
                 out[1] = now / 1000L;
                 return true;

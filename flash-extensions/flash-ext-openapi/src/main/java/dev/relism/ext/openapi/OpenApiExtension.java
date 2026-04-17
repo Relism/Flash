@@ -1,12 +1,16 @@
 package dev.relism.ext.openapi;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.ContentType;
+import dev.relism.http.HttpMethod;
 import dev.relism.routing.Route;
+
+import java.lang.annotation.Annotation;
 
 /**
  * Generates and serves an OpenAPI 3.0 spec and Swagger UI under a configurable base path.
@@ -18,17 +22,16 @@ import dev.relism.routing.Route;
  *   <li>{@code GET /openapi/swagger} — Swagger UI pointing at {@code /openapi.json}</li>
  * </ul>
  *
- * <p><b>Requires</b> {@code flash-ext-jackson} to be installed first (shares its
- * {@link ObjectMapper}). The YAML endpoint uses its own {@link YAMLMapper} instance.
+ * <p>If {@code flash-ext-jackson} is installed, this extension reuses its
+ * {@link ObjectMapper}. Otherwise it uses a local default mapper.
  *
- * <p>Operations are collected automatically from handlers annotated with
- * {@link ApiOperation} as they are registered via {@link FlashApp#register}.
+ * <p>Operations are collected at boot from handlers annotated with {@link ApiOperation}
+ * that also have route metadata ({@link Route} or shorthand verb annotations).
  *
  * <pre>{@code
- * FlashApp.of(new HttpServer(config))
+ * FlashApp.create(8080)
  *     .install(new JacksonExtension())
  *     .install(new OpenApiExtension("/openapi", "My API", "2.0.0"))
- *     .register(new BlogHandlers.Index())
  *     .start();
  * }</pre>
  */
@@ -60,54 +63,40 @@ public class OpenApiExtension implements FlashExtension {
         this.description = description;
     }
 
+    // ── FlashExtension ────────────────────────────────────────────────────────
+
     @Override
-    public void install(FlashRegistrar app, FlashContext ctx) {
-        ObjectMapper jsonMapper = ctx.require(ObjectMapper.class);
-        YAMLMapper   yamlMapper = new YAMLMapper();
-
-        OpenApiBuilder builder = new OpenApiBuilder()
-                .title(title)
-                .version(version)
-                .description(description);
-
+    public void provide(FlashContext ctx) {
+        OpenApiBuilder          builder     = new OpenApiBuilder().title(title).version(version).description(description);
         OpenApiSecurityRegistry secRegistry = new OpenApiSecurityRegistry();
+
         ctx.provide(OpenApiSecurityRegistry.class, secRegistry);
+        ctx.provide(OpenApiBuilder.class,          builder);
         builder.setSecurityRegistry(secRegistry);
 
-        ctx.provide(OpenApiBuilder.class, builder);
-
-        // Collect operation metadata at handler-registration time (no middleware injected)
+        // Collect operation metadata at handler-registration time (no middleware injected).
         ctx.addAnnotationProcessor(handlerClass -> {
             ApiOperation op    = handlerClass.getAnnotation(ApiOperation.class);
-            Route        route = handlerClass.getAnnotation(Route.class);
-            if (op != null && route != null) {
-                builder.addOperation(route, op, handlerClass);
-            }
+            Route        route = routeOf(handlerClass);
+            if (op != null && route != null) builder.addOperation(route, op, handlerClass);
             return java.util.List.of();
         });
+    }
+
+    @Override
+    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+        ObjectMapper jsonMapper = ctx.find(ObjectMapper.class).orElseGet(() -> JsonMapper.builder().build());
+        YAMLMapper   yamlMapper = new YAMLMapper();
+        OpenApiBuilder builder  = ctx.require(OpenApiBuilder.class);
 
         String jsonPath    = basePath + ".json";
         String yamlPath    = basePath + ".yaml";
         String swaggerPath = basePath + "/swagger";
-
-        // JSON spec
-        app.get(jsonPath, (req, res) -> {
-            res.setContentType(ContentType.JSON);
-            return jsonMapper.writeValueAsString(builder.build());
-        }).with();
-
-        // YAML spec
-        app.get(yamlPath, (req, res) -> {
-            res.type(YAML_CONTENT_TYPE);
-            return yamlMapper.writeValueAsString(builder.build());
-        }).with();
-
-        // Swagger UI — loads from CDN, points at the JSON spec
         String swaggerHtml = buildSwaggerHtml(jsonPath);
-        app.get(swaggerPath, (req, res) -> {
-            res.setContentType(ContentType.TEXT_HTML);
-            return swaggerHtml;
-        }).with();
+
+        app.get(jsonPath,    (req, res) -> { res.type(ContentType.JSON);     return jsonMapper.writeValueAsString(builder.build()); });
+        app.get(yamlPath,    (req, res) -> { res.type(YAML_CONTENT_TYPE);              return yamlMapper.writeValueAsString(builder.build()); });
+        app.get(swaggerPath, (req, res) -> { res.type(ContentType.TEXT_HTML); return swaggerHtml; });
     }
 
     // ── Swagger UI HTML ───────────────────────────────────────────────────────
@@ -135,5 +124,32 @@ public class OpenApiExtension implements FlashExtension {
                "</script>\n" +
                "</body>\n" +
                "</html>";
+    }
+
+    private static Route routeOf(Class<?> cls) {
+        Route direct = cls.getAnnotation(Route.class);
+        if (direct != null) return direct;
+        for (Annotation ann : cls.getAnnotations()) {
+            Route meta = ann.annotationType().getAnnotation(Route.class);
+            if (meta == null) continue;
+            String path = readPathValue(ann);
+            if (path == null) continue;
+            HttpMethod method = meta.method();
+            return new Route() {
+                @Override public HttpMethod method() { return method; }
+                @Override public String path() { return path; }
+                @Override public Class<? extends Annotation> annotationType() { return Route.class; }
+            };
+        }
+        return null;
+    }
+
+    private static String readPathValue(Annotation ann) {
+        try {
+            Object v = ann.annotationType().getMethod("value").invoke(ann);
+            return v instanceof String s ? s : null;
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
     }
 }

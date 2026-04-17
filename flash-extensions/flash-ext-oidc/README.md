@@ -3,6 +3,9 @@
 Full OIDC Authorization Code + PKCE flow for the Flash HTTP server.
 Supports Keycloak, Authelia, Auth0, Google, and any RFC 8414-compliant provider.
 
+Standards alignment focuses on OIDC Core + OAuth2 bearer APIs while preserving Flash's
+hot-path model (middleware compiled at mount time, no heavy runtime work).
+
 ## What it provides
 
 | Component | Description |
@@ -12,6 +15,7 @@ Supports Keycloak, Authelia, Auth0, Google, and any RFC 8414-compliant provider.
 | `POST {prefix}/logout` | Invalidates the session, redirects to the provider's `end_session_endpoint` |
 | `@Authenticated` | Annotation: protects a class-based handler (redirects browsers, 401 for API clients) |
 | `@RolesAllowed(...)` | Annotation: protects with role check (OR semantics) |
+| `@ScopesAllowed(...)` | Annotation: protects with scope check (`ALL` default, `ANY` optional) |
 | `OidcMiddleware` | Programmatic middleware for lambda routes |
 | `ClaimsHolder` / `OidcUser` | Thread-local user info accessible from any protected handler |
 | `JwtValidator` | JWKS-backed JWT validator (PKCE + key rotation + caching) |
@@ -40,8 +44,13 @@ FlashApp.create(8080)
                 "https://idp.example.com",
                 "my-client", "my-secret", "/auth/callback")
             .build()
-    ));
+    ))
+    .start();
 ```
+
+Install order is irrelevant. The two-phase extension model guarantees all services
+(including `OpenApiSecurityRegistry` from `flash-ext-openapi`) are registered before
+any extension's routes phase runs.
 
 ### Keycloak shortcut
 
@@ -86,6 +95,7 @@ OidcConfig.builder("https://auth.example.com", "my-client", "secret", "/auth/cal
 | `.selfScheme("http")` | `"http"` | Scheme used when resolving server-relative redirect URIs |
 | `.https()` | — | Shorthand for `.selfScheme("https")` |
 | `.rolesClaimPath("realm_access.roles")` | `"realm_access.roles"` | Dot-path to the roles array in JWT claims |
+| `.scopeClaimPaths("scope,scp")` | `"scope,scp"` | Comma-separated claim paths used to resolve OAuth scopes |
 | `.algorithm("RS256")` | `"RS256"` | JWS algorithm for token validation |
 | `.postLogoutRedirectUri("/")` | `"/"` | Where to redirect after logout |
 | `.sessionStore(store)` | `InMemoryOidcSessionStore` | Custom session store (see below) |
@@ -104,6 +114,7 @@ OIDC_SCOPES                default: openid profile email
 OIDC_ROUTE_PREFIX          default: /auth
 OIDC_SELF_SCHEME           default: http
 OIDC_ROLES_CLAIM           default: realm_access.roles
+OIDC_SCOPE_CLAIMS          default: scope,scp
 OIDC_ALGORITHM             default: RS256
 OIDC_POST_LOGOUT_REDIRECT  default: /
 OIDC_CLIENT_AUTH_METHOD    default: POST
@@ -128,14 +139,35 @@ public class MePage extends JacksonHandler {
 @RolesAllowed("admin")           // OR semantics: "admin" OR "superuser"
 // @RolesAllowed({"admin", "superuser"})
 public class AdminPage extends JacksonHandler { ... }
+
+@Route(method = HttpMethod.POST, path = "/orders")
+@ScopesAllowed("orders:write")   // default = ALL semantics
+public class CreateOrder extends JacksonHandler { ... }
+
+@Route(method = HttpMethod.POST, path = "/payments")
+@ScopesAllowed(value = {"payments:write", "payments:admin"}, match = ScopesAllowed.Match.ANY)
+public class PayOrder extends JacksonHandler { ... }
+
+@Route(method = HttpMethod.DELETE, path = "/admin/users/{id}")
+@RolesAllowed("admin")
+@ScopesAllowed("users:delete")   // combined with AND semantics
+public class DeleteUser extends JacksonHandler { ... }
 ```
 
 The middleware is injected automatically by the annotation processor — no manual wiring needed.
 
+Annotation composition rules:
+
+- `@Authenticated` requires auth only
+- `@RolesAllowed` implies authentication + role OR-check
+- `@ScopesAllowed` implies authentication + scope check (`ALL`/`ANY`)
+- combining `@RolesAllowed` + `@ScopesAllowed` uses AND semantics
+- `@Authenticated(optional = true)` cannot be combined with role/scope constraints
+
 ### Lambda routes (manual middleware)
 
-For lambda routes you must apply the middleware explicitly. Retrieve it from the context
-after `install()` completes:
+For lambda routes, pass the middleware as a varargs argument. Retrieve `OidcMiddleware`
+from the context inside another extension's `routes()` phase, or after `start()`:
 
 ```java
 OidcMiddleware oidc = app.ctx().require(OidcMiddleware.class);
@@ -144,21 +176,26 @@ OidcMiddleware oidc = app.ctx().require(OidcMiddleware.class);
 app.get("/api/me", (req, res) -> {
     OidcUser u = ClaimsHolder.user();   // never null here
     return Map.of("sub", u.sub(), "email", u.email());
-}).with(oidc.protect());
+}, oidc.protect());
 
 // Authentication + role check
 app.delete("/api/admin/users/{id}", (req, res) -> {
     OidcUser u = ClaimsHolder.user();
     // ...
-}).with(oidc.requireRole("admin"));
+}, oidc.requireRole("admin"));
 
 // Multiple roles (OR): passes if user holds any one of them
-app.get("/api/reports", (req, res) -> { ... })
-   .with(oidc.requireRole("admin", "reports-viewer"));
+app.get("/api/reports", (req, res) -> { ... }, oidc.requireRole("admin", "reports-viewer"));
+
+// Require all listed scopes
+app.post("/api/orders", (req, res) -> { ... }, oidc.requireScopes("orders:write", "payments:write"));
+
+// Require at least one listed scope
+app.post("/api/payments", (req, res) -> { ... }, oidc.requireAnyScope("payments:write", "payments:admin"));
 ```
 
-`oidc.protect()` / `oidc.requireRole(...)` return a `Middleware` — a composable
-`Handler -> Handler` wrapper. Flash applies middleware right-to-left so the OIDC check
+`oidc.protect()` / `oidc.requireRole(...)` / `oidc.requireScopes(...)` return a `Middleware` — a composable
+`Handler → Handler` wrapper. Flash applies middleware right-to-left so the OIDC check
 runs before your handler.
 
 ## Accessing the authenticated user
@@ -185,6 +222,14 @@ List<String> groups = u.roles("groups");              // Authelia
 
 boolean isAdmin = u.hasRole("realm_access.roles", "admin");
 
+// Scopes (OIDC/OAuth2 generic): checks "scope" then "scp"
+List<String> scopes = u.scopes();
+boolean canWrite = u.hasScope("orders:write");
+
+// Custom claim path resolution (for provider-specific payloads)
+List<String> customScopes = u.scopes("scope,scp,permissions.scopes");
+boolean canApprove = u.hasScope("permissions.scopes", "orders:approve");
+
 // Arbitrary claim
 String locale = (String) u.claim("locale");
 Long   exp    = u.claim("exp", Long.class);
@@ -207,7 +252,7 @@ The middleware adds negligible overhead on the hot path for authenticated reques
 | Step | Cost |
 |---|---|
 | `Authorization` header check | `O(1)` map lookup |
-| Cookie parse | `O(cookie_count)` string split |
+| Cookie parse | `O(cookie_length)` single pass scan |
 | Session lookup | `O(1)` `ConcurrentHashMap.get()` |
 | Token expiry check | `O(1)` `Instant` comparison |
 | `ClaimsHolder.set()` | `O(1)` `ThreadLocal.set()` |
@@ -215,6 +260,8 @@ The middleware adds negligible overhead on the hot path for authenticated reques
 No network calls, no cryptography, no JSON parsing on the happy path (valid session).
 JWKS key fetching only happens for Bearer token validation and is cached + rate-limited by
 Nimbus's `JWKSourceBuilder`. Silent token refresh only triggers when the access token expires.
+
+Role/scope claim paths are compiled once during middleware construction (mount time), not per request.
 
 ## Authentication flow details
 
@@ -226,6 +273,16 @@ On each request the middleware resolves credentials in this order:
 3. **No valid credentials**:
    - Browser clients (no `Accept: application/json`) → redirect to `{prefix}/login?redirect={path}`
    - API clients → `401 Unauthorized`
+
+### API error semantics (RFC 6750)
+
+For API clients (`Accept: application/json`) the middleware includes `WWW-Authenticate`:
+
+- missing credentials: `Bearer realm="<schemeName>"`
+- invalid bearer token: `Bearer realm="<schemeName>", error="invalid_token"`
+- insufficient scopes: `Bearer realm="<schemeName>", error="insufficient_scope", scope="<required scopes>"`
+
+This enables interoperable client-side handling and proper OAuth2 challenge semantics.
 
 ### Token validation (OIDC Core §3.1.3.7)
 
@@ -248,6 +305,52 @@ At callback time the extension merges access token + ID token claims:
 
 This is provider-agnostic: authorization claims live in the AT per RFC 9068,
 identity claims live in the IT per OIDC Core.
+
+## Standards & compliance notes
+
+This extension is designed to be compliant with the most relevant OIDC/OAuth2 RFCs:
+
+- RFC 8414 (Authorization Server Metadata): discovery via `/.well-known/openid-configuration`
+- OpenID Connect Core 1.0: Authorization Code flow + PKCE + `nonce` validation on ID token
+- RFC 7636 (PKCE): S256 challenge/verifier flow
+- RFC 6750 (Bearer Token Usage): `WWW-Authenticate` challenges with standard error codes
+- RFC 9068 (JWT Profile for Access Tokens): JWT bearer access-token validation path
+- RFC 7519 / RFC 7517 / RFC 7515 family: JWT/JWK/JWS validation via Nimbus + JWKS caching/rotation
+
+Provider interoperability details:
+
+- scope extraction supports both standard forms: `scope` (space-delimited string) and `scp` (list/string)
+- roles remain configurable via `rolesClaimPath` (`realm_access.roles`, `groups`, etc.)
+- scope claim fallback chain is configurable via `scopeClaimPaths`
+
+## Testing scopes with Keycloak
+
+Quick path to test `@ScopesAllowed` end-to-end:
+
+1. **Create a client scope**
+   - Realm -> Client scopes -> Create
+   - Name: `orders:write` (or any scope name you want to enforce)
+2. **Attach it to your client**
+   - Clients -> `<your-client>` -> Client scopes
+   - Add the scope as `Default` (always in token) or `Optional` (requested via `scope` param)
+3. **Ensure scope mapper reaches the token**
+   - For most Keycloak setups this is automatic via built-in `microprofile-jwt`/scope mappers
+   - Verify the access token contains either `scope` string or `scp` list
+4. **Request the scope in Flash config**
+   - Include it in `OidcConfig.scopes(...)`, e.g. `"openid profile email orders:write"`
+5. **Protect a handler**
+   - `@ScopesAllowed("orders:write")` on class-based handlers
+   - or `oidc.requireScopes("orders:write")` for lambda routes
+6. **Verify behavior**
+   - token with scope -> 200
+   - token without scope -> 403 + `WWW-Authenticate: ... insufficient_scope`
+
+Useful token inspection flow while testing:
+
+- Obtain a token from Keycloak
+- Decode payload (`jwt.io` or local tool)
+- check `scope` / `scp` claims
+- call your protected endpoint and inspect status + `WWW-Authenticate`
 
 ## Session store
 
@@ -316,32 +419,39 @@ app.install(new OidcExtension(tenantA))
    .install(new OidcExtension(tenantB));
 ```
 
-To reference a specific tenant's middleware on lambda routes, keep the extension reference
-and retrieve `OidcMiddleware` from context **after** each install:
+To reference a specific tenant's middleware on lambda routes, keep the extension instances
+and retrieve `OidcMiddleware` from context after `start()`:
 
 ```java
-app.install(new OidcExtension(tenantA));
-OidcMiddleware mwA = app.ctx().require(OidcMiddleware.class);   // tenantA's middleware
+OidcExtension extA = new OidcExtension(tenantA);
+OidcExtension extB = new OidcExtension(tenantB);
 
-app.install(new OidcExtension(tenantB));
-OidcMiddleware mwB = app.ctx().require(OidcMiddleware.class);   // tenantB's middleware
+FlashApp app = FlashApp.create(8080)
+    .install(extA)
+    .install(extB)
+    .start()
+    .join();    // wait for bind
 
-app.get("/a/dashboard", (req, res) -> { ... }).with(mwA.protect());
-app.get("/b/dashboard", (req, res) -> { ... }).with(mwB.protect());
+OidcMiddleware mwA = app.ctx().require(OidcMiddleware.class);  // last registered = tenantB
 ```
 
+> **Note:** because both extensions register `OidcMiddleware.class` in the same context,
+> only the last one wins under that key. For multi-tenant setups, use distinct context
+> keys or provide middleware under a wrapper/alias type, or use lambda routes with explicit
+> middleware captured from the extension instance before `install()`.
+
 Class-based handlers annotated with `@Authenticated` / `@RolesAllowed` get the last
-registered middleware injected. For multi-tenant class-based handlers, use lambdas or
-install tenant-specific annotation processors.
+registered processor's middleware. For true multi-tenant class-based routing, install
+tenant-specific annotation processors with different annotations.
 
 ## OpenAPI integration
 
-If `flash-ext-openapi` is on the classpath and installed **before** `flash-ext-oidc`,
+If `flash-ext-openapi` is on the classpath and installed (order irrelevant),
 the extension automatically:
 
 - Adds a `components.securitySchemes` entry for the provider (OAuth2, authorizationCode flow)
 - Adds `security` requirements to every operation whose handler carries `@Authenticated`
-  or `@RolesAllowed`
+  , `@RolesAllowed`, or `@ScopesAllowed`
 
 No extra code needed. To customize the scheme name:
 

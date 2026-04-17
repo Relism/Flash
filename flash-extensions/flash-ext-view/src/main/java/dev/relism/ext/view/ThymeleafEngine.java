@@ -41,7 +41,7 @@ import java.util.Map;
  *   <li>{@code null} model → empty context.</li>
  * </ul>
  */
-final class ThymeleafEngine implements ViewEngine {
+final class ThymeleafEngine implements ViewEngine, ViewEngineAdapter {
 
     private static final String PREFIX   = "/templates/";
     private static final String SUFFIX   = ".html";
@@ -69,6 +69,27 @@ final class ThymeleafEngine implements ViewEngine {
         Context ctx = new Context();
         populateContext(ctx, model);
         return engine.process(fragment ? template + FRAGMENT : template, ctx);
+    }
+
+    @Override
+    public EngineCapabilities capabilities() {
+        return new EngineCapabilities(true);
+    }
+
+    @Override
+    public RenderOutput render(ViewTarget target, Map<String, Object> model,
+                               dev.relism.models.Request req,
+                               dev.relism.models.Response res) {
+        String selector;
+        if (target.kind() == ViewKind.PAGE) {
+            selector = target.template();
+        } else {
+            String slot = target.slot();
+            selector = target.template() + " :: " + ((slot == null || slot.isBlank()) ? "content" : slot);
+        }
+        Context ctx = new Context();
+        populateContext(ctx, model);
+        return RenderOutput.html(engine.process(selector, ctx));
     }
 
     private static void populateContext(Context ctx, Object model) {

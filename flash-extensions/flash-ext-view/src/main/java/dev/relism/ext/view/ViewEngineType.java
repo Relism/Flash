@@ -53,15 +53,21 @@ public enum ViewEngineType {
      * @param cacheEnabled whether the engine should cache compiled templates
      * @throws IllegalStateException if the required library is not on the classpath
      */
-    ViewEngine createEngine(boolean cacheEnabled) {
+    ViewEngineAdapter createAdapter(boolean cacheEnabled) {
         return switch (this) {
             case THYMELEAF -> createThymeleaf(cacheEnabled);
         };
     }
 
+    ViewEngine createEngine(boolean cacheEnabled) {
+        ViewEngineAdapter adapter = createAdapter(cacheEnabled);
+        if (adapter instanceof ViewEngine engine) return engine;
+        throw new IllegalStateException("Selected engine does not expose legacy ViewEngine interface: " + this);
+    }
+
     // ── Engine factories ──────────────────────────────────────────────────────
 
-    private static ViewEngine createThymeleaf(boolean cacheEnabled) {
+    private static ViewEngineAdapter createThymeleaf(boolean cacheEnabled) {
         try {
             return new ThymeleafEngine(cacheEnabled);
         } catch (NoClassDefFoundError e) {

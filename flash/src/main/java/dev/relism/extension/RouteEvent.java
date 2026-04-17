@@ -18,14 +18,14 @@ import java.util.List;
  * <ol>
  *   <li>Router-level middlewares (set on the router constructor)</li>
  *   <li>Annotation-injected middlewares (e.g. from {@code @Authenticated})</li>
- *   <li>Handler-level explicit middlewares (passed via {@code .with(...)})</li>
+ *   <li>Handler-level explicit middlewares (passed inline: {@code app.get(path, h, mw...)})</li>
  * </ol>
  *
  * <h3>Handler abstraction chain</h3>
  * Walk {@link #handlerClass} upward via {@link Class#getSuperclass()} to reconstruct
  * the full inheritance chain (e.g. {@code EditPostPageHandler → HtmlHandler → RequestHandler}).
  * Read {@link Class#getAnnotations()} on each level to discover declared pointcuts
- * ({@code @Authenticated}, {@code @RolesAllowed}, {@code @Route}, etc.).
+ * ({@code @Authenticated}, {@code @RolesAllowed}, {@code @Route}/{@code @GET}, etc.).
  *
  * @param method          HTTP method for this route
  * @param path            full path as declared (including namespace prefix for scoped routes)

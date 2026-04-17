@@ -7,9 +7,9 @@ import java.util.Optional;
 /**
  * Base class for class-based route handlers.
  *
- * <p>Annotate the subclass with {@link dev.relism.routing.Route @Route} and register it
- * via {@link dev.relism.extension.FlashApp#register} or {@link dev.relism.extension.FlashApp#scan}.
- * For one-off routes, prefer the lambda DSL ({@code app.get(path, handler)}).
+ * <p>Declare the route with {@link dev.relism.routing.Route @Route} or a shorthand such as
+ * {@code @GET("/path")}, then register via {@link dev.relism.extension.FlashApp#scan}.
+ * For ad-hoc routes use the fluent API ({@code app.get(path, handler)} or with middleware).
  *
  * <h3>Lifecycle</h3>
  * <ol>
@@ -24,7 +24,7 @@ import java.util.Optional;
  * into private fields. This keeps the hot-path ({@code handle}) free of map lookups.
  *
  * <pre>{@code
- * @Route(method = HttpMethod.GET, path = "/users")
+ * @GET("/users")
  * public class UserHandler extends RequestHandler {
  *     private UserService users;
  *
@@ -47,8 +47,7 @@ public abstract class RequestHandler {
      * Injects the {@link FlashContext} and triggers {@link #onInit()}.
      *
      * <p><b>Infrastructure method</b> — do not call from user code.
-     * Use {@link dev.relism.extension.FlashApp#register} or
-     * {@link dev.relism.extension.FlashApp#scan} instead.
+     * Use {@link dev.relism.extension.FlashApp#scan} instead.
      */
     public final void bind(FlashContext ctx) {
         this.ctx = ctx;
@@ -122,7 +121,7 @@ public abstract class RequestHandler {
         if (ctx == null)
             throw new IllegalStateException(
                     getClass().getSimpleName() + " has not been bound to a FlashContext — " +
-                    "register via FlashApp.register() or FlashApp.scan(), not directly on the router");
+                    "register via FlashApp.scan(), not directly on the router");
     }
 
     /**

@@ -1,24 +1,24 @@
 package dev.relism.ext.limiter;
 
+import dev.relism.extension.ExtensionPhase;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
-import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.HttpStatus;
 import dev.relism.routing.Middleware;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
  * Rate-limiting extension for Flash.
  *
- * <p>On {@link #install}:
+ * <p>At {@link #provide}:
  * <ol>
  *   <li>Creates a single {@link BucketStore} shared by all rules in this extension instance.</li>
  *   <li>Provides a {@link Guard} in the {@link FlashContext} for manual use on lambda routes.</li>
  *   <li>Registers an {@link dev.relism.extension.AnnotationProcessor} for {@link Limit}:
  *       reads the annotation once per handler class at boot, resolves the key lambda
- *       from the registry <em>fail-fast</em>, then returns a pre-compiled middleware
- *       that captures the lambda and config directly — zero map lookups at request time.</li>
+ *       fail-fast, then returns a pre-compiled middleware — zero map lookups at request time.</li>
  * </ol>
  *
  * <h3>Annotation-based (class handlers)</h3>
@@ -34,22 +34,23 @@ import java.util.List;
  *
  * <h3>Lambda routes (via Guard)</h3>
  * <pre>{@code
- * LimiterConfig conf = new LimiterConfig()
- *     .registerResolver("auth_user", req -> ClaimsHolder.user().sub());
+ * app.install(new LimiterExtension(
+ *     new LimiterConfig().registerResolver("auth_user", req -> ClaimsHolder.user().sub())));
  *
- * app.install(new LimiterExtension(conf));
- *
- * Guard guard = app.ctx().require(Guard.class);
- * app.get("/api/search", handler).with(guard.limit("ip", 50, 1, TimeUnit.SECONDS));
+ * // inside FlashExtension.routes() or after install():
+ * Guard guard = ctx.require(Guard.class);
+ * app.get("/api/search", handler, guard.limit("ip", 50, 1, TimeUnit.SECONDS));
  * }</pre>
- *
- * <h3>Installation order matters</h3>
- * Install {@code LimiterExtension} <em>before</em> authentication extensions so that
- * rate-limit checks short-circuit before expensive token validation on over-limit requests.
  */
 public final class LimiterExtension implements FlashExtension {
 
     private final LimiterConfig config;
+
+    /**
+     * Rate limiting runs before authentication — cheaper check rejects over-limit
+     * requests before any token validation occurs.
+     */
+    @Override public int priority() { return ExtensionPhase.EARLY.value; }
 
     /** Installs with default config (only the built-in {@code "ip"} resolver). */
     public LimiterExtension() {
@@ -62,7 +63,7 @@ public final class LimiterExtension implements FlashExtension {
     }
 
     @Override
-    public void install(FlashRegistrar app, FlashContext ctx) {
+    public void provide(FlashContext ctx) {
         BucketStore store = new BucketStore();
         Guard       guard = new Guard(config, store);
 
@@ -96,14 +97,13 @@ public final class LimiterExtension implements FlashExtension {
      *   <li>{@code resolver} is captured directly in the closure — no registry lookup per request.</li>
      *   <li>{@code resultBuf} is a per-{@link Middleware}-instance ThreadLocal {@code long[2]}.
      *       Allocated once per thread, reused forever — zero per-request allocation.</li>
-     *   <li>Header values ({@code String.valueOf(...)}) are the only unavoidable allocations;
-     *       they are tiny and bounded.</li>
+     *   <li>The static {@code X-RateLimit-Limit} header is pre-encoded at boot — zero-alloc.</li>
      * </ul>
      */
     static Middleware buildMiddleware(KeyResolver resolver, LimitConfig cfg, BucketStore store) {
-        // One result buffer per thread, per middleware instance.
-        // ThreadLocal is captured in the closure at boot time — not re-created per request.
-        ThreadLocal<long[]> resultBuf = ThreadLocal.withInitial(() -> new long[2]);
+        ThreadLocal<long[]> resultBuf  = ThreadLocal.withInitial(() -> new long[2]);
+        byte[]              limitHeader = ("X-RateLimit-Limit: " + cfg.limit() + "\r\n")
+                .getBytes(StandardCharsets.UTF_8);
 
         return next -> (req, res) -> {
             String key    = resolver.resolve(req);
@@ -112,8 +112,7 @@ public final class LimiterExtension implements FlashExtension {
 
             boolean allowed = cfg.strategy().check(bucket, cfg, out);
 
-            // Always inject rate-limit headers — useful even on allowed requests.
-            res.header("X-RateLimit-Limit",     String.valueOf(cfg.limit()));
+            res.header(limitHeader);
             res.header("X-RateLimit-Remaining", String.valueOf(out[0]));
             res.header("X-RateLimit-Reset",     String.valueOf(out[1]));
 

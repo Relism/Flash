@@ -1,6 +1,7 @@
 package dev.relism.ext.routeviewer;
 
 import dev.relism.ext.routeviewer.model.RouteGraph;
+import dev.relism.extension.ExtensionPhase;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
@@ -21,22 +22,17 @@ import dev.relism.http.ContentType;
  *   <li>{@code GET <path>/data}    — graph JSON consumed by the SPA</li>
  * </ul>
  *
- * <h3>Install order</h3>
- * Install <em>after</em> extensions that register annotation processors
- * (e.g. {@code OidcExtension}) but <em>before</em> {@code scan()} or
- * {@code register()} calls so the listener captures all routes:
+ * <p>The route listener is registered during the {@link #provide} phase, before any routes
+ * are compiled. Combined with the two-phase extension model, this guarantees all routes
+ * (including those from other extensions) are always captured — install order is irrelevant.
  *
  * <pre>{@code
  * FlashApp.create(8080)
  *     .install(new OidcExtension(config))
- *     .install(new JacksonExtension())
- *     .install(new RouteViewerExtension())   // before scan
+ *     .install(new RouteViewerExtension())
  *     .scan("dev.example.handlers")
  *     .start();
  * }</pre>
- *
- * <p>All route metadata is collected once at boot time via
- * {@link FlashContext#addRouteListener}. Zero overhead on the request hot-path.
  */
 public class RouteViewerExtension implements FlashExtension {
 
@@ -44,6 +40,9 @@ public class RouteViewerExtension implements FlashExtension {
 
     private final String     path;
     private final RouteGraph graph = new RouteGraph();
+
+    /** Observability — runs last so the viewer sees the complete middleware chain. */
+    @Override public int priority() { return ExtensionPhase.LATE.value; }
 
     /** Installs the viewer at {@value #DEFAULT_PATH}. */
     public RouteViewerExtension() { this(DEFAULT_PATH); }
@@ -55,20 +54,16 @@ public class RouteViewerExtension implements FlashExtension {
     public RouteViewerExtension(String path) { this.path = path; }
 
     @Override
-    public void install(FlashRegistrar app, FlashContext ctx) {
-        RouteViewerHandler     shell = new RouteViewerHandler();
-        RouteViewerDataHandler data  = new RouteViewerDataHandler(graph);
+    public void provide(FlashContext ctx) {
+        // Register listener before any routes compile — captures everything.
+        ctx.addRouteListener(graph::add);
+    }
 
-        // Static assets (Vite build output, bundled in JAR)
-        app.get(path,              shell::handle);
+    @Override
+    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+        app.get(path,              new RouteViewerHandler()::handle);
         app.get(path + "/app.js",  new RouteViewerStaticHandler("routeviewer/app.js",  ContentType.TEXT_JAVASCRIPT)::handle);
         app.get(path + "/app.css", new RouteViewerStaticHandler("routeviewer/app.css", ContentType.TEXT_CSS)::handle);
-
-        // Graph data API — must be registered before the listener so it is
-        // flushed and captured AFTER the listener is attached (shows in the graph)
-        app.get(path + "/data", data::handle);
-
-        // Start listening — routes registered after this point are captured
-        ctx.addRouteListener(graph::add);
+        app.get(path + "/data",    new RouteViewerDataHandler(graph)::handle);
     }
 }

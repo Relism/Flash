@@ -54,7 +54,7 @@ public final class Renderer {
      * header to {@code type}, and returns the rendered string as the handler body.
      */
     public String view(Response res, String template, Object model, ContentType type) throws Exception {
-        res.setContentType(type);
+        res.type(type);
         return engine.render(template, model);
     }
 

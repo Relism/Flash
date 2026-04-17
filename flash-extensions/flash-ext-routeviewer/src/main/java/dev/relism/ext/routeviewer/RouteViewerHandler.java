@@ -25,7 +25,7 @@ class RouteViewerHandler {
 
     Object handle(Request req, Response res) throws IOException {
         if (cached == null) cached = load();
-        res.setContentType(ContentType.TEXT_HTML);
+        res.type(ContentType.TEXT_HTML);
         return cached;
     }
 

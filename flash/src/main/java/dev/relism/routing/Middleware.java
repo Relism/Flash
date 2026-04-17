@@ -28,8 +28,8 @@ import dev.relism.models.SimpleHandler;
  * AbstractRouter api = new MyRouter(cors, auth);
  *
  * // Handler-level: applied only to this route
- * router.get("/admin", (req, res) -> "secret", auth);
- * router.register(new AdminHandler(), auth, logging);
+ * app.get("/admin", (req, res) -> "secret", auth);
+ * app.get("/log",   handler, logging, auth);
  * }</pre>
  */
 @FunctionalInterface
@@ -68,15 +68,4 @@ public interface Middleware {
         };
     }
 
-    /**
-     * Returns a composed middleware that applies {@code this} first, then {@code after}.
-     * Prefer {@link #of} for three or more middlewares.
-     *
-     * <pre>{@code
-     * Middleware secured = cors.andThen(auth);
-     * }</pre>
-     */
-    default Middleware andThen(Middleware after) {
-        return next -> this.wrap(new SimpleHandler(after.wrap(next)));
-    }
 }

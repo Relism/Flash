@@ -21,6 +21,15 @@ public class PathParams {
         this.lens   = lens;
     }
 
+    /**
+     * Injects path parameters into a request. The cross-package bridge from
+     * {@link dev.relism.routing.AbstractRouter} — keeps {@link Request#setPathParams}
+     * package-private while allowing the router to set params without a public setter.
+     */
+    public static void inject(Request request, PathParams params) {
+        request.setPathParams(params);
+    }
+
     public String get(String name) {
         int i = indexOf(name);
         if (i < 0) return null;

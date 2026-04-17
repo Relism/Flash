@@ -8,9 +8,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Lazy header access backed by a raw byte slice of the request buffer.
- * No allocations at parse time; Strings are created only when {@link #first} / {@link #all} is called.
- * One instance per connection; reused across keep-alive requests via {@link #reset}.
+ * Lazy, zero-copy header access backed directly by the request parser's byte buffer.
+ * Strings are allocated only when {@link #first} / {@link #all} / {@link #view} is called;
+ * the raw bytes are never copied at parse time.
+ *
+ * <h3>Lifetime contract — read carefully</h3>
+ * One {@code HeaderMap} instance lives on the connection (not per-request). On every
+ * keep-alive request {@link #reset} is called to slide the window over the new header
+ * section of the <em>same reused buffer</em>. This has two critical implications:
+ *
+ * <ol>
+ *   <li><b>Do not retain the {@code HeaderMap} beyond the handler.</b> After the handler
+ *       returns, the next request reuses and overwrites the buffer. Any {@code String}
+ *       values retrieved via {@link #first}/{@link #all} are safe (they are independent
+ *       heap copies); the {@code HeaderMap} object itself is not.</li>
+ *   <li><b>{@link #view} returns a zero-copy {@link dev.relism.fpr.core.ByteView} slice
+ *       into the live buffer.</b> Storing this view and reading it after the handler
+ *       returns (e.g. in an async callback, a {@link java.util.concurrent.CompletableFuture}
+ *       continuation, or a virtual-thread handoff) is a <em>data race</em> — the bytes
+ *       may have been overwritten by the next request. Copy to a {@code String} or
+ *       {@code byte[]} before leaving the synchronous handler scope.</li>
+ * </ol>
  */
 @NoArgsConstructor
 public class HeaderMap {

@@ -13,7 +13,16 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface ServerHandle {
 
-    CompletableFuture<Void> start();
+    /** Starts the accept loop on a background platform thread. Returns immediately. */
+    void start();
+
+    /**
+     * Starts the accept loop and blocks the calling thread until the server is stopped.
+     * Suitable for use in {@code main()} when no other work is needed after startup.
+     */
+    void startAndBlock();
+
+    /** Gracefully stops the server, draining active connections. */
     CompletableFuture<Void> stop();
 
     static ServerHandle create(FlashConfiguration config, AbstractRouter router) throws IOException {

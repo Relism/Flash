@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * Picked up by {@link OpenApiExtension} via {@link FlashApp#register}.
  *
  * <pre>{@code
- * @Route(method = HttpMethod.GET, path = "/api/blogs")
+ * @GET("/api/blogs")
  * @ApiOperation(summary = "List all blogs", tags = {"blogs"})
  * public class ListBlogs extends JacksonHandler { ... }
  * }</pre>

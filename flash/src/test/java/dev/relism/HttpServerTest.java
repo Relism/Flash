@@ -61,7 +61,7 @@ class HttpServerTest {
             return res.body(body);
         });
 
-        app.start().get(5, TimeUnit.SECONDS);
+        app.start();
     }
 
     @AfterEach
@@ -148,29 +148,31 @@ class HttpServerTest {
     }
 
     @Test
-    void testNotFound_returns404Html() throws Exception {
+    void testNotFound_returns404() throws Exception {
         String req = "GET /api/unknown HTTP/1.1\r\nHost: localhost\r\n\r\n";
         String res = sendRawRequest(req);
         assertTrue(res.startsWith("HTTP/1.1 404 Not Found"));
-        assertTrue(res.contains("404"));
-        assertTrue(res.contains("No route matched this request"));
+        // Prod default: JSON body — no internal details leaked
+        assertTrue(res.contains("\"status\":404"));
+        assertTrue(res.contains("application/json"));
     }
 
     @Test
-    void testException_returns500Html() throws Exception {
+    void testException_returns500() throws Exception {
         String req = "GET /api/crash HTTP/1.1\r\nHost: localhost\r\n\r\n";
         String res = sendRawRequest(req);
         assertTrue(res.startsWith("HTTP/1.1 500 Internal Server Error"));
-        assertTrue(res.contains("500"));
-        assertTrue(res.contains("Simulated Crash"));
+        // Prod default: generic JSON — stack trace not leaked
+        assertTrue(res.contains("\"status\":500"));
+        assertTrue(res.contains("application/json"));
     }
 
     @Test
-    void testRoot_returns404_noExceptionTossed() throws Exception {
+    void testRoot_returns404() throws Exception {
         String req = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
         String res = sendRawRequest(req);
         assertTrue(res.startsWith("HTTP/1.1 404 Not Found"));
-        assertTrue(res.contains("No route matched this request."));
+        assertTrue(res.contains("\"status\":404"));
     }
 
     @Test

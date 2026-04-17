@@ -1,6 +1,7 @@
 package dev.relism.ext.limiter;
 
 import dev.relism.ext.limiter.strategy.FixedWindowStrategy;
+import dev.relism.ext.limiter.strategy.SlidingWindowStrategy;
 import dev.relism.ext.limiter.strategy.TokenBucketStrategy;
 
 /**
@@ -38,6 +39,18 @@ public enum LimitStrategy {
     TOKEN_BUCKET {
         @Override
         public RateLimitStrategy create() { return new TokenBucketStrategy(); }
+    },
+
+    /**
+     * Sliding-window counter: interpolates between the previous window's count and the
+     * current window's count weighted by how far into the current window we are.
+     * Eliminates the boundary burst of {@link #FIXED_WINDOW} while remaining O(1)
+     * memory and lock-free. Slight approximation — worst-case error ≈ a few percent at
+     * window boundaries.
+     */
+    SLIDING_WINDOW {
+        @Override
+        public RateLimitStrategy create() { return new SlidingWindowStrategy(); }
     };
 
     /** Creates a fresh, stateless {@link RateLimitStrategy} instance for this algorithm. */
