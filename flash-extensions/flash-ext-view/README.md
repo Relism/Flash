@@ -52,4 +52,3 @@ public final class HomePage extends ViewHandler {
 - `docs/partials.md`
 - `docs/adapters.md`
 - `docs/performance.md`
-- `docs/migration-from-legacy-view.md`

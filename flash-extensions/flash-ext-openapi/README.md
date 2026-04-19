@@ -105,6 +105,22 @@ Supported field-level exclusion:
 - `@JsonIgnoreProperties(...)`
 - `transient` / `static`
 
+## Contributor API
+
+OpenAPI is extension-agnostic. Other extensions contribute with `OpenApiContributor` via
+`OpenApiContributorRegistry`.
+
+Supported contribution surfaces:
+
+- `components` fragments (merged with last-wins)
+- operation `security` requirements (additive)
+- operation `responses` and response `headers` (additive)
+
+Merge policy:
+
+- contributor collisions use **last-wins**
+- manual `@APIResponse` description always wins over contributors for the same status
+
 ## OIDC interop
 
 When `flash-ext-oidc` is installed, OpenAPI integrates automatically:
@@ -116,6 +132,18 @@ When `flash-ext-oidc` is installed, OpenAPI integrates automatically:
   - `403` role/scope required messages when applicable
 
 Manual `@APIResponse` for the same status code always wins.
+
+## Limiter interop
+
+When `flash-ext-limiter` is installed, handlers with `@Limit` automatically get response
+headers documented in OpenAPI:
+
+- `X-RateLimit-Limit`
+- `X-RateLimit-Remaining`
+- `X-RateLimit-Reset`
+- `Retry-After` on `429`
+
+If `429` is missing, it is auto-added as `Too Many Requests`.
 
 ## Notes
 

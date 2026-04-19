@@ -92,6 +92,9 @@ public class PriceHandler extends RequestHandler { ... }
 Each annotation is processed by its own processor; Flash collects all middleware and
 composes them in processor registration order.
 
+When `flash-ext-openapi` is installed, `@Limit` also contributes OpenAPI response
+headers (`X-RateLimit-*`) and `Retry-After` on `429` automatically.
+
 ```java
 @Route(method = HttpMethod.DELETE, path = "/admin/users/{id}")
 @Limit(key = "auth_user", requests = 5, window = 1, windowUnit = TimeUnit.MINUTES)

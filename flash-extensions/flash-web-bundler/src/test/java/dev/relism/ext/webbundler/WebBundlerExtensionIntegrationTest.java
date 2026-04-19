@@ -49,7 +49,7 @@ class WebBundlerExtensionIntegrationTest {
                 .basePath("/app")
                 .build();
 
-        app = FlashApp.create(FlashConfiguration.builder().port(port).host("127.0.0.1").build());
+        app = FlashApp.create(port);
         app.install(new WebBundlerExtension(config));
         app.get("/api/ping", (req, res) -> "pong");
         app.start();

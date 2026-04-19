@@ -51,7 +51,7 @@ public final class OpenApiBuilder {
     private final Map<String, Map<String, Object>> paths = new LinkedHashMap<>();
     private final Map<String, Map<String, Class<?>>> operationHandlers = new LinkedHashMap<>();
     private final SchemaRegistry schemas = new SchemaRegistry();
-    private OpenApiSecurityRegistry securityRegistry;
+    private OpenApiContributorRegistry contributorRegistry;
     private int revision;
     private int builtRevision = -1;
     private Map<String, Object> cachedSpec;
@@ -59,7 +59,7 @@ public final class OpenApiBuilder {
     public OpenApiBuilder title(String title) { this.title = title; return this; }
     public OpenApiBuilder version(String version) { this.version = version; return this; }
     public OpenApiBuilder description(String description) { this.description = description; return this; }
-    void setSecurityRegistry(OpenApiSecurityRegistry registry) { this.securityRegistry = registry; }
+    void setContributorRegistry(OpenApiContributorRegistry registry) { this.contributorRegistry = registry; }
 
     public void addOperation(Route route, ApiOperation op, Class<?> handlerClass) {
         String path = normalizePath(route.path());
@@ -90,8 +90,8 @@ public final class OpenApiBuilder {
         info.put("version", version);
         if (!description.isEmpty()) info.put("description", description);
 
-        List<OpenApiSecurityContributor> contributors = securityRegistry != null
-                ? securityRegistry.contributors() : List.of();
+        List<OpenApiContributor> contributors = contributorRegistry != null
+                ? contributorRegistry.contributors() : List.of();
 
         Map<String, Object> renderedPaths = new LinkedHashMap<>();
         for (var pathEntry : paths.entrySet()) {
@@ -103,8 +103,7 @@ public final class OpenApiBuilder {
                 Map<String, Object> op = new LinkedHashMap<>(original);
                 Class<?> handler = handlers.get(methodEntry.getKey());
                 if (handler != null && !contributors.isEmpty()) {
-                    List<Map<String, List<String>>> security = buildOperationSecurity(contributors, handler);
-                    if (!security.isEmpty()) op.put("security", security);
+                    applyContributorOperation(op, handler, contributors);
                 }
                 renderedPathItem.put(methodEntry.getKey(), op);
             }
@@ -119,11 +118,7 @@ public final class OpenApiBuilder {
         Map<String, Object> components = new LinkedHashMap<>();
         Map<String, Object> renderedSchemas = schemas.render();
         if (!renderedSchemas.isEmpty()) components.put("schemas", renderedSchemas);
-        if (!contributors.isEmpty()) {
-            Map<String, Object> securitySchemes = new LinkedHashMap<>();
-            for (OpenApiSecurityContributor c : contributors) securitySchemes.put(c.schemeName(), c.schemeDefinition());
-            components.put("securitySchemes", securitySchemes);
-        }
+        if (!contributors.isEmpty()) applyContributorComponents(components, contributors);
         if (!components.isEmpty()) spec.put("components", components);
 
         cachedSpec = spec;
@@ -181,15 +176,11 @@ public final class OpenApiBuilder {
             responseByCode.put(code, buildAnnotatedResponse(code, ann, cls));
         }
 
-        for (OpenApiSecurityContributor c : securityContributors()) {
-            for (var auto : c.autoResponsesFor(cls).entrySet()) {
-                responseByCode.putIfAbsent(auto.getKey(), Map.of("description", auto.getValue()));
-            }
-        }
-
         if (responseByCode.isEmpty()) {
             responseByCode.put(200, Map.of("description", "OK"));
         }
+
+        applyContributorResponses(responseByCode, cls);
 
         Map<String, Object> responses = new LinkedHashMap<>();
         responseByCode.entrySet().stream()
@@ -198,8 +189,97 @@ public final class OpenApiBuilder {
         op.put("responses", responses);
     }
 
-    private List<OpenApiSecurityContributor> securityContributors() {
-        return securityRegistry != null ? securityRegistry.contributors() : List.of();
+    private List<OpenApiContributor> contributors() {
+        return contributorRegistry != null ? contributorRegistry.contributors() : List.of();
+    }
+
+    private void applyContributorResponses(Map<Integer, Map<String, Object>> responseByCode, Class<?> handlerClass) {
+        APIResponse[] manual = handlerClass.getAnnotationsByType(APIResponse.class);
+        Set<Integer> manualStatusCodes = new HashSet<>();
+        for (APIResponse ann : manual) {
+            manualStatusCodes.add(parseStatus(ann.responseCode()));
+        }
+
+        for (OpenApiContributor contributor : contributors()) {
+            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
+            if (contribution == null) continue;
+
+            for (Map.Entry<Integer, OpenApiResponseContribution> entry : contribution.responses().entrySet()) {
+                int status = entry.getKey();
+                OpenApiResponseContribution responseContribution = entry.getValue();
+                if (responseContribution == null) continue;
+
+                Map<String, Object> response = responseByCode.computeIfAbsent(status, __ -> new LinkedHashMap<>());
+                mergeContributorResponse(response, responseContribution, status, manualStatusCodes);
+            }
+
+            OpenApiResponseContribution allResponses = contribution.allResponses();
+            if (allResponses != null) {
+                for (Map.Entry<Integer, Map<String, Object>> entry : responseByCode.entrySet()) {
+                    mergeContributorResponse(entry.getValue(), allResponses, entry.getKey(), manualStatusCodes);
+                }
+            }
+        }
+    }
+
+    private static void mergeContributorResponse(Map<String, Object> response,
+                                                 OpenApiResponseContribution contribution,
+                                                 int status,
+                                                 Set<Integer> manualStatusCodes) {
+        String desc = contribution.description();
+        if (!manualStatusCodes.contains(status) && desc != null && !desc.isBlank()) {
+            response.put("description", desc);
+        }
+
+        Map<String, Map<String, Object>> headerContributions = contribution.headers();
+        if (!headerContributions.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> headers = (Map<String, Object>) response.computeIfAbsent("headers", __ -> new LinkedHashMap<>());
+            for (Map.Entry<String, Map<String, Object>> h : headerContributions.entrySet()) {
+                headers.put(h.getKey(), new LinkedHashMap<>(h.getValue()));
+            }
+        }
+
+        if (!response.containsKey("description")) {
+            response.put("description", defaultDescription(status));
+        }
+    }
+
+    private static void applyContributorComponents(Map<String, Object> components, List<OpenApiContributor> contributors) {
+        for (OpenApiContributor contributor : contributors) {
+            Map<String, Object> c = contributor.componentContributions();
+            if (c == null || c.isEmpty()) continue;
+            deepMergeLastWins(components, c);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void deepMergeLastWins(Map<String, Object> target, Map<String, Object> incoming) {
+        for (Map.Entry<String, Object> e : incoming.entrySet()) {
+            Object existing = target.get(e.getKey());
+            Object value = e.getValue();
+            if (existing instanceof Map<?, ?> em && value instanceof Map<?, ?> vm) {
+                Map<String, Object> merged = new LinkedHashMap<>((Map<String, Object>) em);
+                deepMergeLastWins(merged, (Map<String, Object>) vm);
+                target.put(e.getKey(), merged);
+            } else {
+                target.put(e.getKey(), value);
+            }
+        }
+    }
+
+    private void applyContributorOperation(Map<String, Object> op, Class<?> handlerClass, List<OpenApiContributor> contributors) {
+        for (OpenApiContributor contributor : contributors) {
+            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
+            if (contribution == null || contribution.isEmpty()) continue;
+
+            if (!contribution.security().isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, List<String>>> security = (List<Map<String, List<String>>>) op
+                        .computeIfAbsent("security", __ -> new ArrayList<>());
+                security.addAll(contribution.security());
+            }
+        }
     }
 
     private Map<String, Object> buildAnnotatedResponse(int code, APIResponse ann, Class<?> handlerClass) {
@@ -270,16 +350,6 @@ public final class OpenApiBuilder {
     private static String defaultDescription(int status) {
         String reason = HttpStatus.reasonForCode(status);
         return reason == null ? "" : reason;
-    }
-
-    private static List<Map<String, List<String>>> buildOperationSecurity(List<OpenApiSecurityContributor> contributors,
-                                                                           Class<?> handlerClass) {
-        List<Map<String, List<String>>> security = new ArrayList<>();
-        for (OpenApiSecurityContributor c : contributors) {
-            List<String> scopes = c.requiredFor(handlerClass);
-            if (scopes != null) security.add(Map.of(c.schemeName(), scopes));
-        }
-        return security;
     }
 
     private static Class<?> rawType(Type type) {
