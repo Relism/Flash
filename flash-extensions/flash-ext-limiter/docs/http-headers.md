@@ -117,6 +117,12 @@ and **instead of** calling it on rejected requests. This means:
 
 ## Integration with Swagger UI (flash-ext-openapi)
 
-Rate-limit headers are not currently injected into the OpenAPI spec. If you want to
-document them, add them manually via `@ApiOperation` on the handler class using the
-response headers section of the OpenAPI spec.
+When `flash-ext-openapi` is installed, handlers annotated with `@Limit` automatically
+contribute rate-limit response headers to generated OpenAPI responses:
+
+- `X-RateLimit-Limit`
+- `X-RateLimit-Remaining`
+- `X-RateLimit-Reset`
+- `Retry-After` on `429`
+
+If `429` is not manually declared, OpenAPI auto-adds `429 Too Many Requests`.

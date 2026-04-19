@@ -65,12 +65,12 @@ public class OpenApiExtension implements FlashExtension {
 
     @Override
     public void provide(FlashContext ctx) {
-        OpenApiBuilder          builder     = new OpenApiBuilder().title(title).version(version).description(description);
-        OpenApiSecurityRegistry secRegistry = new OpenApiSecurityRegistry();
+        OpenApiBuilder             builder  = new OpenApiBuilder().title(title).version(version).description(description);
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
 
-        ctx.provide(OpenApiSecurityRegistry.class, secRegistry);
-        ctx.provide(OpenApiBuilder.class,          builder);
-        builder.setSecurityRegistry(secRegistry);
+        ctx.provide(OpenApiContributorRegistry.class, registry);
+        ctx.provide(OpenApiBuilder.class, builder);
+        builder.setContributorRegistry(registry);
 
         // Collect operation metadata from final compiled routes.
         // This guarantees full runtime paths (namespaces/prefixes/rewrites) in the spec.

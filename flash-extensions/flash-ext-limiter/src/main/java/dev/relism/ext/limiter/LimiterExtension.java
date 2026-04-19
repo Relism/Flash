@@ -1,13 +1,18 @@
 package dev.relism.ext.limiter;
 
+import dev.relism.ext.openapi.OpenApiContributorRegistry;
+import dev.relism.ext.openapi.OpenApiOperationContribution;
+import dev.relism.ext.openapi.OpenApiResponseContribution;
 import dev.relism.extension.ExtensionPhase;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
+import dev.relism.extension.FlashRegistrar;
 import dev.relism.http.HttpStatus;
 import dev.relism.routing.Middleware;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Rate-limiting extension for Flash.
@@ -87,6 +92,15 @@ public final class LimiterExtension implements FlashExtension {
         });
     }
 
+    @Override
+    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+        try {
+            OpenApiIntegration.register(ctx);
+        } catch (NoClassDefFoundError ignored) {
+            // flash-ext-openapi not available — OpenAPI integration disabled
+        }
+    }
+
     // ── Package-private helper — shared with Guard ────────────────────────────
 
     /**
@@ -125,5 +139,58 @@ public final class LimiterExtension implements FlashExtension {
 
             return next.handle(req, res);
         };
+    }
+
+    private static final class OpenApiIntegration {
+        private static final Map<String, Object> INTEGER_SCHEMA = Map.of("type", "integer");
+        private static final Map<String, Object> LIMIT_HEADER = Map.of(
+                "description", "Maximum requests allowed in current window",
+                "schema", INTEGER_SCHEMA
+        );
+        private static final Map<String, Object> REMAINING_HEADER = Map.of(
+                "description", "Requests remaining in current window",
+                "schema", INTEGER_SCHEMA
+        );
+        private static final Map<String, Object> RESET_HEADER = Map.of(
+                "description", "Unix epoch seconds when quota resets or next token arrives",
+                "schema", INTEGER_SCHEMA
+        );
+        private static final Map<String, Object> RETRY_AFTER_HEADER = Map.of(
+                "description", "Seconds to wait before retrying",
+                "schema", INTEGER_SCHEMA
+        );
+
+        static void register(FlashContext ctx) {
+            ctx.find(OpenApiContributorRegistry.class)
+                    .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiContributor() {
+                        @Override
+                        public dev.relism.ext.openapi.OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                            if (handlerClass.getAnnotation(Limit.class) == null) {
+                                return OpenApiOperationContribution.builder().build();
+                            }
+
+                            OpenApiResponseContribution common =
+                                    OpenApiResponseContribution.builder()
+                                            .header("X-RateLimit-Limit", LIMIT_HEADER)
+                                            .header("X-RateLimit-Remaining", REMAINING_HEADER)
+                                            .header("X-RateLimit-Reset", RESET_HEADER)
+                                            .build();
+
+                            OpenApiResponseContribution tooManyRequests =
+                                    OpenApiResponseContribution.builder()
+                                            .description("Too Many Requests")
+                                            .header("X-RateLimit-Limit", LIMIT_HEADER)
+                                            .header("X-RateLimit-Remaining", REMAINING_HEADER)
+                                            .header("X-RateLimit-Reset", RESET_HEADER)
+                                            .header("Retry-After", RETRY_AFTER_HEADER)
+                                            .build();
+
+                            return OpenApiOperationContribution.builder()
+                                    .allResponses(common)
+                                    .response(429, tooManyRequests)
+                                    .build();
+                        }
+                    }));
+        }
     }
 }

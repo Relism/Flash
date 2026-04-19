@@ -263,62 +263,64 @@ public class OidcExtension implements FlashExtension {
 
     /**
      * Loaded lazily so that {@code flash-ext-openapi} classes are only resolved at
-     * runtime when {@link dev.relism.ext.openapi.OpenApiSecurityRegistry} is actually on the classpath.
+     * runtime when {@link dev.relism.ext.openapi.OpenApiContributorRegistry} is actually on the classpath.
      */
     private static final class OpenApiIntegration {
         static void register(dev.relism.extension.FlashContext ctx,
                              OidcConfig config, OidcProviderMetadata meta) {
-            ctx.find(dev.relism.ext.openapi.OpenApiSecurityRegistry.class)
-               .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiSecurityContributor() {
+            ctx.find(dev.relism.ext.openapi.OpenApiContributorRegistry.class)
+               .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiContributor() {
 
-                   @Override
-                   public String schemeName() { return config.schemeName(); }
-
-                   @Override
-                   public java.util.Map<String, Object> schemeDefinition() {
-                       java.util.Map<String, String> scopesMap = new java.util.LinkedHashMap<>();
-                       for (String s : config.scopes().split("\\s+")) {
-                           if (!s.isBlank()) scopesMap.put(s, s);
+                    @Override
+                    public java.util.Map<String, Object> componentContributions() {
+                        java.util.Map<String, String> scopesMap = new java.util.LinkedHashMap<>();
+                        for (String s : config.scopes().split("\\s+")) {
+                            if (!s.isBlank()) scopesMap.put(s, s);
                        }
                        java.util.Map<String, Object> flow = new java.util.LinkedHashMap<>();
                        flow.put("authorizationUrl", meta.authorizationEndpoint());
                        flow.put("tokenUrl",         meta.tokenEndpoint());
-                       flow.put("scopes",           scopesMap);
+                        flow.put("scopes",           scopesMap);
 
-                       java.util.Map<String, Object> scheme = new java.util.LinkedHashMap<>();
-                       scheme.put("type",  "oauth2");
-                       scheme.put("flows", java.util.Map.of("authorizationCode", flow));
-                       return scheme;
-                   }
+                        java.util.Map<String, Object> scheme = new java.util.LinkedHashMap<>();
+                        scheme.put("type",  "oauth2");
+                        scheme.put("flows", java.util.Map.of("authorizationCode", flow));
 
-                    @Override
-                    public java.util.List<String> requiredFor(Class<?> handlerClass) {
-                        return OidcAuthPolicy.openApiScopesFor(handlerClass);
+                        java.util.Map<String, Object> securitySchemes = new java.util.LinkedHashMap<>();
+                        securitySchemes.put(config.schemeName(), scheme);
+                        return java.util.Map.of("securitySchemes", securitySchemes);
                     }
 
-                    @Override
-                    public java.util.Map<Integer, String> autoResponsesFor(Class<?> handlerClass) {
-                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
-                        if (policy == null || policy.optionalAuth()) return java.util.Map.of();
+                     @Override
+                     public dev.relism.ext.openapi.OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                        dev.relism.ext.openapi.OpenApiOperationContribution.Builder out =
+                                dev.relism.ext.openapi.OpenApiOperationContribution.builder();
 
-                        java.util.LinkedHashMap<Integer, String> out = new java.util.LinkedHashMap<>();
-                        out.put(401, "Authentication required");
+                        java.util.List<String> operationScopes = OidcAuthPolicy.openApiScopesFor(handlerClass);
+                        if (operationScopes != null) {
+                            out.security(config.schemeName(), operationScopes);
+                        }
+
+                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
+                        if (policy == null || policy.optionalAuth()) return out.build();
+
+                        out.response(401, dev.relism.ext.openapi.OpenApiResponseContribution.of("Authentication required"));
 
                         String[] roles = policy.requiredRoles();
                         String[] scopes = policy.requiredScopes();
-                        if (roles.length == 0 && scopes.length == 0) return out;
+                        if (roles.length == 0 && scopes.length == 0) return out.build();
 
                         String roleMessage = roles.length == 0 ? null : roleRequiredMessage(roles);
                         String scopeMessage = scopes.length == 0 ? null : scopeRequiredMessage(scopes);
                         if (roleMessage != null && scopeMessage != null) {
-                            out.put(403, roleMessage + "; " + scopeMessage);
+                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(roleMessage + "; " + scopeMessage));
                         } else if (roleMessage != null) {
-                            out.put(403, roleMessage);
+                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(roleMessage));
                         } else {
-                            out.put(403, scopeMessage);
+                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(scopeMessage));
                         }
-                        return out;
-                    }
+                        return out.build();
+                     }
                 }));
         }
 
