@@ -108,6 +108,21 @@ class OpenApiExtensionTest {
         assertFalse(paths.containsKey("/users"));
     }
 
+    @Test
+    void normalizes_double_slash_paths_from_events() {
+        FlashContext ctx = new FlashContext();
+        OpenApiExtension ext = new OpenApiExtension();
+        ext.provide(ctx);
+
+        emitRoute(ctx, HttpMethod.GET, "//blogs", "/", ScopedUsersHandler.class);
+
+        OpenApiBuilder builder = ctx.require(OpenApiBuilder.class);
+        Map<String, Object> spec = builder.build();
+        Map<String, Object> paths = cast(spec.get("paths"));
+        assertTrue(paths.containsKey("/blogs"));
+        assertFalse(paths.containsKey("//blogs"));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<RouteListener> listeners(FlashContext ctx) {
         try {

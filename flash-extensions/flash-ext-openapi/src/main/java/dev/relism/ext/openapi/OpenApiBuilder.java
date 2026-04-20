@@ -344,7 +344,11 @@ public final class OpenApiBuilder {
     }
 
     private static String normalizePath(String path) {
-        return path.startsWith("/") ? path : "/" + path;
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        while (normalized.startsWith("//")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
     }
 
     private static String defaultDescription(int status) {
