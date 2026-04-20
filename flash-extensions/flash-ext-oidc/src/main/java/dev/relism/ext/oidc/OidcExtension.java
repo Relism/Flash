@@ -1,5 +1,9 @@
 package dev.relism.ext.oidc;
 
+import dev.relism.ext.openapi.OpenApiContributor;
+import dev.relism.ext.openapi.OpenApiContributorRegistry;
+import dev.relism.ext.openapi.OpenApiOperationContribution;
+import dev.relism.ext.openapi.OpenApiResponseContribution;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
@@ -13,10 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Full OIDC Authorization Code + PKCE flow for Flash.
@@ -266,37 +267,37 @@ public class OidcExtension implements FlashExtension {
      * runtime when {@link dev.relism.ext.openapi.OpenApiContributorRegistry} is actually on the classpath.
      */
     private static final class OpenApiIntegration {
-        static void register(dev.relism.extension.FlashContext ctx,
+        static void register(FlashContext ctx,
                              OidcConfig config, OidcProviderMetadata meta) {
-            ctx.find(dev.relism.ext.openapi.OpenApiContributorRegistry.class)
-               .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiContributor() {
+            ctx.find(OpenApiContributorRegistry.class)
+               .ifPresent(registry -> registry.add(new OpenApiContributor() {
 
                     @Override
-                    public java.util.Map<String, Object> componentContributions() {
-                        java.util.Map<String, String> scopesMap = new java.util.LinkedHashMap<>();
+                    public Map<String, Object> componentContributions() {
+                        Map<String, String> scopesMap = new LinkedHashMap<>();
                         for (String s : config.scopes().split("\\s+")) {
                             if (!s.isBlank()) scopesMap.put(s, s);
-                       }
-                       java.util.Map<String, Object> flow = new java.util.LinkedHashMap<>();
-                       flow.put("authorizationUrl", meta.authorizationEndpoint());
-                       flow.put("tokenUrl",         meta.tokenEndpoint());
+                        }
+                        Map<String, Object> flow = new LinkedHashMap<>();
+                        flow.put("authorizationUrl", meta.authorizationEndpoint());
+                        flow.put("tokenUrl",         meta.tokenEndpoint());
                         flow.put("scopes",           scopesMap);
 
-                        java.util.Map<String, Object> scheme = new java.util.LinkedHashMap<>();
+                        Map<String, Object> scheme = new LinkedHashMap<>();
                         scheme.put("type",  "oauth2");
-                        scheme.put("flows", java.util.Map.of("authorizationCode", flow));
+                        scheme.put("flows", Map.of("authorizationCode", flow));
 
-                        java.util.Map<String, Object> securitySchemes = new java.util.LinkedHashMap<>();
+                        Map<String, Object> securitySchemes = new LinkedHashMap<>();
                         securitySchemes.put(config.schemeName(), scheme);
-                        return java.util.Map.of("securitySchemes", securitySchemes);
+                        return Map.of("securitySchemes", securitySchemes);
                     }
 
                      @Override
-                     public dev.relism.ext.openapi.OpenApiOperationContribution operationFor(Class<?> handlerClass) {
-                        dev.relism.ext.openapi.OpenApiOperationContribution.Builder out =
-                                dev.relism.ext.openapi.OpenApiOperationContribution.builder();
+                     public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                        OpenApiOperationContribution.Builder out =
+                                OpenApiOperationContribution.builder();
 
-                        java.util.List<String> operationScopes = OidcAuthPolicy.openApiScopesFor(handlerClass);
+                        List<String> operationScopes = OidcAuthPolicy.openApiScopesFor(handlerClass);
                         if (operationScopes != null) {
                             out.security(config.schemeName(), operationScopes);
                         }
@@ -304,7 +305,7 @@ public class OidcExtension implements FlashExtension {
                         OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
                         if (policy == null || policy.optionalAuth()) return out.build();
 
-                        out.response(401, dev.relism.ext.openapi.OpenApiResponseContribution.of("Authentication required"));
+                        out.response(401, OpenApiResponseContribution.of("Authentication required"));
 
                         String[] roles = policy.requiredRoles();
                         String[] scopes = policy.requiredScopes();
@@ -313,12 +314,9 @@ public class OidcExtension implements FlashExtension {
                         String roleMessage = roles.length == 0 ? null : roleRequiredMessage(roles);
                         String scopeMessage = scopes.length == 0 ? null : scopeRequiredMessage(scopes);
                         if (roleMessage != null && scopeMessage != null) {
-                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(roleMessage + "; " + scopeMessage));
-                        } else if (roleMessage != null) {
-                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(roleMessage));
-                        } else {
-                            out.response(403, dev.relism.ext.openapi.OpenApiResponseContribution.of(scopeMessage));
-                        }
+                            out.response(403, OpenApiResponseContribution.of(roleMessage + "; " + scopeMessage));
+                        } else
+                            out.response(403, OpenApiResponseContribution.of(Objects.requireNonNullElse(roleMessage, scopeMessage)));
                         return out.build();
                      }
                 }));

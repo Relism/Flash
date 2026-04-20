@@ -7,7 +7,7 @@
     <parent>
         <groupId>dev.relism</groupId>
         <artifactId>flash-parent</artifactId>
-        <version>1.1-indev5</version>
+        <version>1.1-indev6</version>
     </parent>
 
     <artifactId>flash-extensions</artifactId>
@@ -18,7 +18,9 @@
         <module>flash-ext-openapi</module>
         <module>flash-ext-oidc</module>
         <module>flash-ext-routeviewer</module>
-        <module>flash-ext-view</module>
+        <module>flash-ext-view-core</module>
+        <module>flash-ext-view-jte</module>
+        <module>flash-ext-view-thymeleaf</module>
         <module>flash-ext-limiter</module>
         <module>flash-web-bundler</module>
     </modules>
@@ -28,6 +30,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-jackson</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-view-jte</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

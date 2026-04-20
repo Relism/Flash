@@ -10,7 +10,7 @@ package dev.relism;
  * <p>Dev mode enables:
  * <ul>
  *   <li>HTML error pages with full stack traces (default: JSON generic responses in prod)</li>
- *   <li>Template cache disabled in {@code flash-ext-view}</li>
+ *   <li>Template cache disabled in {@code flash-ext-view-thymeleaf}</li>
  * </ul>
  *
  * <p>Extensions can read {@link #DEV} to branch behavior without re-implementing the detection:

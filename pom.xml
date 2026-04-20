@@ -6,7 +6,7 @@
 
     <groupId>dev.relism</groupId>
     <artifactId>flash-parent</artifactId>
-    <version>1.1-indev5</version>
+    <version>1.1-indev6</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -66,7 +66,17 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-view</artifactId>
+                <artifactId>flash-ext-view-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-view-jte</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-view-thymeleaf</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

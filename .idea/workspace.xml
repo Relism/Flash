@@ -4,27 +4,55 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="preparing for another refactoring...">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="fc757130-fe3e-4ea9-8d69-c26ffb8545a4" name="Changes" comment="implement OpenAPI contributor integration for rate limiting and response headers">
+      <change beforePath="$PROJECT_DIR$/.idea/encodings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/docs/annotation.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/docs/annotation.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/docs/http-headers.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/docs/http-headers.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-jackson/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/src/main/java/dev/relism/ext/limiter/LimiterExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-limiter/src/main/java/dev/relism/ext/limiter/LimiterExtension.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java/dev/relism/ext/oidc/OidcExtension.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/test/java/dev/relism/ext/oidc/OidcOpenApiInteropTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/test/java/dev/relism/ext/oidc/OidcOpenApiInteropTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/ApiResponse.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/APIResponse.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/ApiResponses.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/APIResponses.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiBuilder.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiBuilder.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiExtension.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiExtension.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiSecurityContributor.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java/dev/relism/ext/openapi/OpenApiSecurityRegistry.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/test/java/dev/relism/ext/openapi/OpenApiBuilderTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/test/java/dev/relism/ext/openapi/OpenApiBuilderTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-routeviewer/src/main/resources/routeviewer/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-routeviewer/src/main/resources/routeviewer/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-view/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/migration-from-legacy-view.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-web-bundler/src/test/java/dev/relism/ext/webbundler/WebBundlerExtensionIntegrationTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-web-bundler/src/test/java/dev/relism/ext/webbundler/WebBundlerExtensionIntegrationTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/test/java/dev/relism/ext/openapi/OpenApiExtensionTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/test/java/dev/relism/ext/openapi/OpenApiExtensionTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-routeviewer/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-ext-routeviewer/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/adapters.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/architecture.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/handlers.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/model-and-globals.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/partials.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/docs/performance.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/pom.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/EngineCapabilities.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/GlobalBinding.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/Page.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/Partial.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/RenderOutput.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ThymeleafEngine.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewEngineAdapter.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewEngineType.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewExtension.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewHandler.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewKind.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewModel.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewRuntime.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewTarget.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/main/java/dev/relism/ext/view/ViewTargetResolver.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ThymeleafEngineTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ViewExtensionContractTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ViewHandlerLifecycleTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ViewModelTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ViewRuntimeGlobalsTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/java/dev/relism/ext/view/ViewTargetResolverTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-ext-view/src/test/resources/templates/pages/home.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/flash-web-bundler/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/flash-web-bundler/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash-extensions/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash-extensions/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/flash/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Flash.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/Flash.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashScope.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/main/java/dev/relism/extension/FlashScope.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/PathUtilsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/flash/src/test/java/dev/relism/routing/PathUtilsTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,7 +67,7 @@
     </persistenceIdMap>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="352" />
+    <option name="cachedIndexableFilesCount" value="373" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="FileTemplateManagerImpl">
@@ -108,6 +136,8 @@
     &quot;Maven.flash-parent [deploy].executor&quot;: &quot;Run&quot;,
     &quot;Maven.flash-parent [install].executor&quot;: &quot;Run&quot;,
     &quot;Maven.flash-parent [package].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-parent [test].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.flash-parent [validate].executor&quot;: &quot;Run&quot;,
     &quot;Maven.flash-parent [verify].executor&quot;: &quot;Run&quot;,
     &quot;Maven.flash-web-bundler [test].executor&quot;: &quot;Run&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
@@ -265,7 +295,9 @@
       <workItem from="1776240695245" duration="14368000" />
       <workItem from="1776410282788" duration="22340000" />
       <workItem from="1776515579524" duration="1172000" />
-      <workItem from="1776626614705" duration="3750000" />
+      <workItem from="1776626614705" duration="4066000" />
+      <workItem from="1776670293634" duration="9127000" />
+      <workItem from="1776716089200" duration="1974000" />
     </task>
     <task id="LOCAL-00001" summary="Initial">
       <option name="closed" value="true" />
@@ -347,7 +379,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774819003821</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="implement OpenAPI contributor integration for rate limiting and response headers">
+      <option name="closed" value="true" />
+      <created>1776634972916</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1776634972916</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -387,7 +427,8 @@
     <MESSAGE value="pre-major refactoring + ext api." />
     <MESSAGE value="preparing for a conceptual refactoring..." />
     <MESSAGE value="preparing for another refactoring..." />
-    <option name="LAST_COMMIT_MESSAGE" value="preparing for another refactoring..." />
+    <MESSAGE value="implement OpenAPI contributor integration for rate limiting and response headers" />
+    <option name="LAST_COMMIT_MESSAGE" value="implement OpenAPI contributor integration for rate limiting and response headers" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
