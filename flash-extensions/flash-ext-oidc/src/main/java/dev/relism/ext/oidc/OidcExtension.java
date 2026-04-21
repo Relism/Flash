@@ -1,5 +1,9 @@
 package dev.relism.ext.oidc;
 
+import dev.relism.ext.openapi.OpenApiContributor;
+import dev.relism.ext.openapi.OpenApiContributorRegistry;
+import dev.relism.ext.openapi.OpenApiOperationContribution;
+import dev.relism.ext.openapi.OpenApiResponseContribution;
 import dev.relism.extension.FlashContext;
 import dev.relism.extension.FlashExtension;
 import dev.relism.extension.FlashRegistrar;
@@ -13,10 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Full OIDC Authorization Code + PKCE flow for Flash.
@@ -263,62 +264,61 @@ public class OidcExtension implements FlashExtension {
 
     /**
      * Loaded lazily so that {@code flash-ext-openapi} classes are only resolved at
-     * runtime when {@link dev.relism.ext.openapi.OpenApiSecurityRegistry} is actually on the classpath.
+     * runtime when {@link dev.relism.ext.openapi.OpenApiContributorRegistry} is actually on the classpath.
      */
     private static final class OpenApiIntegration {
-        static void register(dev.relism.extension.FlashContext ctx,
+        static void register(FlashContext ctx,
                              OidcConfig config, OidcProviderMetadata meta) {
-            ctx.find(dev.relism.ext.openapi.OpenApiSecurityRegistry.class)
-               .ifPresent(registry -> registry.add(new dev.relism.ext.openapi.OpenApiSecurityContributor() {
-
-                   @Override
-                   public String schemeName() { return config.schemeName(); }
-
-                   @Override
-                   public java.util.Map<String, Object> schemeDefinition() {
-                       java.util.Map<String, String> scopesMap = new java.util.LinkedHashMap<>();
-                       for (String s : config.scopes().split("\\s+")) {
-                           if (!s.isBlank()) scopesMap.put(s, s);
-                       }
-                       java.util.Map<String, Object> flow = new java.util.LinkedHashMap<>();
-                       flow.put("authorizationUrl", meta.authorizationEndpoint());
-                       flow.put("tokenUrl",         meta.tokenEndpoint());
-                       flow.put("scopes",           scopesMap);
-
-                       java.util.Map<String, Object> scheme = new java.util.LinkedHashMap<>();
-                       scheme.put("type",  "oauth2");
-                       scheme.put("flows", java.util.Map.of("authorizationCode", flow));
-                       return scheme;
-                   }
+            ctx.find(OpenApiContributorRegistry.class)
+               .ifPresent(registry -> registry.add(new OpenApiContributor() {
 
                     @Override
-                    public java.util.List<String> requiredFor(Class<?> handlerClass) {
-                        return OidcAuthPolicy.openApiScopesFor(handlerClass);
+                    public Map<String, Object> componentContributions() {
+                        Map<String, String> scopesMap = new LinkedHashMap<>();
+                        for (String s : config.scopes().split("\\s+")) {
+                            if (!s.isBlank()) scopesMap.put(s, s);
+                        }
+                        Map<String, Object> flow = new LinkedHashMap<>();
+                        flow.put("authorizationUrl", meta.authorizationEndpoint());
+                        flow.put("tokenUrl",         meta.tokenEndpoint());
+                        flow.put("scopes",           scopesMap);
+
+                        Map<String, Object> scheme = new LinkedHashMap<>();
+                        scheme.put("type",  "oauth2");
+                        scheme.put("flows", Map.of("authorizationCode", flow));
+
+                        Map<String, Object> securitySchemes = new LinkedHashMap<>();
+                        securitySchemes.put(config.schemeName(), scheme);
+                        return Map.of("securitySchemes", securitySchemes);
                     }
 
-                    @Override
-                    public java.util.Map<Integer, String> autoResponsesFor(Class<?> handlerClass) {
-                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
-                        if (policy == null || policy.optionalAuth()) return java.util.Map.of();
+                     @Override
+                     public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                        OpenApiOperationContribution.Builder out =
+                                OpenApiOperationContribution.builder();
 
-                        java.util.LinkedHashMap<Integer, String> out = new java.util.LinkedHashMap<>();
-                        out.put(401, "Authentication required");
+                        List<String> operationScopes = OidcAuthPolicy.openApiScopesFor(handlerClass);
+                        if (operationScopes != null) {
+                            out.security(config.schemeName(), operationScopes);
+                        }
+
+                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
+                        if (policy == null || policy.optionalAuth()) return out.build();
+
+                        out.response(401, OpenApiResponseContribution.of("Authentication required"));
 
                         String[] roles = policy.requiredRoles();
                         String[] scopes = policy.requiredScopes();
-                        if (roles.length == 0 && scopes.length == 0) return out;
+                        if (roles.length == 0 && scopes.length == 0) return out.build();
 
                         String roleMessage = roles.length == 0 ? null : roleRequiredMessage(roles);
                         String scopeMessage = scopes.length == 0 ? null : scopeRequiredMessage(scopes);
                         if (roleMessage != null && scopeMessage != null) {
-                            out.put(403, roleMessage + "; " + scopeMessage);
-                        } else if (roleMessage != null) {
-                            out.put(403, roleMessage);
-                        } else {
-                            out.put(403, scopeMessage);
-                        }
-                        return out;
-                    }
+                            out.response(403, OpenApiResponseContribution.of(roleMessage + "; " + scopeMessage));
+                        } else
+                            out.response(403, OpenApiResponseContribution.of(Objects.requireNonNullElse(roleMessage, scopeMessage)));
+                        return out.build();
+                     }
                 }));
         }
 
