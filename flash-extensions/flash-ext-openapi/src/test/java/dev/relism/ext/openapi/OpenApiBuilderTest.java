@@ -88,6 +88,16 @@ class OpenApiBuilderTest {
         }
     }
 
+    @GET("/merge")
+    @ApiOperation(summary = "Merge")
+    @APIResponse(responseCode = "200", description = "Manual 200")
+    static class MergeHandler extends dev.relism.models.RequestHandler {
+        @Override
+        public Object handle(dev.relism.models.Request request, dev.relism.models.Response response) {
+            return null;
+        }
+    }
+
     @Schema(name = "UserDTO", title = "User model", description = "DTO", deprecated = true)
     @JsonIgnoreProperties({"ignoredByType"})
     static class UserDto {
@@ -177,16 +187,23 @@ class OpenApiBuilderTest {
     @Test
     void auto_security_responses_are_added_and_manual_wins_sorted() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiSecurityRegistry registry = new OpenApiSecurityRegistry();
-        registry.add(new OpenApiSecurityContributor() {
-            @Override public String schemeName() { return "oidc"; }
-            @Override public Map<String, Object> schemeDefinition() { return Map.of("type", "oauth2"); }
-            @Override public List<String> requiredFor(Class<?> handlerClass) { return List.of(); }
-            @Override public Map<Integer, String> autoResponsesFor(Class<?> handlerClass) {
-                return Map.of(401, "Authentication required", 403, "Auto forbidden");
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override
+            public Map<String, Object> componentContributions() {
+                return Map.of("securitySchemes", Map.of("oidc", Map.of("type", "oauth2")));
+            }
+
+            @Override
+            public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .security("oidc", List.of())
+                        .response(401, OpenApiResponseContribution.of("Authentication required"))
+                        .response(403, OpenApiResponseContribution.of("Auto forbidden"))
+                        .build();
             }
         });
-        b.setSecurityRegistry(registry);
+        b.setContributorRegistry(registry);
         b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
 
         Map<String, Object> spec = b.build();
@@ -248,6 +265,77 @@ class OpenApiBuilderTest {
         assertEquals("object", schema.get("type"));
         Map<String, Object> additionalProperties = cast(schema.get("additionalProperties"));
         assertEquals("#/components/schemas/UserDTO", additionalProperties.get("$ref"));
+    }
+
+    @Test
+    void contributor_response_merge_appliesAllResponses_andManualDescriptionWins() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override
+            public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .allResponses(OpenApiResponseContribution.builder()
+                                .header("X-Trace", Map.of("schema", Map.of("type", "string")))
+                                .build())
+                        .response(200, OpenApiResponseContribution.of("Auto 200"))
+                        .response(429, OpenApiResponseContribution.of("Auto 429"))
+                        .build();
+            }
+        });
+        b.setContributorRegistry(registry);
+        b.addOperation(OpenApiBuilder.routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> get = getOperation(spec, "/merge", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+
+        Map<String, Object> resp200 = cast(responses.get("200"));
+        assertEquals("Manual 200", resp200.get("description"));
+        Map<String, Object> headers200 = cast(resp200.get("headers"));
+        assertTrue(headers200.containsKey("X-Trace"));
+
+        Map<String, Object> resp429 = cast(responses.get("429"));
+        assertEquals("Auto 429", resp429.get("description"));
+        Map<String, Object> headers429 = cast(resp429.get("headers"));
+        assertTrue(headers429.containsKey("X-Trace"));
+    }
+
+    @Test
+    void contributor_lastWins_forResponseHeaderCollisions() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override
+            public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .response(200, OpenApiResponseContribution.builder()
+                                .header("X-RateLimit-Limit", Map.of("description", "old", "schema", Map.of("type", "integer")))
+                                .build())
+                        .build();
+            }
+        });
+        registry.add(new OpenApiContributor() {
+            @Override
+            public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .response(200, OpenApiResponseContribution.builder()
+                                .header("X-RateLimit-Limit", Map.of("description", "new", "schema", Map.of("type", "integer")))
+                                .build())
+                        .build();
+            }
+        });
+
+        b.setContributorRegistry(registry);
+        b.addOperation(OpenApiBuilder.routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> get = getOperation(spec, "/merge", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+        Map<String, Object> resp200 = cast(responses.get("200"));
+        Map<String, Object> headers = cast(resp200.get("headers"));
+        Map<String, Object> header = cast(headers.get("X-RateLimit-Limit"));
+        assertEquals("new", header.get("description"));
     }
 
     private static Map<String, Object> getOperation(Map<String, Object> spec, String path, String method) {

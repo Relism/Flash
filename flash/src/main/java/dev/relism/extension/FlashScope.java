@@ -31,7 +31,7 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
     private final List<RouteDefinition> deferredRoutes   = new ArrayList<>();
 
     FlashScope(String namespace, FlashContext parentCtx) {
-        this.namespace = namespace;
+        this.namespace = PathUtils.sanitize(namespace);
         this.ctx       = parentCtx.child();
     }
 
@@ -54,5 +54,5 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
 
     List<RouteDefinition> routes() { return deferredRoutes; }
 
-    private String ns(String path) { return namespace + PathUtils.sanitize(path); }
+    private String ns(String path) { return PathUtils.join(namespace, path); }
 }

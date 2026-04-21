@@ -39,6 +39,7 @@ class PathUtilsTest {
     void join_withRootBase_returnsSanitizedPath() {
         assertEquals("/users", PathUtils.join("/", "/users/"));
         assertEquals("/users", PathUtils.join("/", "users"));
+        assertEquals("/blogs", PathUtils.join("/", "/blogs"));
     }
 
     @Test

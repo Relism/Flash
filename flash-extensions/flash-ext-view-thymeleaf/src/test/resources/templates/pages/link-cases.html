@@ -1,0 +1,8 @@
+<!doctype html>
+<html>
+<body>
+<a id="plain" th:href="@{/static}">plain</a>
+<a id="pathvar-null" th:href="@{/users/{id}(id=${null})}">pathvar-null</a>
+<a id="query-null" th:href="@{/search(q=${null})}">query-null</a>
+</body>
+</html>
