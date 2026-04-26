@@ -12,6 +12,12 @@
    - Runtime injects globals under reserved `global` namespace and merges local model.
    - jte renders template into `StringOutput`.
 
+3. **Static assets (optional, enabled by default)**
+   - Extension mounts wildcard routes under `staticPrefix` (default `/static/**`).
+   - Assets are served from classpath `/static/**`.
+   - Uses Flash `Response.body(...)` for small payloads and `Response.stream(...)` for large payloads.
+   - Supports ETag/304, gzip precompressed assets, MIME auto-resolution, and byte ranges.
+
 ## Handler Contract
 
 - Must extend `JteHandler`.
@@ -27,3 +33,7 @@ Invalid configurations fail fast at startup.
 - `developmentMode`: `Flash.DEV`
 - `usePrecompiled`: derived from `!developmentMode` unless explicitly set
 - `binaryStaticContent`: `false`
+- `serveStatics`: `true`
+- `staticPrefix`: `/static`
+- `largeFileThresholdBytes`: `65536`
+- static CORS: disabled (`false`)
