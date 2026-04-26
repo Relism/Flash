@@ -1,8 +1,8 @@
-package dev.relism.ext.view.jte;
+package dev.relism.flash.ext.view.jte;
 
-import dev.relism.http.HttpStatus;
-import dev.relism.models.Request;
-import dev.relism.models.Response;
+import dev.relism.flash.http.HttpStatus;
+import dev.relism.flash.models.Request;
+import dev.relism.flash.models.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
