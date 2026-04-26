@@ -1,4 +1,4 @@
-package dev.relism.ext.view.jte;
+package dev.relism.flash.ext.view.jte;
 
 import org.junit.jupiter.api.Test;
 

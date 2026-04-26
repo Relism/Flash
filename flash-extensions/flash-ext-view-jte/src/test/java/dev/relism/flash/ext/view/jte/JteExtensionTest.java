@@ -92,7 +92,7 @@ class JteExtensionTest {
     void routes_register_static_wildcard_when_enabled() {
         JteExtension ext = new JteExtension(cfg -> cfg.staticPrefix("/assets"));
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.extension.FlashContext());
+        ext.routes(app, new dev.relism.flash.extension.FlashContext());
         assertTrue(app.routes.containsKey("GET /assets/**"));
         assertTrue(app.routes.containsKey("HEAD /assets/**"));
     }
@@ -101,7 +101,7 @@ class JteExtensionTest {
     void routes_do_not_register_static_when_disabled() {
         JteExtension ext = new JteExtension().serveStatics(false);
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.extension.FlashContext());
+        ext.routes(app, new dev.relism.flash.extension.FlashContext());
         assertTrue(app.routes.isEmpty());
     }
 
@@ -111,10 +111,10 @@ class JteExtensionTest {
                 .staticPrefix("/assets")
                 .largeFileThresholdBytes(1));
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.extension.FlashContext());
+        ext.routes(app, new dev.relism.flash.extension.FlashContext());
 
         Request req = request("/assets/sample.css", null, null, null);
-        Response res = new Response(200, dev.relism.http.ContentType.TEXT_PLAIN);
+        Response res = new Response(200, dev.relism.flash.http.ContentType.TEXT_PLAIN);
         Object out = app.routes.get("GET /assets/**").handle(req, res);
 
         assertEquals(null, out);
@@ -124,13 +124,7 @@ class JteExtensionTest {
     }
 
     private static JteSettings readSettings(JteExtension ext) {
-        try {
-            var f = JteExtension.class.getDeclaredField("settings");
-            f.setAccessible(true);
-            return (JteSettings) f.get(ext);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return ext.getSettings();
     }
 
     private static void invokeValidate(JteExtension ext, Class<? extends RequestHandler> type) throws Exception {
@@ -147,39 +141,39 @@ class JteExtensionTest {
     }
 
     private static Request request(String path, String query, String acceptEncoding, String origin) {
-        dev.relism.models.HeaderMap headers = new dev.relism.models.HeaderMap();
+        dev.relism.flash.models.HeaderMap headers = new dev.relism.flash.models.HeaderMap();
         String raw = "Host: localhost\r\n";
         if (acceptEncoding != null) raw += "Accept-Encoding: " + acceptEncoding + "\r\n";
         if (origin != null) raw += "Origin: " + origin + "\r\n";
         byte[] bytes = raw.getBytes(StandardCharsets.UTF_8);
         headers.reset(bytes, 0, bytes.length);
 
-        dev.relism.models.RequestLine line = new dev.relism.models.RequestLine(
-                dev.relism.http.HttpMethod.GET,
-                new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView(path),
-                query == null ? null : new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView(query),
-                new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView("HTTP/1.1"),
+        dev.relism.flash.models.RequestLine line = new dev.relism.flash.models.RequestLine(
+                dev.relism.flash.http.HttpMethod.GET,
+                new dev.relism.flash.routing.routers.fastpathrouter.FastPathViews.StringByteView(path),
+                query == null ? null : new dev.relism.flash.routing.routers.fastpathrouter.FastPathViews.StringByteView(query),
+                new dev.relism.flash.routing.routers.fastpathrouter.FastPathViews.StringByteView("HTTP/1.1"),
                 headers
         );
         return new Request(line, new byte[0]);
     }
 
-    private static final class TestRegistrar extends dev.relism.extension.FlashRegistrar<TestRegistrar> {
+    private static final class TestRegistrar extends dev.relism.flash.extension.FlashRegistrar<TestRegistrar> {
         private final Map<String, RequestHandler> routes = new HashMap<>();
-        private final List<dev.relism.routing.Middleware> mws = new ArrayList<>();
+        private final List<dev.relism.flash.routing.Middleware> mws = new ArrayList<>();
 
         @Override
-        public dev.relism.extension.FlashContext ctx() {
-            return new dev.relism.extension.FlashContext();
+        public dev.relism.flash.extension.FlashContext ctx() {
+            return new dev.relism.flash.extension.FlashContext();
         }
 
         @Override
-        protected void addRoute(dev.relism.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.routing.Middleware> mw) {
+        protected void addRoute(dev.relism.flash.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.flash.routing.Middleware> mw) {
             routes.put(method.name() + " " + path, handler);
         }
 
         @Override
-        protected void addMiddleware(dev.relism.routing.Middleware mw) {
+        protected void addMiddleware(dev.relism.flash.routing.Middleware mw) {
             mws.add(mw);
         }
     }

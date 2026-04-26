@@ -1,5 +1,7 @@
 package dev.relism.flash.ext.view.jte;
 
+import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.ext.view.core.BaseViewExtension;
 import dev.relism.flash.ext.view.core.GlobalValue;
 import dev.relism.flash.ext.view.core.ViewRuntimeBridge;
@@ -10,9 +12,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/**
- * Opinionated jte SSR extension for Flash.
- */
 public final class JteExtension extends BaseViewExtension<JteTarget> {
     private final JteSettings settings;
 
@@ -21,7 +20,7 @@ public final class JteExtension extends BaseViewExtension<JteTarget> {
     }
 
     public JteExtension() {
-        this(JteSettings.builder().build());
+        this.settings = JteSettings.builder().build();
     }
 
     public JteExtension(Consumer<JteSettings.Builder> customizer) {
@@ -32,6 +31,41 @@ public final class JteExtension extends BaseViewExtension<JteTarget> {
 
     private JteExtension(JteSettings settings) {
         this.settings = settings;
+    }
+
+    public JteExtension templateRoot(String templateRoot) {
+        return new JteExtension(settings.toBuilder().templateRoot(templateRoot).build());
+    }
+
+    public JteExtension serveStatics(boolean serveStatics) {
+        return new JteExtension(settings.toBuilder().serveStatics(serveStatics).build());
+    }
+
+    public JteExtension staticPrefix(String staticPrefix) {
+        return new JteExtension(settings.toBuilder().staticPrefix(staticPrefix).build());
+    }
+
+    public JteExtension withStaticCors() {
+        return new JteExtension(settings.toBuilder().enableStaticCors(true).build());
+    }
+
+    public JteExtension staticCors(Consumer<JteSettings.Builder> corsConfig) {
+        JteSettings.Builder builder = settings.toBuilder();
+        builder.enableStaticCors(true);
+        corsConfig.accept(builder);
+        return new JteExtension(builder.build());
+    }
+
+    @Override
+    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+        if (!settings.serveStatics()) return;
+        JteStaticServing staticServing = JteStaticServing.load(settings);
+        if (staticServing == null) return;
+
+        String wildcard = settings.staticPrefix() + "/**";
+        StaticJteHandler handler = new StaticJteHandler(staticServing);
+        app.get(wildcard, handler::handle);
+        app.head(wildcard, (req, res) -> { staticServing.serve(req, res, true); return null; });
     }
 
     @Override
@@ -57,6 +91,24 @@ public final class JteExtension extends BaseViewExtension<JteTarget> {
         if (!JteHandler.class.isAssignableFrom(handlerClass)) {
             throw new IllegalStateException("Handler " + handlerClass.getName()
                     + " declares @Template but does not extend JteHandler");
+        }
+    }
+
+    JteSettings getSettings() {
+        return settings;
+    }
+
+    private static final class StaticJteHandler extends dev.relism.flash.models.RequestHandler {
+        private final JteStaticServing serving;
+
+        StaticJteHandler(JteStaticServing serving) {
+            this.serving = serving;
+        }
+
+        @Override
+        public Object handle(dev.relism.flash.models.Request req, dev.relism.flash.models.Response res) {
+            serving.serve(req, res, false);
+            return null;
         }
     }
 
