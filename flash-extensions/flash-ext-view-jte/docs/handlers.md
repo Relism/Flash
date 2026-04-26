@@ -12,6 +12,8 @@ Use `onViewInit()` to cache dependencies via `require(...)`.
 ## Example
 
 ```java
+import models.dev.relism.flash.Request;
+
 @GET("/dashboard")
 @Template("pages/dashboard.jte")
 public final class DashboardPage extends JteHandler {
@@ -24,9 +26,9 @@ public final class DashboardPage extends JteHandler {
     }
 
     @Override
-    public ViewModel render(dev.relism.models.Request req) {
+    public ViewModel render(Request req) {
         return ViewModel.empty()
-            .with("page", service.page(req));
+                .with("page", service.page(req));
     }
 }
 ```

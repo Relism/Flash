@@ -18,34 +18,45 @@ The extension mirrors `gg.jte.ContentType` into Flash HTTP content type:
 ## Quick Start
 
 ```java
-import dev.relism.extension.FlashApp;
-import dev.relism.ext.view.core.ViewModel;
-import dev.relism.ext.view.jte.*;
+import jte.view.ext.dev.relism.flash.JteExtension;
 
 FlashApp.create(8080)
-    .install(new JteExtension(cfg -> cfg
-        .templateRoot("/templates")
-        .contentType(gg.jte.ContentType.Html)))
-    .scan("com.example.web")
-    .startAndBlock();
+    .
+
+install(new JteExtension(cfg ->cfg
+        .
+
+templateRoot("/templates")
+        .
+
+contentType(gg.jte.ContentType.Html)))
+        .
+
+scan("com.example.web")
+    .
+
+startAndBlock();
 ```
 
 ```java
-import dev.relism.ext.view.core.ViewModel;
-import dev.relism.ext.view.jte.*;
-import dev.relism.routing.GET;
+import core.view.ext.dev.relism.flash.ViewModel;
+import jte.view.ext.dev.relism.flash.JteHandler;
+import jte.view.ext.dev.relism.flash.Template;
+import models.dev.relism.flash.Request;
+import routing.dev.relism.flash.GET;
 
 @GET("/")
 @Template("pages/home.jte")
 public final class HomePage extends JteHandler {
     @Override
-    public ViewModel render(dev.relism.models.Request req) {
+    public ViewModel render(Request req) {
         return ViewModel.empty()
-            .with("page", new HomePageModel("Flash + jte", "elorc"))
-            .with("build", "dev");
+                .with("page", new HomePageModel("Flash + jte", "elorc"))
+                .with("build", "dev");
     }
 
-    public record HomePageModel(String title, String author) {}
+    public record HomePageModel(String title, String author) {
+    }
 }
 ```
 

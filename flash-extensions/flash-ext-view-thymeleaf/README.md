@@ -16,28 +16,40 @@ fragment selection via `template :: fragment`) while keeping Flash boot-time fai
 ## Quick Start
 
 ```java
-import dev.relism.extension.FlashApp;
-import dev.relism.ext.view.core.ViewModel;
-import dev.relism.ext.view.thymeleaf.*;
+import thymeleaf.view.ext.dev.relism.flash.ThymeleafExtension;
 
 FlashApp.create(8080)
-    .install(new ThymeleafExtension()
-        .addGlobal("appName", req -> "Flash")
-        .addGlobal("requestPath", req -> req.path()))
-    .scan("com.example.web")
-    .startAndBlock();
+    .
+
+install(new ThymeleafExtension()
+        .
+
+addGlobal("appName",req ->"Flash")
+        .
+
+addGlobal("requestPath",req ->req.
+
+path()))
+        .
+
+scan("com.example.web")
+    .
+
+startAndBlock();
 ```
 
 ```java
-import dev.relism.ext.view.core.ViewModel;
-import dev.relism.ext.view.thymeleaf.*;
-import dev.relism.routing.GET;
+import thymeleaf.view.ext.dev.relism.flash.Template;
+import thymeleaf.view.ext.dev.relism.flash.ThymeleafHandler;
+import core.view.ext.dev.relism.flash.ViewModel;
+import models.dev.relism.flash.Request;
+import routing.dev.relism.flash.GET;
 
 @GET("/")
 @Template("pages/home")
 public final class HomePage extends ThymeleafHandler {
     @Override
-    public ViewModel render(dev.relism.models.Request req) {
+    public ViewModel render(Request req) {
         return ViewModel.of("title", "Home");
     }
 }
@@ -46,11 +58,13 @@ public final class HomePage extends ThymeleafHandler {
 ## Fragment Example
 
 ```java
+import models.dev.relism.flash.Request;
+
 @GET("/users/rows")
 @Fragment(template = "fragments/users", value = "rows")
 public final class UserRows extends ThymeleafHandler {
     @Override
-    public ViewModel render(dev.relism.models.Request req) {
+    public ViewModel render(Request req) {
         return ViewModel.of("users", List.of());
     }
 }

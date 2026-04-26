@@ -1,5 +1,5 @@
 package gg.jte.generated.ondemand.pages;
-import dev.relism.ext.view.jte.model.HomePage;
+import dev.relism.flash.ext.view.jte.model.HomePage;
 import java.util.Map;
 @SuppressWarnings("unchecked")
 public final class JtehomeGenerated {

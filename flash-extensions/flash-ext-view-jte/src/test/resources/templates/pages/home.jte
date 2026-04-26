@@ -1,4 +1,4 @@
-@import dev.relism.ext.view.jte.model.HomePage
+@import dev.relism.flash.ext.view.jte.model.HomePage
 @import java.util.Map
 @param HomePage page
 @param String build
