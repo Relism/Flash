@@ -12,6 +12,8 @@ Use `onViewInit()` to cache dependencies via `require(...)`.
 ## Example
 
 ```java
+import models.dev.relism.flash.Request;
+
 @GET("/dashboard")
 @Template("pages/dashboard")
 public final class DashboardPage extends ThymeleafHandler {
@@ -24,10 +26,10 @@ public final class DashboardPage extends ThymeleafHandler {
     }
 
     @Override
-    public ViewModel render(dev.relism.models.Request req) {
+    public ViewModel render(Request req) {
         return ViewModel.empty()
-            .with("title", "Dashboard")
-            .with("stats", service.stats());
+                .with("title", "Dashboard")
+                .with("stats", service.stats());
     }
 }
 ```

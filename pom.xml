@@ -86,7 +86,7 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-web-bundler</artifactId>
+                <artifactId>flash-ext-web-bundler</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
