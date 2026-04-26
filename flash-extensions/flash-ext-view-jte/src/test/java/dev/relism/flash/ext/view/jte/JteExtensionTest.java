@@ -8,6 +8,11 @@ import dev.relism.flash.routing.GET;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,6 +70,69 @@ class JteExtensionTest {
         assertTrue(ex.getMessage().contains("must declare @Template"));
     }
 
+    @Test
+    void fluent_static_settings_are_applied() {
+        JteExtension ext = new JteExtension()
+                .templateRoot("templates")
+                .serveStatics(false)
+                .staticPrefix("assets")
+                .withStaticCors()
+                .staticCors(cfg -> cfg
+                        .staticCorsAllowOrigin("https://cdn.example.com"));
+
+        JteSettings settings = readSettings(ext);
+        assertEquals("/templates", settings.templateRoot());
+        assertFalse(settings.serveStatics());
+        assertEquals("/assets", settings.staticPrefix());
+        assertTrue(settings.staticCorsEnabled());
+        assertEquals("https://cdn.example.com", settings.staticCorsAllowOrigin());
+    }
+
+    @Test
+    void routes_register_static_wildcard_when_enabled() {
+        JteExtension ext = new JteExtension(cfg -> cfg.staticPrefix("/assets"));
+        TestRegistrar app = new TestRegistrar();
+        ext.routes(app, new dev.relism.extension.FlashContext());
+        assertTrue(app.routes.containsKey("GET /assets/**"));
+        assertTrue(app.routes.containsKey("HEAD /assets/**"));
+    }
+
+    @Test
+    void routes_do_not_register_static_when_disabled() {
+        JteExtension ext = new JteExtension().serveStatics(false);
+        TestRegistrar app = new TestRegistrar();
+        ext.routes(app, new dev.relism.extension.FlashContext());
+        assertTrue(app.routes.isEmpty());
+    }
+
+    @Test
+    void static_handler_serves_existing_asset() throws Exception {
+        JteExtension ext = new JteExtension(cfg -> cfg
+                .staticPrefix("/assets")
+                .largeFileThresholdBytes(1));
+        TestRegistrar app = new TestRegistrar();
+        ext.routes(app, new dev.relism.extension.FlashContext());
+
+        Request req = request("/assets/sample.css", null, null, null);
+        Response res = new Response(200, dev.relism.http.ContentType.TEXT_PLAIN);
+        Object out = app.routes.get("GET /assets/**").handle(req, res);
+
+        assertEquals(null, out);
+        assertEquals("text/css", new String(res.getContentType(), StandardCharsets.UTF_8));
+        assertTrue(res.isStreaming() || res.getBody() != null);
+        assertEquals(200, res.getStatusCode());
+    }
+
+    private static JteSettings readSettings(JteExtension ext) {
+        try {
+            var f = JteExtension.class.getDeclaredField("settings");
+            f.setAccessible(true);
+            return (JteSettings) f.get(ext);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static void invokeValidate(JteExtension ext, Class<? extends RequestHandler> type) throws Exception {
         Method m = JteExtension.class.getDeclaredMethod("validateHandlerClass", Class.class);
         m.setAccessible(true);
@@ -75,6 +143,44 @@ class JteExtensionTest {
             if (cause instanceof RuntimeException re) throw re;
             if (cause instanceof Error err) throw err;
             throw new RuntimeException(cause);
+        }
+    }
+
+    private static Request request(String path, String query, String acceptEncoding, String origin) {
+        dev.relism.models.HeaderMap headers = new dev.relism.models.HeaderMap();
+        String raw = "Host: localhost\r\n";
+        if (acceptEncoding != null) raw += "Accept-Encoding: " + acceptEncoding + "\r\n";
+        if (origin != null) raw += "Origin: " + origin + "\r\n";
+        byte[] bytes = raw.getBytes(StandardCharsets.UTF_8);
+        headers.reset(bytes, 0, bytes.length);
+
+        dev.relism.models.RequestLine line = new dev.relism.models.RequestLine(
+                dev.relism.http.HttpMethod.GET,
+                new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView(path),
+                query == null ? null : new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView(query),
+                new dev.relism.routing.routers.fastpathrouter.FastPathViews.StringByteView("HTTP/1.1"),
+                headers
+        );
+        return new Request(line, new byte[0]);
+    }
+
+    private static final class TestRegistrar extends dev.relism.extension.FlashRegistrar<TestRegistrar> {
+        private final Map<String, RequestHandler> routes = new HashMap<>();
+        private final List<dev.relism.routing.Middleware> mws = new ArrayList<>();
+
+        @Override
+        public dev.relism.extension.FlashContext ctx() {
+            return new dev.relism.extension.FlashContext();
+        }
+
+        @Override
+        protected void addRoute(dev.relism.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.routing.Middleware> mw) {
+            routes.put(method.name() + " " + path, handler);
+        }
+
+        @Override
+        protected void addMiddleware(dev.relism.routing.Middleware mw) {
+            mws.add(mw);
         }
     }
 }
