@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class JteRuntime implements ViewRuntimeBridge<JteTarget> {
-    private static final String GLOBAL_NAMESPACE = "global";
 
     private final JteSettings settings;
     private final List<GlobalValue> globals;
@@ -60,30 +59,25 @@ final class JteRuntime implements ViewRuntimeBridge<JteTarget> {
     }
 
     private ViewModel merge(Request req, ViewModel local) {
-        LinkedHashMap<String, Object> values = null;
+        LinkedHashMap<String, Object> values = new LinkedHashMap<>();
 
-        if (!globals.isEmpty()) {
-            LinkedHashMap<String, Object> globalMap = new LinkedHashMap<>();
-            for (GlobalValue binding : globals) {
-                Object resolved = binding.resolver().apply(req);
-                globalMap.put(binding.key(), ViewModel.unwrapValue(resolved));
-            }
-            if (!globalMap.isEmpty()) {
-                values = new LinkedHashMap<>();
-                values.put(GLOBAL_NAMESPACE, Collections.unmodifiableMap(globalMap));
-            }
+        for (GlobalValue binding : globals) {
+            Object resolved = binding.resolver().apply(req);
+            values.put(binding.key(), ViewModel.unwrapValue(resolved));
         }
 
         if (local != null) {
             Map<String, Object> localMap = local.toMap();
-            if (localMap.containsKey(GLOBAL_NAMESPACE)) {
-                throw new IllegalStateException("ViewModel key 'global' is reserved for framework globals");
+            for (String key : localMap.keySet()) {
+                if (values.containsKey(key)) {
+                    throw new IllegalStateException(
+                            "ViewModel key '" + key + "' conflicts with a registered global");
+                }
             }
-            if (values == null) return ViewModel.copyOf(local);
             values.putAll(localMap);
         }
 
-        if (values == null || values.isEmpty()) return ViewModel.empty();
+        if (values.isEmpty()) return ViewModel.empty();
         return ViewModel.owned(values);
     }
 

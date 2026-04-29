@@ -38,7 +38,7 @@ class JteRuntimeTest {
     }
 
     @Test
-    void render_rejectsReservedGlobalKeyInLocalModel() {
+    void render_rejectsConflictingLocalKey() {
         JteRuntime runtime = new JteRuntime(
                 JteSettings.builder().templateRoot("/templates").developmentMode(true).build(),
                 List.of(new GlobalValue("appName", req -> "Flash"))
@@ -48,12 +48,12 @@ class JteRuntimeTest {
                 runtime.render(new JteHandler() {
                     @Override
                     public ViewModel render(Request req) {
-                        return ViewModel.of("global", "bad");
+                        return ViewModel.of("appName", "override"); // collide con global
                     }
                 }, new JteTarget("pages/home.jte", ContentType.TEXT_HTML), null, new Response(200, ContentType.JSON))
         );
 
-        assertTrue(ex.getMessage().contains("reserved"));
+        assertTrue(ex.getMessage().contains("appName"));
     }
 
     @Test

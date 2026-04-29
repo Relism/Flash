@@ -18,8 +18,12 @@ public abstract class BaseViewExtension<TTarget> implements FlashExtension {
         if (k.isEmpty()) {
             throw new IllegalArgumentException("global key must not be blank");
         }
-        if (k.equals("global") || k.contains(".")) {
+        if (k.contains(".")) {
             throw new IllegalArgumentException("global key must be a simple key (no dots), received: " + key);
+        }
+        boolean duplicate = globals.stream().anyMatch(g -> g.key().equals(k));
+        if (duplicate) {
+            throw new IllegalArgumentException("global key '" + k + "' is already registered");
         }
         globals.add(new GlobalValue(k, Objects.requireNonNull(resolver, "global resolver must not be null")));
         return this;
