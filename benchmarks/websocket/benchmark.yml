@@ -1,0 +1,24 @@
+config:
+  target: "ws://localhost:8080/echo"
+  engines:
+    ws: {}
+  phases:
+    - duration: 30
+      arrivalRate: 50
+      rampTo: 500
+      name: "Riscaldamento progressivo"
+    - duration: 120
+      arrivalRate: 1000  # 1000 nuovi utenti al secondo
+      name: "Carico Estremo"
+  ensure:
+    maxErrorRate: 5
+    p99: 150
+
+scenarios:
+  - name: "Saturazione Totale"
+    engine: ws
+    flow:
+      - loop:
+          - send: "Benchmark data"
+          # Rimosso il 'think' per eliminare il limite artificiale di 10msg/s per utente
+        count: 100 # Ogni utente spara a raffica 100 messaggi senza pause

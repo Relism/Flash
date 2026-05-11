@@ -4,9 +4,11 @@ import dev.relism.flash.exceptions.InitializationException;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.SimpleHandler;
+import dev.relism.flash.websocket.WebSocketEndpoint;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.Routes;
+import dev.relism.flash.routing.Ws;
 
 import java.util.List;
 
@@ -68,9 +70,14 @@ public abstract class FlashRegistrar<SELF extends FlashRegistrar<SELF>> {
      *         class fails to load or instantiate
      */
     public final SELF scan(String packageName) {
-        PackageScanner.findHandlers(packageName).forEach(cls -> {
+        PackageScanner.ScanResult found = PackageScanner.scan(packageName);
+        found.httpHandlers().forEach(cls -> {
             Route ann = Routes.of(cls);
             addRoute(ann.method(), ann.path(), instantiate(cls), List.of());
+        });
+        found.wsEndpoints().forEach(cls -> {
+            Ws ann = cls.getAnnotation(Ws.class);
+            addWsRoute(ann.value(), instantiateWs(cls));
         });
         return (SELF) this;
     }
@@ -87,6 +94,8 @@ public abstract class FlashRegistrar<SELF extends FlashRegistrar<SELF>> {
     protected abstract void addRoute(HttpMethod method, String path,
                                      RequestHandler handler, List<Middleware> mw);
 
+    protected abstract void addWsRoute(String path, WebSocketEndpoint endpoint);
+
     /** Registers a middleware in this registrar's own scope (global or scope-level). */
     protected abstract void addMiddleware(Middleware mw);
 
@@ -101,6 +110,15 @@ public abstract class FlashRegistrar<SELF extends FlashRegistrar<SELF>> {
             throw new InitializationException(
                     "Failed to instantiate " + cls.getName() +
                     " — ensure it has a public no-arg constructor", e);
+        }
+    }
+
+    protected static WebSocketEndpoint instantiateWs(Class<?> cls) {
+        try { return (WebSocketEndpoint) cls.getDeclaredConstructor().newInstance(); }
+        catch (Exception e) {
+            throw new InitializationException(
+                    "Failed to instantiate WS endpoint " + cls.getName() +
+                    " — ensure public no-arg constructor", e);
         }
     }
 }

@@ -12,6 +12,7 @@ import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.GET;
 import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.websocket.WebSocketEndpoint;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -163,6 +164,11 @@ class OpenApiExtensionTest {
         @Override
         protected void addRoute(HttpMethod method, String path, RequestHandler handler, List<Middleware> mw) {
             routes.put(method.name() + " " + path, handler);
+        }
+
+        @Override
+        protected void addWsRoute(String path, WebSocketEndpoint endpoint) {
+
         }
 
         @Override

@@ -28,4 +28,8 @@ public class FlashConfiguration {
     /** Maximum size of the request header buffer in bytes. Default: 64 KB. */
     @Builder.Default
     int maxHeaderBufferSize = 64 * 1024;
+
+    /** Per-connection WebSocket read buffer size in bytes. Default: 64 KB. */
+    @Builder.Default
+    int wsFrameBufferSize = 64 * 1024;
 }

@@ -37,6 +37,9 @@ class JdbcTxStatus implements TxStatus {
 
     @Override
     public <R> R resource(Class<R> type) {
+        if (connection == null) {
+            throw new IllegalStateException("No connection bound to this transaction status");
+        }
         return type.cast(connection);
     }
 

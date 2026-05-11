@@ -7,6 +7,10 @@ public record Sort(List<Column> columns) {
 
     public record Column(String column, boolean asc) {}
 
+    public static Sort unsorted() { return new Sort(List.of()); }
+
+    public boolean isSorted() { return !columns.isEmpty(); }
+
     public static Sort by(String column)          { return new Sort(List.of(new Column(column, true))); }
     public static Sort desc(String column)        { return new Sort(List.of(new Column(column, false))); }
     public static Sort by(String col, boolean asc){ return new Sort(List.of(new Column(col, asc))); }

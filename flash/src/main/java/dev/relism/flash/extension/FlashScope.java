@@ -5,6 +5,7 @@ import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.SimpleHandler;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.PathUtils;
+import dev.relism.flash.websocket.WebSocketEndpoint;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,9 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
     private final FlashContext          ctx;
     private final List<Middleware>      scopeMiddlewares = new ArrayList<>();
     private final List<RouteDefinition> deferredRoutes   = new ArrayList<>();
+    private final List<WsRouteDefinition> deferredWsRoutes = new ArrayList<>();
+
+    record WsRouteDefinition(String path, WebSocketEndpoint endpoint) {}
 
     FlashScope(String namespace, FlashContext parentCtx) {
         this.namespace = PathUtils.sanitize(namespace);
@@ -48,11 +52,17 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
     }
 
     @Override
+    protected void addWsRoute(String path, WebSocketEndpoint endpoint) {
+        deferredWsRoutes.add(new WsRouteDefinition(ns(path), endpoint));
+    }
+
+    @Override
     protected void addMiddleware(Middleware mw) { scopeMiddlewares.add(mw); }
 
     // ── Internal (called by FlashApp.mount) ───────────────────────────────────
 
     List<RouteDefinition> routes() { return deferredRoutes; }
+    List<WsRouteDefinition> wsRoutes() { return deferredWsRoutes; }
 
     private String ns(String path) { return PathUtils.join(namespace, path); }
 }

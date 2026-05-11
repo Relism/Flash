@@ -14,20 +14,39 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 
 /**
- * One instance per connection, the buffer is allocated once and reused across keep-alive
- * requests. Grows on demand (doubling, up to {@code maxHeaderBufferSize}). Zero String
- * allocations during parsing; paths, headers and protocol are exposed as {@link dev.relism.fpr.core.ByteView} slices.
+ * One instance per connection. The buffer is allocated once and reused across
+ * keep-alive requests. Grows on demand (doubling, up to {@code maxHeaderBufferSize}).
+ *
+ * <h3>Zero-allocation design</h3>
+ * <ul>
+ *   <li>No {@link String} allocations during parsing: paths, headers and
+ *       protocol are exposed as {@link dev.relism.fpr.core.ByteView} slices
+ *       into the shared buffer.</li>
+ *   <li>{@link #headerMap} is reset in-place per request — single allocation
+ *       for the lifetime of the connection.</li>
+ *   <li>Pipelining / keep-alive leftover bytes are tracked via {@code bufBase}
+ *       and {@code bufLen} — no copy between requests on the common path.</li>
+ * </ul>
+ *
+ * <h3>State invariant</h3>
+ * {@code bufBase} and {@code bufLen} always reflect unconsumed bytes that belong
+ * to the <em>next</em> request. They are snapshotted at the top of {@link #parse}
+ * and reset to {@code 0/0} before any work begins, so an exception thrown mid-parse
+ * leaves the fields clean rather than pointing at stale data from a previous request.
  */
 @Slf4j
 public class RequestParser {
     private static final int INITIAL_BUFFER_SIZE = 8192;
 
-    private final int             maxHeaderBufferSize;
-    private final InetSocketAddress remoteAddress;        // set once per connection, never changes
-    private final HeaderMap       headerMap = new HeaderMap();
+    private final int               maxHeaderBufferSize;
+    private final InetSocketAddress remoteAddress;
+    private final HeaderMap         headerMap = new HeaderMap();
     private byte[] buffer;
-    private int bufBase = 0;  // absolute start of valid data in buffer
-    private int bufLen  = 0;  // number of valid bytes from bufBase
+
+    // Unconsumed bytes belonging to the NEXT request.
+    // Reset to 0/0 at the start of every parse() call — see invariant above.
+    private int bufBase = 0;
+    private int bufLen  = 0;
 
     public RequestParser() { this(64 * 1024, null); }
     public RequestParser(int maxHeaderBufferSize) { this(maxHeaderBufferSize, null); }
@@ -37,9 +56,21 @@ public class RequestParser {
         this.buffer = new byte[Math.min(INITIAL_BUFFER_SIZE, maxHeaderBufferSize)];
     }
 
+    /**
+     * Parses the next HTTP request from {@code in}.
+     *
+     * <p><b>Exception safety:</b> {@code bufBase} and {@code bufLen} are reset
+     * to {@code 0} before any parsing work begins. If an exception is thrown,
+     * the connection will be closed by the caller, so stale leftover state is
+     * never a problem — but the reset ensures correctness in test scenarios where
+     * the same parser instance is reused after an error.
+     *
+     * @return the parsed {@link Request}, or {@code null} on clean EOF.
+     * @throws IOException on malformed headers or I/O failure.
+     */
     public Request parse(InputStream in) throws IOException {
-        // Take ownership of any leftover bytes from the previous request, then reset so
-        // early-returns leave the fields in a clean state.
+        // Snapshot leftover bytes from the previous request, then reset immediately.
+        // Any exception thrown below leaves bufBase/bufLen at 0 — safe state.
         int base      = bufBase;
         int totalRead = bufLen;
         bufBase = 0;
@@ -49,8 +80,8 @@ public class RequestParser {
         while (headerEndIdx == -1) {
             if (base + totalRead == buffer.length) {
                 if (base > 0) {
-                    // Compact: slide valid data to position 0 — rare path (~every N requests
-                    // where N = bufferSize / avgRequestSize rather than every request).
+                    // Compact: slide valid data to position 0.
+                    // Rare path (~every N requests where N ≈ bufferSize / avgRequestSize).
                     System.arraycopy(buffer, base, buffer, 0, totalRead);
                     base = 0;
                 } else if (buffer.length >= maxHeaderBufferSize) {
@@ -70,6 +101,8 @@ public class RequestParser {
             throw new IOException("Request headers exceed " + maxHeaderBufferSize + " bytes");
         }
 
+        // ── Request line ─────────────────────────────────────────────────────
+
         int methodEnd = find(buffer, base, headerEndIdx, (byte) ' ');
         if (methodEnd == -1) throw new IOException("Invalid request line (method)");
 
@@ -81,20 +114,23 @@ public class RequestParser {
         if (pathEnd == -1) throw new IOException("Invalid request line (path)");
 
         int queryMark = find(buffer, pathStart, pathEnd, (byte) '?');
-        FastPathViews.RequestByteView pathView  = new FastPathViews.RequestByteView(buffer, pathStart,
+        FastPathViews.RequestByteView pathView = new FastPathViews.RequestByteView(buffer, pathStart,
                 queryMark != -1 ? queryMark - pathStart : pathEnd - pathStart);
         FastPathViews.RequestByteView queryView = queryMark != -1
                 ? new FastPathViews.RequestByteView(buffer, queryMark + 1, pathEnd - queryMark - 1)
                 : null;
 
         int protocolStart = pathEnd + 1;
-        int protocolEnd = find(buffer, protocolStart, headerEndIdx, (byte) '\r');
+        int protocolEnd   = find(buffer, protocolStart, headerEndIdx, (byte) '\r');
         if (protocolEnd == -1) throw new IOException("Invalid request line (protocol)");
 
-        FastPathViews.RequestByteView protocolView = new FastPathViews.RequestByteView(buffer, protocolStart, protocolEnd - protocolStart);
+        FastPathViews.RequestByteView protocolView =
+                new FastPathViews.RequestByteView(buffer, protocolStart, protocolEnd - protocolStart);
+
+        // ── Headers ──────────────────────────────────────────────────────────
 
         int sectionStart = find(buffer, protocolEnd, headerEndIdx, (byte) '\n') + 1;
-        int current = sectionStart;
+        int current      = sectionStart;
         long contentLength = 0;
         boolean isChunked  = false;
 
@@ -118,35 +154,40 @@ public class RequestParser {
 
         headerMap.reset(buffer, sectionStart, headerEndIdx);
 
+        // ── Body / pipelining accounting ─────────────────────────────────────
+
         int bodyStart = headerEndIdx + 4;
         int preBufLen = (base + totalRead) - bodyStart;
 
-        // Any bytes read beyond this request's body belong to the next request.
-        // Store their absolute position in the buffer — no copy needed; the next parse()
-        // call will read directly from bufBase without touching the data.
+        // Bytes read beyond this request's body belong to the next request.
+        // Store their absolute position — no copy needed; the next parse() call
+        // reads directly from bufBase without touching the data.
         if (!isChunked && contentLength == 0 && preBufLen > 0) {
-            bufBase = bodyStart;
-            bufLen  = preBufLen;
+            bufBase   = bodyStart;
+            bufLen    = preBufLen;
             preBufLen = 0;
         } else if (!isChunked && contentLength > 0 && preBufLen > contentLength) {
-            bufBase = bodyStart + (int) contentLength;
-            bufLen  = preBufLen - (int) contentLength;
+            bufBase   = bodyStart + (int) contentLength;
+            bufLen    = preBufLen - (int) contentLength;
             preBufLen = (int) contentLength;
         }
 
         RequestLine requestLine = new RequestLine(method, pathView, queryView, protocolView, headerMap);
 
         if (isChunked) {
-            return Request.forParsed(requestLine, new ChunkedInputStream(in, buffer, bodyStart, preBufLen), -1L, null, 0, 0, remoteAddress);
+            return Request.forParsed(requestLine,
+                    new ChunkedInputStream(in, buffer, bodyStart, preBufLen),
+                    -1L, null, 0, 0, remoteAddress);
         }
         return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress);
     }
 
+    // ── Buffer scanning utilities (hot path — keep branch-free where possible) ──
+
     private static int findEndOfHeader(byte[] buf, int from, int len) {
         for (int i = from; i <= len - 4; i++) {
-            if (buf[i] == '\r' && buf[i+1] == '\n' && buf[i+2] == '\r' && buf[i+3] == '\n') {
+            if (buf[i] == '\r' && buf[i+1] == '\n' && buf[i+2] == '\r' && buf[i+3] == '\n')
                 return i;
-            }
         }
         return -1;
     }

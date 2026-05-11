@@ -3,6 +3,7 @@ package dev.relism.flash;
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.routing.AbstractRouter;
+import dev.relism.flash.routing.AbstractWsRouter;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -26,7 +27,9 @@ public interface ServerHandle {
     /** Gracefully stops the server, draining active connections. */
     CompletableFuture<Void> stop();
 
-    static ServerHandle create(FlashConfiguration config, AbstractRouter router) throws IOException {
-        return new HttpServer(config, router);
+    static ServerHandle create(FlashConfiguration config,
+                               AbstractRouter httpRouter,
+                               AbstractWsRouter wsRouter) throws IOException {
+        return new HttpServer(config, httpRouter, wsRouter);
     }
 }

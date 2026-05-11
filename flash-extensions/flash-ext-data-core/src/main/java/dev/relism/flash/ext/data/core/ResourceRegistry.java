@@ -31,6 +31,11 @@ public final class ResourceRegistry {
         SYNCHRONIZATIONS.get().clear();
     }
 
+    public static void cleanup() {
+        RESOURCES.remove();
+        SYNCHRONIZATIONS.remove();
+    }
+
     public static <R> R get(TxResourceKey key, Class<R> type) {
         Object value = RESOURCES.get().get(key);
         if (value == null) {

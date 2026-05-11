@@ -35,6 +35,9 @@ class HibernateTxStatus implements TxStatus {
 
     @Override
     public <R> R resource(Class<R> type) {
+        if (session == null) {
+            throw new IllegalStateException("No session bound to this transaction status");
+        }
         return type.cast(session);
     }
 

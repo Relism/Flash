@@ -5,6 +5,7 @@ import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.GET;
+import dev.relism.flash.websocket.WebSocketEndpoint;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -170,6 +171,11 @@ class JteExtensionTest {
         @Override
         protected void addRoute(dev.relism.flash.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.flash.routing.Middleware> mw) {
             routes.put(method.name() + " " + path, handler);
+        }
+
+        @Override
+        protected void addWsRoute(String path, WebSocketEndpoint endpoint) {
+
         }
 
         @Override

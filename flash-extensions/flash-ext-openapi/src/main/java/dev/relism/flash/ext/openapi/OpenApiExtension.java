@@ -118,7 +118,7 @@ public class OpenApiExtension implements FlashExtension {
                "});\n" +
                "</script>\n" +
                "</body>\n" +
-               "</html>";
+                "</html>";
     }
 
     private static void addOperationFromEvent(OpenApiBuilder builder, RouteEvent event) {

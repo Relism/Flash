@@ -8,6 +8,7 @@ import java.util.Objects;
 
 public class HibernateTxManager implements TxManager {
     private static final TxResourceKey HIBERNATE_STATUS_KEY = TxResourceKey.of("hibernate.tx.status");
+    private static final TxResourceKey HIBERNATE_SUSPENDED_KEY = TxResourceKey.of("hibernate.tx.suspended");
 
     private final SessionFactory sf;
 
@@ -22,35 +23,56 @@ public class HibernateTxManager implements TxManager {
                     ? joinExisting(definition)
                     : beginNew(definition);
             case REQUIRES_NEW -> beginNew(definition);
+            case SUPPORTS -> ResourceRegistry.isBound(HIBERNATE_STATUS_KEY)
+                    ? joinExisting(definition)
+                    : noOp(definition);
             case MANDATORY -> {
                 if (!ResourceRegistry.isBound(HIBERNATE_STATUS_KEY))
                     throw new IllegalStateException("MANDATORY: no active transaction");
                 yield joinExisting(definition);
             }
-            case NOT_SUPPORTED -> throw new UnsupportedOperationException("NOT_SUPPORTED is not implemented");
+            case NOT_SUPPORTED -> {
+                HibernateTxStatus suspended = suspendIfNeeded();
+                yield noOp(definition, suspended);
+            }
         };
     }
 
     private TxStatus beginNew(TxDefinition definition) {
-        HibernateTxStatus suspended = ResourceRegistry.getOrNull(HIBERNATE_STATUS_KEY, HibernateTxStatus.class);
-        if (suspended != null) {
-            ResourceRegistry.unbind(HIBERNATE_STATUS_KEY);
-        }
+        return beginNew(definition, suspendIfNeeded());
+    }
+
+    private TxStatus beginNew(TxDefinition definition, HibernateTxStatus suspended) {
         Session s = sf.openSession();
-        s.beginTransaction();
-        if (definition.readOnly()) s.setDefaultReadOnly(true);
-        if (definition.isolation() != TransactionIsolation.DEFAULT) {
-            s.doWork(connection -> connection.setTransactionIsolation(definition.isolation().level()));
+        boolean bound = false;
+        try {
+            s.beginTransaction();
+            if (definition.readOnly()) s.setDefaultReadOnly(true);
+            if (definition.isolation() != TransactionIsolation.DEFAULT) {
+                s.doWork(connection -> connection.setTransactionIsolation(definition.isolation().level()));
+            }
+            HibernateTxStatus status = new HibernateTxStatus(
+                    s,
+                    true,
+                    definition.readOnly(),
+                    suspended,
+                    new HibernateTxStatus.RollbackMarker()
+            );
+            ResourceRegistry.bind(HIBERNATE_STATUS_KEY, status);
+            bound = true;
+            return status;
+        } catch (RuntimeException e) {
+            silentClose(s);
+            throw e;
+        } catch (Exception e) {
+            silentClose(s);
+            throw new TxException(e);
+        } finally {
+            if (!bound && suspended != null) {
+                ResourceRegistry.unbind(HIBERNATE_SUSPENDED_KEY);
+                ResourceRegistry.bind(HIBERNATE_STATUS_KEY, suspended);
+            }
         }
-        HibernateTxStatus status = new HibernateTxStatus(
-                s,
-                true,
-                definition.readOnly(),
-                suspended,
-                new HibernateTxStatus.RollbackMarker()
-        );
-        ResourceRegistry.bind(HIBERNATE_STATUS_KEY, status);
-        return status;
     }
 
     private TxStatus joinExisting(TxDefinition definition) {
@@ -67,10 +89,29 @@ public class HibernateTxManager implements TxManager {
         );
     }
 
+    private TxStatus noOp(TxDefinition definition) {
+        return noOp(definition, null);
+    }
+
+    private TxStatus noOp(TxDefinition definition, HibernateTxStatus suspended) {
+        return new HibernateTxStatus(null, false, definition.readOnly(), suspended, new HibernateTxStatus.RollbackMarker());
+    }
+
+    private HibernateTxStatus suspendIfNeeded() {
+        HibernateTxStatus suspended = ResourceRegistry.getOrNull(HIBERNATE_STATUS_KEY, HibernateTxStatus.class);
+        if (suspended != null) {
+            ResourceRegistry.unbind(HIBERNATE_STATUS_KEY);
+            ResourceRegistry.bind(HIBERNATE_SUSPENDED_KEY, suspended);
+        }
+        return suspended;
+    }
+
     @Override
     public void commit(TxStatus status) {
         HibernateTxStatus s = (HibernateTxStatus) status;
         if (!s.isNewTransaction()) {
+            resumeIfNeeded(s);
+            cleanupIfIdle();
             return;
         }
         try {
@@ -83,6 +124,7 @@ public class HibernateTxManager implements TxManager {
             }
         } finally {
             cleanupAndResume(s);
+            cleanupIfIdle();
         }
     }
 
@@ -91,6 +133,8 @@ public class HibernateTxManager implements TxManager {
         HibernateTxStatus s = (HibernateTxStatus) status;
         if (!s.isNewTransaction()) {
             s.markRollbackOnly();
+            resumeIfNeeded(s);
+            cleanupIfIdle();
             return;
         }
         try {
@@ -100,15 +144,40 @@ public class HibernateTxManager implements TxManager {
             ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK);
         } finally {
             cleanupAndResume(s);
+            cleanupIfIdle();
         }
     }
 
     private void cleanupAndResume(HibernateTxStatus status) {
         ResourceRegistry.unbind(HIBERNATE_STATUS_KEY);
-        status.session().close();
+        silentClose(status.session());
+        resumeIfNeeded(status);
+    }
+
+    private void cleanupIfIdle() {
+        if (!ResourceRegistry.isBound(HIBERNATE_STATUS_KEY) && !ResourceRegistry.isBound(HIBERNATE_SUSPENDED_KEY)) {
+            ResourceRegistry.cleanup();
+        }
+    }
+
+    private void resumeIfNeeded(HibernateTxStatus status) {
         HibernateTxStatus suspended = status.suspended();
+        if (suspended == null) {
+            suspended = ResourceRegistry.getOrNull(HIBERNATE_SUSPENDED_KEY, HibernateTxStatus.class);
+        }
         if (suspended != null) {
+            ResourceRegistry.unbind(HIBERNATE_SUSPENDED_KEY);
             ResourceRegistry.bind(HIBERNATE_STATUS_KEY, suspended);
+        }
+    }
+
+    private void silentClose(Session session) {
+        if (session == null) {
+            return;
+        }
+        try {
+            session.close();
+        } catch (Exception ignored) {
         }
     }
 }

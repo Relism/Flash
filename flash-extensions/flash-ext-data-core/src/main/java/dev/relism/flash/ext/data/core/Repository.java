@@ -4,109 +4,118 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Base repository. Subclasses only extend this — never HibernateRepository
- * or JdbcRepository directly. The concrete backing is transparent.
- *
- * Every method auto-wraps in REQUIRED transaction — safe to call with or
- * without an active transaction on the thread.
- */
-public abstract class Repository<T, ID> {
+public abstract class Repository<T, ID> extends RepositorySupport<T, ID> {
 
-    private final TxDefinition required = TxDefinition.DEFAULTS
-            .withPropagation(TransactionPropagation.REQUIRED);
-
-    // ── CRUD ──────────────────────────────────────────────────────────────────
+    protected Repository(Tx tx) {
+        super(tx);
+    }
 
     public Optional<T> findById(ID id) {
-        return tx(() -> doFindById(id));
-    }
-
-    public List<T> findAll() {
-        return tx(this::doFindAll);
-    }
-
-    public List<T> findAll(int page, int size) {
-        return tx(() -> doFindAll(page, size));
-    }
-
-    public List<T> findAll(Sort sort) {
-        return tx(() -> doFindAll(sort));
-    }
-
-    public List<T> findAll(int page, int size, Sort sort) {
-        return tx(() -> doFindAll(page, size, sort));
-    }
-
-    public Page<T> findPage(int page, int size) {
-        return tx(() -> doFindPage(page, size));
-    }
-
-    public Page<T> findPage(int page, int size, Sort sort) {
-        return tx(() -> doFindPage(page, size, sort));
-    }
-
-    public T save(T entity) {
-        return tx(() -> doSave(entity));
-    }
-
-    public List<T> saveAll(Iterable<T> entities) {
-        return tx(() -> {
-            List<T> saved = new ArrayList<>();
-            for (T e : entities) saved.add(doSave(e));
-            return saved;
-        });
-    }
-
-    public T update(T entity) {
-        return tx(() -> doUpdate(entity));
-    }
-
-    public void delete(T entity) {
-        tx(() -> { doDelete(entity); return null; });
-    }
-
-    public void deleteById(ID id) {
-        tx(() -> { doDeleteById(id); return null; });
-    }
-
-    public void deleteAll(Iterable<T> entities) {
-        tx(() -> { entities.forEach(this::doDelete); return null; });
+        return roQuery(() -> doFindById(id));
     }
 
     public boolean existsById(ID id) {
-        return tx(() -> doExistsById(id));
+        return roQuery(() -> doExistsById(id));
     }
 
     public long count() {
-        return tx(this::doCount);
+        return roQuery(this::doCount);
     }
 
-    // ── Auto-wrap helper ──────────────────────────────────────────────────────
-
-    /**
-     * Ensures the work runs inside a transaction.
-     * If one is already active (caller annotated @Transactional or inside Tx.run)
-     * it joins it — no new connection opened.
-     * If none is active it opens one, commits, and closes it transparently.
-     */
-    protected final <R> R tx(Tx.TxCallable<R> work) {
-        return Tx.call(required, work);
+    public List<T> findAll() {
+        return findAll(Query.all());
     }
 
-    // ── Abstract — implemented by HibernateRepository / JdbcRepository ────────
+    public List<T> findAll(Spec<T> spec) {
+        return findAll(Query.<T>all().where(spec));
+    }
+
+    public List<T> findAll(Query<T> query) {
+        return roQuery(() -> doFind(query));
+    }
+
+    public Page<T> findPage(Query<T> query) {
+        return roQuery(() -> doFindPage(query));
+    }
+
+    public Optional<T> findOne(Spec<T> spec) {
+        return roQuery(() -> doFindOne(spec));
+    }
+
+    public T save(T entity) {
+        return rwQuery(() -> doSave(entity));
+    }
+
+    public T update(T entity) {
+        return rwQuery(() -> doUpdate(entity));
+    }
+
+    public List<T> saveAll(Iterable<T> entities) {
+        return rwQuery(() -> doSaveAll(entities));
+    }
+
+    public void delete(T entity) {
+        rwQuery(() -> {
+            doDelete(entity);
+            return null;
+        });
+    }
+
+    public void deleteById(ID id) {
+        rwQuery(() -> {
+            doDeleteById(id);
+            return null;
+        });
+    }
+
+    public int deleteAll(Spec<T> spec) {
+        return rwQuery(() -> doDeleteAll(spec));
+    }
+
+    public int updateAll(Spec<T> spec, T patch) {
+        return rwQuery(() -> doUpdateAll(spec, patch));
+    }
+
+    public List<T> findAll(int page, int size) {
+        return findAll(Query.<T>all().page(page, size));
+    }
+
+    public List<T> findAll(Sort sort) {
+        return findAll(Query.<T>all().orderBy(sort));
+    }
+
+    public List<T> findAll(int page, int size, Sort sort) {
+        return findAll(Query.<T>all().orderBy(sort).page(page, size));
+    }
+
+    public Page<T> findPage(int page, int size) {
+        return findPage(Query.<T>all().page(page, size));
+    }
+
+    public Page<T> findPage(int page, int size, Sort sort) {
+        return findPage(Query.<T>all().orderBy(sort).page(page, size));
+    }
+
+    public void deleteAll(Iterable<T> entities) {
+        rwQuery(() -> {
+            for (T entity : entities) {
+                doDelete(entity);
+            }
+            return null;
+        });
+    }
 
     protected abstract Optional<T> doFindById(ID id);
-    protected abstract List<T>     doFindAll();
-    protected abstract List<T>     doFindAll(int page, int size);
-    protected abstract List<T>     doFindAll(Sort sort);
-    protected abstract List<T>     doFindAll(int page, int size, Sort sort);
-    protected abstract Page<T>     doFindPage(int page, int size);
-    protected abstract Page<T>     doFindPage(int page, int size, Sort sort);
-    protected abstract T           doSave(T entity);
-    protected abstract T           doUpdate(T entity);
-    protected abstract void        doDelete(T entity);
-    protected abstract void        doDeleteById(ID id);
-    protected abstract boolean     doExistsById(ID id);
-    protected abstract long        doCount();
+    protected abstract List<T> doFind(Query<T> query);
+    protected abstract Optional<T> doFindOne(Spec<T> spec);
+    protected abstract Page<T> doFindPage(Query<T> query);
+    protected abstract boolean doExistsById(ID id);
+    protected abstract long doCount();
+    protected abstract T doSave(T entity);
+    protected abstract List<T> doSaveAll(Iterable<T> entities);
+    protected abstract T doUpdate(T entity);
+    protected abstract void doDelete(T entity);
+    protected abstract void doDeleteById(ID id);
+    protected abstract int doDeleteAll(Spec<T> spec);
+    protected abstract int doUpdateAll(Spec<T> spec, T patch);
 }

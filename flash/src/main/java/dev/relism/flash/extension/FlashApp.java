@@ -7,8 +7,14 @@ import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.SimpleHandler;
 import dev.relism.flash.routing.AbstractRouter;
+import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
+import dev.relism.flash.routing.routers.fastpathrouter.FastPathWsRouterImpl;
+import dev.relism.flash.websocket.WebSocketEndpoint;
+import dev.relism.flash.websocket.WebSocketFrame;
+import dev.relism.flash.websocket.WebSocketHandler;
+import dev.relism.flash.websocket.WebSocketSession;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -52,16 +58,20 @@ import java.util.function.Consumer;
 public final class FlashApp extends FlashRegistrar<FlashApp> {
 
     private final AbstractRouter        router     = new FastPathRouterImpl();
+    private final AbstractWsRouter      wsRouter   = new FastPathWsRouterImpl();
     private final ServerHandle          server;
     private final FlashContext          ctx        = new FlashContext();
     private final List<FlashExtension>  extensions        = new ArrayList<>();
     private final List<Middleware>      globalMiddlewares = new ArrayList<>();
     private final List<RouteDefinition> deferredRoutes    = new ArrayList<>();
+    private final List<WsRouteDefinition> deferredWsRoutes = new ArrayList<>();
     private int port;
+
+    private record WsRouteDefinition(String path, WebSocketEndpoint endpoint) {}
 
     private FlashApp(FlashConfiguration config) {
         try {
-            this.server = ServerHandle.create(config, router);
+            this.server = ServerHandle.create(config, router, wsRouter);
             this.port   = config.getPort();
         }
         catch (IOException e) { throw new InitializationException("Failed to bind on port " + config.getPort(), e); }
@@ -83,6 +93,26 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         FlashScope scope = new FlashScope(namespace, ctx);
         configure.accept(scope);
         deferredRoutes.addAll(scope.routes());
+        deferredWsRoutes.addAll(scope.wsRoutes().stream()
+                .map(r -> new WsRouteDefinition(r.path(), r.endpoint()))
+                .toList());
+        return this;
+    }
+
+    /**
+     * Registers a WebSocket endpoint at {@code path}.
+     * Runs on the same virtual-thread model as HTTP handlers.
+     * A path may have both an HTTP handler and a WS endpoint simultaneously.
+     */
+    public FlashApp ws(String path, WebSocketHandler handler) {
+        WebSocketEndpoint endpoint = handler instanceof WebSocketEndpoint e ? e
+                : new WebSocketEndpoint() {
+                    @Override public void onOpen(WebSocketSession s) { handler.onOpen(s); }
+                    @Override public void onMessage(WebSocketSession s, WebSocketFrame f) { handler.onMessage(s, f); }
+                    @Override public void onClose(WebSocketSession s, int c) { handler.onClose(s, c); }
+                    @Override public void onError(WebSocketSession s, Throwable t) { handler.onError(s, t); }
+                };
+        deferredWsRoutes.add(new WsRouteDefinition(path, endpoint));
         return this;
     }
 
@@ -153,6 +183,11 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     }
 
     @Override
+    protected void addWsRoute(String path, WebSocketEndpoint endpoint) {
+        deferredWsRoutes.add(new WsRouteDefinition(path, endpoint));
+    }
+
+    @Override
     protected void addMiddleware(Middleware mw) { globalMiddlewares.add(mw); }
 
     // ── Boot ─────────────────────────────────────────────────────────────────
@@ -163,6 +198,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         ctx.resolveAll();
         extensions.forEach(e -> e.routes(this, ctx));
         compile();
+        compileWs();
     }
 
     // ── Compilation ──────────────────────────────────────────────────────────
@@ -187,6 +223,14 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         }
     }
 
+    private void compileWs() {
+        for (WsRouteDefinition def : deferredWsRoutes) {
+            def.endpoint().bind(ctx);
+            emitWsEvent(def.path(), def.endpoint());
+            wsRouter.register(HttpMethod.GET, def.path(), def.endpoint());
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void emitEvent(RouteDefinition def, Middleware[] chain) {
         List<RouteListener> listeners = def.ctx().routeListeners();
@@ -195,6 +239,14 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         for (Middleware m : chain) mwClasses.add((Class<? extends Middleware>) m.getClass());
         Class<?> handlerClass = def.classBasedHandler() ? def.handler().getClass() : null;
         RouteEvent event = new RouteEvent(def.method(), def.path(), def.namespace(), "FlashApp", handlerClass, List.copyOf(mwClasses));
+        listeners.forEach(l -> l.onRoute(event));
+    }
+
+    private void emitWsEvent(String path, WebSocketEndpoint endpoint) {
+        List<RouteListener> listeners = ctx.routeListeners();
+        if (listeners.isEmpty()) return;
+        RouteEvent event = new RouteEvent(HttpMethod.GET, path, "/", "FlashApp",
+                endpoint.getClass(), List.of());
         listeners.forEach(l -> l.onRoute(event));
     }
 

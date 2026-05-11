@@ -2,9 +2,12 @@ package dev.relism.flash.extension;
 
 import dev.relism.flash.exceptions.InitializationException;
 import dev.relism.flash.models.RequestHandler;
+import dev.relism.flash.routing.Ws;
 import dev.relism.flash.routing.Routes;
+import dev.relism.flash.websocket.WebSocketEndpoint;
 
 import java.io.File;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -26,6 +29,8 @@ final class PackageScanner {
 
     private PackageScanner() {}
 
+    record ScanResult(List<Class<?>> httpHandlers, List<Class<?>> wsEndpoints) {}
+
     /**
      * Handlers in {@code packageName} that have {@link Routes#of(Class) resolvable} route metadata.
      *
@@ -33,12 +38,17 @@ final class PackageScanner {
      *                                  handler class fails to load
      */
     static List<Class<?>> findHandlers(String packageName) {
+        return scan(packageName).httpHandlers();
+    }
+
+    static ScanResult scan(String packageName) {
         if (packageName == null || packageName.isBlank())
             throw new InitializationException("scan() called with null or blank package name");
 
         String resourcePath = packageName.replace('.', '/');
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        List<Class<?>> result = new ArrayList<>();
+        List<Class<?>> http = new ArrayList<>();
+        List<Class<?>> ws = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         boolean packageFound = false;
 
@@ -49,17 +59,17 @@ final class PackageScanner {
                 URL url = resources.nextElement();
                 String protocol = url.getProtocol();
                 if ("file".equals(protocol)) {
-                    scanDirectory(new File(url.toURI()), packageName, cl, result, errors);
+                    scanDirectory(new File(url.toURI()), packageName, cl, http, ws, errors);
                 } else if ("jar".equals(protocol)) {
                     String jarPath = url.getPath();
                     String filePart = jarPath.substring(jarPath.indexOf("file:") + 5, jarPath.indexOf('!'));
                     try (JarFile jar = new JarFile(filePart)) {
-                        scanJar(jar, resourcePath, packageName, cl, result, errors);
+                        scanJar(jar, resourcePath, packageName, cl, http, ws, errors);
                     }
                 }
             }
         } catch (InitializationException e) {
-            throw e; // re-throw our own exceptions
+            throw e;
         } catch (Exception e) {
             throw new InitializationException("Failed to scan package: " + packageName, e);
         }
@@ -74,38 +84,38 @@ final class PackageScanner {
                     "scan(\"" + packageName + "\") — failed to load " + errors.size() + " handler(s):\n  • " +
                     String.join("\n  • ", errors));
 
-        if (result.isEmpty())
+        if (http.isEmpty() && ws.isEmpty())
             throw new InitializationException(
                     "scan(\"" + packageName + "\") — no routable handlers found. " +
-                    "Ensure classes extend RequestHandler, declare @Route or @GET/@POST/…, are not abstract, " +
-                    "and have a public no-arg constructor.");
+                    "Ensure classes extend RequestHandler or WebSocketEndpoint, declare the right route annotation, " +
+                    "are not abstract, and have a public no-arg constructor.");
 
-        return result;
+        return new ScanResult(List.copyOf(http), List.copyOf(ws));
     }
 
     private static void scanDirectory(File dir, String packageName, ClassLoader cl,
-                                       List<Class<?>> result, List<String> errors) {
+                                        List<Class<?>> http, List<Class<?>> ws, List<String> errors) {
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File file : files) {
             if (file.isDirectory()) {
-                scanDirectory(file, packageName + '.' + file.getName(), cl, result, errors);
+                scanDirectory(file, packageName + '.' + file.getName(), cl, http, ws, errors);
             } else if (file.getName().endsWith(".class") && !isAnonymous(file.getName())) {
                 String className = packageName + '.' + file.getName().replace(".class", "");
-                tryLoad(className, cl, result, errors);
+                tryLoad(className, cl, http, ws, errors);
             }
         }
     }
 
     private static void scanJar(JarFile jar, String resourcePath, String packageName,
-                                  ClassLoader cl, List<Class<?>> result, List<String> errors) {
+                                  ClassLoader cl, List<Class<?>> http, List<Class<?>> ws, List<String> errors) {
         String prefix = resourcePath + "/";
         Enumeration<JarEntry> entries = jar.entries();
         while (entries.hasMoreElements()) {
             String name = entries.nextElement().getName();
             if (name.startsWith(prefix) && name.endsWith(".class") && !isAnonymous(name)) {
                 String className = name.replace('/', '.').replace(".class", "");
-                tryLoad(className, cl, result, errors);
+                tryLoad(className, cl, http, ws, errors);
             }
         }
     }
@@ -125,22 +135,25 @@ final class PackageScanner {
     }
 
     private static void tryLoad(String className, ClassLoader cl,
-                                 List<Class<?>> result, List<String> errors) {
+                                 List<Class<?>> http, List<Class<?>> ws, List<String> errors) {
         try {
             Class<?> cls = cl.loadClass(className);
-            if (!RequestHandler.class.isAssignableFrom(cls)) return;
-            if (java.lang.reflect.Modifier.isAbstract(cls.getModifiers())) return;
-            if (Routes.of(cls) == null) return;
+            if (Modifier.isAbstract(cls.getModifiers())) return;
 
-            // Verify no-arg constructor exists — fail-fast if missing
-            try {
-                cls.getDeclaredConstructor();
-            } catch (NoSuchMethodException e) {
-                errors.add(className + " — missing public no-arg constructor");
+            if (RequestHandler.class.isAssignableFrom(cls)
+                    && Routes.of(cls) != null
+                    && !cls.isAnnotationPresent(Ws.class)) {
+                assertNoArgConstructor(cls, errors);
+                http.add(cls);
                 return;
             }
 
-            result.add(cls);
+            if (WebSocketEndpoint.class.isAssignableFrom(cls)
+                    && cls.isAnnotationPresent(Ws.class)) {
+                assertNoArgConstructor(cls, errors);
+                ws.add(cls);
+                return;
+            }
         } catch (ClassNotFoundException e) {
             errors.add(className + " — class not found: " + e.getMessage());
         } catch (NoClassDefFoundError e) {
@@ -148,5 +161,10 @@ final class PackageScanner {
         } catch (LinkageError e) {
             errors.add(className + " — linkage error: " + e.getMessage());
         }
+    }
+
+    private static void assertNoArgConstructor(Class<?> cls, List<String> errors) {
+        try { cls.getDeclaredConstructor(); }
+        catch (NoSuchMethodException e) { errors.add(cls.getName() + " — missing public no-arg constructor"); }
     }
 }
