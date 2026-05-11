@@ -95,17 +95,18 @@ jobs:
             <meta charset="UTF-8">
             <title>Flash JavaDoc</title>
             <style>
-              body {{ font-family: sans-serif; max-width: 600px; margin: 4rem auto; }}
-              h1 {{ font-size: 1.6rem; }}
-              ul {{ line-height: 2; }}
-              a {{ color: #0070f3; text-decoration: none; }}
+              body {{ font-family: Inter, Arial, sans-serif; max-width: 720px; margin: 5rem auto; padding: 0 1.5rem; color: #1f2937; background: #fff; }}
+              h1 {{ font-size: 2rem; margin-bottom: 0.5rem; letter-spacing: -0.02em; }}
+              p {{ color: #6b7280; line-height: 1.6; }}
+              ul {{ list-style: none; padding: 0; margin: 2rem 0 0; border-top: 1px solid #e5e7eb; }}
+              li {{ border-bottom: 1px solid #e5e7eb; }}
+              a {{ display: block; padding: 1rem 0; color: #111827; text-decoration: none; font-weight: 600; }}
               a:hover {{ text-decoration: underline; }}
             </style>
           </head>
           <body>
             <h1>Flash — JavaDoc</h1>
-            <p><a href="latest/index.html">&#8594; Latest</a></p>
-            <h2>All versions</h2>
+            <p>Browse the published API documentation for each release.</p>
             <ul>
           {rows}
             </ul>
