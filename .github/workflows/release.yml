@@ -67,10 +67,10 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           mkdir -p gh-pages-out/javadoc/$VERSION
-          cp -r target/reports/apidocs/. gh-pages-out/javadoc/$VERSION/
+          cp -r flash/target/site/apidocs/. gh-pages-out/javadoc/$VERSION/
           rm -rf gh-pages-out/latest
           mkdir -p gh-pages-out/latest
-          cp -r target/reports/apidocs/. gh-pages-out/latest/
+          cp -r flash/target/site/apidocs/. gh-pages-out/latest/
 
       - name: Regenerate index.html
         run: |
