@@ -1,4 +1,7 @@
 target/
+*.versionsBackup
+.mvn/timing.properties
+*.class
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
