@@ -1,6 +1,21 @@
 dev.relism.flash
 dev.relism.flash.api.multipart
 dev.relism.flash.exceptions
+dev.relism.flash.ext.data
+dev.relism.flash.ext.data.core
+dev.relism.flash.ext.data.hibernate
+dev.relism.flash.ext.data.jdbc
+dev.relism.flash.ext.jackson
+dev.relism.flash.ext.limiter
+dev.relism.flash.ext.limiter.strategy
+dev.relism.flash.ext.oidc
+dev.relism.flash.ext.openapi
+dev.relism.flash.ext.routeviewer
+dev.relism.flash.ext.routeviewer.model
+dev.relism.flash.ext.view.core
+dev.relism.flash.ext.view.jte
+dev.relism.flash.ext.view.thymeleaf
+dev.relism.flash.ext.webbundler
 dev.relism.flash.extension
 dev.relism.flash.http
 dev.relism.flash.models
@@ -8,3 +23,4 @@ dev.relism.flash.routing
 dev.relism.flash.routing.routers.fastpathrouter
 dev.relism.flash.routing.routers.radix
 dev.relism.flash.template
+dev.relism.flash.websocket
