@@ -6,13 +6,12 @@ on:
       - 'v*'
 
 jobs:
+  # ── 1. Build, GPG-sign, deploy to Maven releases ──────────────────────────
   release:
-    name: Build, Sign, Deploy & Publish
+    name: Build, Sign & Deploy
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
 
     steps:
       - name: Checkout
@@ -47,91 +46,25 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
 
-      - name: Generate aggregated JavaDoc
-        run: |
-          mvn -B --settings .github/settings.xml \
-            -pl flash,flash-extensions -am \
-            javadoc:aggregate -DskipTests
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-
-      - name: Checkout gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages-out
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Copy JavaDoc to versioned folder
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p gh-pages-out/javadoc/$VERSION
-          cp -r flash/target/site/apidocs/. gh-pages-out/javadoc/$VERSION/
-          rm -rf gh-pages-out/latest
-          mkdir -p gh-pages-out/latest
-          cp -r flash/target/site/apidocs/. gh-pages-out/latest/
-
-      - name: Regenerate index.html
-        run: |
-          cd gh-pages-out
-          python3 - <<'EOF'
-          import os, re
-
-          versions = sorted(
-              [d for d in os.listdir("javadoc") if os.path.isdir(f"javadoc/{d}")],
-              key=lambda v: [int(x) for x in re.sub(r'[^0-9.]', '', v).split('.') if x],
-              reverse=True
-          )
-
-          rows = "\n".join(
-              f'      <li><a href="javadoc/{v}/index.html">{v}</a></li>'
-              for v in versions
-          )
-
-          html = f"""<!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <title>Flash JavaDoc</title>
-            <style>
-              body {{ font-family: Inter, Arial, sans-serif; max-width: 720px; margin: 5rem auto; padding: 0 1.5rem; color: #1f2937; background: #fff; }}
-              h1 {{ font-size: 2rem; margin-bottom: 0.5rem; letter-spacing: -0.02em; }}
-              p {{ color: #6b7280; line-height: 1.6; }}
-              ul {{ list-style: none; padding: 0; margin: 2rem 0 0; border-top: 1px solid #e5e7eb; }}
-              li {{ border-bottom: 1px solid #e5e7eb; }}
-              a {{ display: block; padding: 1rem 0; color: #111827; text-decoration: none; font-weight: 600; }}
-              a:hover {{ text-decoration: underline; }}
-            </style>
-          </head>
-          <body>
-            <h1>Flash — JavaDoc</h1>
-            <p>Browse the published API documentation for each release.</p>
-            <ul>
-          {rows}
-            </ul>
-          </body>
-          </html>"""
-
-          with open("index.html", "w") as f:
-              f.write(html)
-          print(f"index.html generated with {len(versions)} versions: {versions}")
-          EOF
-
-      - name: Push gh-pages
-        run: |
-          cd gh-pages-out
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "docs(javadoc): release ${{ steps.version.outputs.VERSION }}"
-          git push origin gh-pages
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.VERSION }}
-          name: v${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
           prerelease: false
+
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+
+  # ── 2. Publish JavaDoc (delegated to docs.yml — single source of truth) ───
+  docs:
+    name: Publish JavaDoc
+    needs: release
+    uses: ./.github/workflows/docs.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets:
+      MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+      MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
