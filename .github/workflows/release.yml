@@ -13,6 +13,9 @@ jobs:
     permissions:
       contents: write
 
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,10 +58,7 @@ jobs:
           draft: false
           prerelease: false
 
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-
-  # ── 2. Publish JavaDoc (delegated to docs.yml — single source of truth) ───
+  # ── 2. Publish JavaDoc (single source of truth: docs.yml) ─────────────────
   docs:
     name: Publish JavaDoc
     needs: release

@@ -40,14 +40,16 @@ jobs:
           java-version: 21
           cache: maven
 
-      - name: Build project (resolve deps + compile, skip tests)
+      - name: Build project (compile + resolve deps, skip tests)
         run: mvn -B --settings .github/settings.xml clean verify -DskipTests
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
 
-      # javadoc:aggregate gira sulla root del progetto.
-      # L'output viene scritto in target/site/apidocs/ (root), NON in flash/target/...
+      # javadoc:aggregate runs on the reactor root.
+      # With flash + flash-extensions both declared as modules in root pom.xml,
+      # this produces a single aggregated Javadoc covering all modules.
+      # Default output path: target/site/apidocs/ (no custom reportOutputDirectory set).
       - name: Generate aggregated JavaDoc
         run: mvn -B --settings .github/settings.xml javadoc:aggregate -DskipTests
         env:
@@ -57,10 +59,13 @@ jobs:
       - name: Verify JavaDoc output exists
         run: |
           if [ ! -f "target/site/apidocs/index.html" ]; then
-            echo "ERROR: target/site/apidocs/index.html not found. JavaDoc generation failed."
+            echo "ERROR: target/site/apidocs/index.html not found."
+            echo "Contents of target/site (if any):"
+            find target/site -maxdepth 3 2>/dev/null || echo "(empty)"
             exit 1
           fi
-          echo "JavaDoc OK — $(find target/site/apidocs -name '*.html' | wc -l) HTML files generated."
+          COUNT=$(find target/site/apidocs -name '*.html' | wc -l)
+          echo "JavaDoc OK — $COUNT HTML files at target/site/apidocs/"
 
       - name: Checkout gh-pages
         uses: actions/checkout@v4
@@ -72,10 +77,8 @@ jobs:
       - name: Copy JavaDoc to versioned folder and latest
         run: |
           VERSION=${{ inputs.version }}
-          # Versioned snapshot
           mkdir -p gh-pages-out/javadoc/$VERSION
           cp -r target/site/apidocs/. gh-pages-out/javadoc/$VERSION/
-          # Always-current alias
           rm -rf gh-pages-out/latest
           mkdir -p gh-pages-out/latest
           cp -r target/site/apidocs/. gh-pages-out/latest/
@@ -96,38 +99,226 @@ jobs:
               reverse=True
           )
 
+          latest = versions[0] if versions else None
+
           rows = "\n".join(
-              f'      <li><a href="javadoc/{v}/index.html">{v}</a></li>'
+              f'''
+              <div class="release">
+                <div class="release-info">
+                  <span class="version">{v}</span>
+                  {"<span class=\\"badge\\">latest</span>" if v == latest else ""}
+                </div>
+
+                <a href="javadoc/{v}/index.html">Open</a>
+              </div>
+              '''
               for v in versions
           )
 
-          html = f"""<!DOCTYPE html>
+          html = """<!DOCTYPE html>
           <html lang="en">
           <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Flash JavaDoc</title>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Flash — JavaDoc</title>
+
             <style>
-              body {{ font-family: Inter, Arial, sans-serif; max-width: 720px; margin: 5rem auto; padding: 0 1.5rem; color: #1f2937; background: #fff; }}
-              h1 {{ font-size: 2rem; margin-bottom: 0.5rem; letter-spacing: -0.02em; }}
-              p {{ color: #6b7280; line-height: 1.6; }}
-              ul {{ list-style: none; padding: 0; margin: 2rem 0 0; border-top: 1px solid #e5e7eb; }}
-              li {{ border-bottom: 1px solid #e5e7eb; }}
-              a {{ display: block; padding: 1rem 0; color: #111827; text-decoration: none; font-weight: 600; }}
-              a:hover {{ text-decoration: underline; }}
+              :root {
+                --bg: #ffffff;
+                --surface: #fafafa;
+                --border: #e5e7eb;
+
+                --text: #111827;
+                --muted: #6b7280;
+
+                --accent: #111827;
+                --accent-hover: #000000;
+              }
+
+              * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+              }
+
+              body {
+                font-family:
+                  Inter,
+                  ui-sans-serif,
+                  system-ui,
+                  -apple-system,
+                  BlinkMacSystemFont,
+                  "Segoe UI",
+                  sans-serif;
+
+                background: var(--bg);
+                color: var(--text);
+
+                min-height: 100vh;
+                padding: 64px 24px;
+              }
+
+              .container {
+                width: 100%;
+                max-width: 760px;
+                margin: 0 auto;
+              }
+
+              .header {
+                margin-bottom: 40px;
+              }
+
+              .header h1 {
+                font-size: 2rem;
+                font-weight: 600;
+                letter-spacing: -0.04em;
+              }
+
+              .header p {
+                margin-top: 10px;
+
+                color: var(--muted);
+                font-size: 0.95rem;
+                line-height: 1.6;
+              }
+
+              .latest {
+                display: inline-flex;
+                align-items: center;
+
+                margin-top: 20px;
+                padding-bottom: 2px;
+
+                color: var(--accent);
+                text-decoration: none;
+                font-size: 0.95rem;
+                font-weight: 500;
+
+                border-bottom: 1px solid transparent;
+
+                transition:
+                  border-color 0.15s ease,
+                  color 0.15s ease;
+              }
+
+              .latest:hover {
+                border-color: var(--accent);
+                color: var(--accent-hover);
+              }
+
+              .list {
+                border-top: 1px solid var(--border);
+              }
+
+              .release {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+
+                gap: 16px;
+
+                padding: 18px 0;
+
+                border-bottom: 1px solid var(--border);
+              }
+
+              .release-info {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+              }
+
+              .version {
+                font-size: 0.96rem;
+                font-weight: 500;
+                letter-spacing: -0.01em;
+              }
+
+              .badge {
+                font-size: 0.72rem;
+                font-weight: 600;
+
+                color: var(--muted);
+
+                border: 1px solid var(--border);
+                padding: 2px 8px;
+              }
+
+              .release a {
+                color: var(--accent);
+                text-decoration: none;
+                font-size: 0.92rem;
+              }
+
+              .release a:hover {
+                text-decoration: underline;
+              }
+
+              .empty {
+                padding: 32px 0;
+
+                color: var(--muted);
+                font-size: 0.95rem;
+              }
+
+              @media (max-width: 640px) {
+                body {
+                  padding: 40px 20px;
+                }
+
+                .header h1 {
+                  font-size: 1.7rem;
+                }
+
+                .release {
+                  flex-direction: column;
+                  align-items: flex-start;
+                }
+              }
             </style>
           </head>
+
           <body>
-            <h1>Flash — JavaDoc</h1>
-            <p>Browse the published API documentation for each release.</p>
-            <ul>
-          {rows}
-            </ul>
+            <div class="container">
+
+              <header class="header">
+                <h1>Flash JavaDoc</h1>
+
+                <p>
+                  API documentation for all published Flash releases.
+                </p>
+
+                """ + (
+                  f'''
+                  <a class="latest" href="latest/index.html">
+                    Latest release — {latest}
+                  </a>
+                  '''
+                  if latest else ""
+                ) + """
+              </header>
+
+              """ + (
+                f'''
+                <div class="list">
+                  {rows}
+                </div>
+                '''
+                if rows else
+                '''
+                <div class="empty">
+                  No versions published yet.
+                </div>
+                '''
+              ) + """
+
+            </div>
           </body>
           </html>"""
 
           with open("index.html", "w", encoding="utf-8") as f:
               f.write(html)
+
           print(f"index.html generated — {len(versions)} version(s): {versions}")
           EOF
 
