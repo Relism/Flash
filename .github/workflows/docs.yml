@@ -51,21 +51,35 @@ jobs:
       # this produces a single aggregated Javadoc covering all modules.
       # Default output path: target/site/apidocs/ (no custom reportOutputDirectory set).
       - name: Generate aggregated JavaDoc
-        run: mvn -B --settings .github/settings.xml javadoc:aggregate -DskipTests
+        run: |
+          mvn -B \
+            --settings .github/settings.xml \
+            -DskipTests \
+            org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-
+          
       - name: Verify JavaDoc output exists
         run: |
-          if [ ! -f "target/site/apidocs/index.html" ]; then
-            echo "ERROR: target/site/apidocs/index.html not found."
-            echo "Contents of target/site (if any):"
-            find target/site -maxdepth 3 2>/dev/null || echo "(empty)"
+          APIDOCS=""
+
+          if [ -f "target/site/apidocs/index.html" ]; then
+            APIDOCS="target/site/apidocs"
+          elif [ -f "target/reports/apidocs/index.html" ]; then
+            APIDOCS="target/reports/apidocs"
+          else
+            echo "ERROR: JavaDoc output not found."
+            echo
+            echo "Contents of target/:"
+            find target -maxdepth 5 2>/dev/null || echo "(empty)"
             exit 1
           fi
-          COUNT=$(find target/site/apidocs -name '*.html' | wc -l)
-          echo "JavaDoc OK — $COUNT HTML files at target/site/apidocs/"
+
+          echo "APIDOCS_DIR=$APIDOCS" >> $GITHUB_ENV
+
+          COUNT=$(find "$APIDOCS" -name '*.html' | wc -l)
+          echo "JavaDoc OK — $COUNT HTML files at $APIDOCS"
 
       - name: Checkout gh-pages
         uses: actions/checkout@v4
@@ -77,11 +91,13 @@ jobs:
       - name: Copy JavaDoc to versioned folder and latest
         run: |
           VERSION=${{ inputs.version }}
+
           mkdir -p gh-pages-out/javadoc/$VERSION
-          cp -r target/site/apidocs/. gh-pages-out/javadoc/$VERSION/
+          cp -r "$APIDOCS_DIR"/. gh-pages-out/javadoc/$VERSION/
+
           rm -rf gh-pages-out/latest
           mkdir -p gh-pages-out/latest
-          cp -r target/site/apidocs/. gh-pages-out/latest/
+          cp -r "$APIDOCS_DIR"/. gh-pages-out/latest/
 
       - name: Regenerate index.html
         run: |
