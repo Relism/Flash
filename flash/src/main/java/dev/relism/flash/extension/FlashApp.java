@@ -65,14 +65,12 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     private final List<Middleware>      globalMiddlewares = new ArrayList<>();
     private final List<RouteDefinition> deferredRoutes    = new ArrayList<>();
     private final List<WsRouteDefinition> deferredWsRoutes = new ArrayList<>();
-    private int port;
 
     private record WsRouteDefinition(String path, WebSocketEndpoint endpoint) {}
 
     private FlashApp(FlashConfiguration config) {
         try {
             this.server = ServerHandle.create(config, router, wsRouter);
-            this.port   = config.getPort();
         }
         catch (IOException e) { throw new InitializationException("Failed to bind on port " + config.getPort(), e); }
     }
@@ -157,7 +155,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     public FlashApp start() {
         boot();
         server.start();
-        if (Flash.DEV) log.info("[Flash] Started (dev mode): listening on port " + port);
+        if (Flash.DEV) log.info("[Flash] Started (dev mode) — see HttpServer bind logs above for listener details");
         return this;
     }
 
@@ -167,7 +165,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
      */
     public void startAndBlock() {
         boot();
-        if (Flash.DEV) log.info("[Flash] Started (dev mode): listening on port " + port);
+        if (Flash.DEV) log.info("[Flash] Started (dev mode) — see HttpServer bind logs above for listener details");
         server.startAndBlock();
     }
 
