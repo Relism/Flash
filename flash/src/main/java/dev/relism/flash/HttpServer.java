@@ -10,12 +10,15 @@ import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.AbstractRouter;
 import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.tls.TlsConfig;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
 import dev.relism.fpr.core.ByteView;
 
 import lombok.extern.slf4j.Slf4j;
+
+import javax.net.ssl.SSLServerSocket;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -24,15 +27,23 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread
- * executor, and the keep-alive accept loop. Routing is delegated to HTTP and WS routers.
+ * Pure I/O transport layer. Owns one {@link ServerSocket} per configured listener (plain or
+ * TLS), the virtual-thread executor, and the keep-alive accept loop. Routing is delegated to
+ * HTTP and WS routers — identically, regardless of which listener accepted the connection.
+ *
+ * <p>TLS is a transport-level concern only: once a {@link BoundListener} is bound, an accepted
+ * {@link Socket} is either plain or an {@code SSLSocket} indistinguishably from here on —
+ * {@link #process} never branches on it. This is also why WSS needs no separate code path from
+ * WS: the WebSocket upgrade happens over whatever transport {@link #process} was handed.
  *
  * <h3>Allocation model (unchanged)</h3>
  * <ul>
@@ -77,15 +88,18 @@ class HttpServer implements ServerHandle {
     // ── Instance fields ───────────────────────────────────────────────────────
 
     private final FlashConfiguration  configuration;
-    private final ServerSocket        serverSocket;
+    private final List<BoundListener> boundListeners;
     private final AbstractRouter      router;
     private final AbstractWsRouter    wsRouter;
     private final ExecutorService     executorService  = Executors.newVirtualThreadPerTaskExecutor();
     private final Set<Socket>         activeSockets    = ConcurrentHashMap.newKeySet();
     private volatile boolean          stopped          = false;
 
-    /** Latch that reaches 0 when all accept threads have exited. */
-    private final CountDownLatch      acceptLatch      = new CountDownLatch(ACCEPT_THREADS);
+    /** Latch that reaches 0 when all accept threads, across all listeners, have exited. */
+    private final CountDownLatch      acceptLatch;
+
+    /** One bound listener socket (plain or TLS) plus whether it is TLS, for logging only. */
+    private record BoundListener(ServerSocket socket, boolean secure) {}
 
     // ── Static byte constants (written once, read-only on hot path) ──────────
 
@@ -132,27 +146,60 @@ class HttpServer implements ServerHandle {
         this.router        = router;
         this.wsRouter      = wsRouter;
 
-        // Explicit bind with raised backlog.
-        // setReuseAddress(true) must be called BEFORE bind().
-        this.serverSocket = new ServerSocket();
-        this.serverSocket.setReuseAddress(true);
-        this.serverSocket.setReceiveBufferSize(SOCKET_BUF_SIZE);
-        this.serverSocket.bind(new InetSocketAddress(configuration.getPort()), ACCEPT_BACKLOG);
+        List<FlashConfiguration.Listener> specs = configuration.getListeners().isEmpty()
+                ? List.of(new FlashConfiguration.Listener(
+                        configuration.getPort(), configuration.getHost(), configuration.getTls()))
+                : configuration.getListeners();
 
-        log.info("HttpServer bound on port {} (backlog={}, acceptThreads={})",
-                configuration.getPort(), ACCEPT_BACKLOG, ACCEPT_THREADS);
+        List<BoundListener> bound = new ArrayList<>(specs.size());
+        for (FlashConfiguration.Listener spec : specs) bound.add(bind(spec));
+        this.boundListeners = List.copyOf(bound);
+        this.acceptLatch    = new CountDownLatch(ACCEPT_THREADS * boundListeners.size());
+
+        for (BoundListener bl : boundListeners) {
+            log.info("HttpServer bound on {}:{} (tls={}, backlog={}, acceptThreads={})",
+                    bl.socket().getInetAddress(), bl.socket().getLocalPort(), bl.secure(),
+                    ACCEPT_BACKLOG, ACCEPT_THREADS);
+        }
+    }
+
+    /**
+     * Binds one listener. A TLS listener gets its {@link ServerSocket} from
+     * {@link TlsConfig#serverSocketFactory()} instead of {@code new ServerSocket()}, and its
+     * protocol/client-auth parameters from {@link TlsConfig#applyTo} — reuse-address, receive
+     * buffer size, backlog and the bind call itself are identical either way. TLS only changes
+     * which bytes come out of {@code accept()}; it never changes how the accept loop, or
+     * anything downstream of it, treats them.
+     */
+    private static BoundListener bind(FlashConfiguration.Listener spec) throws IOException {
+        TlsConfig tls = spec.tls();
+
+        ServerSocket socket = tls != null ? tls.serverSocketFactory().createServerSocket() : new ServerSocket();
+        // setReuseAddress(true) must be called BEFORE bind().
+        socket.setReuseAddress(true);
+        socket.setReceiveBufferSize(SOCKET_BUF_SIZE);
+        if (tls != null) tls.applyTo((SSLServerSocket) socket);
+
+        InetSocketAddress addr = spec.host() != null
+                ? new InetSocketAddress(spec.host(), spec.port())
+                : new InetSocketAddress(spec.port());
+        socket.bind(addr, ACCEPT_BACKLOG);
+
+        return new BoundListener(socket, tls != null);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @Override
     public void start() {
-        for (int i = 0; i < ACCEPT_THREADS; i++) {
-            final int idx = i;
-            Thread.ofPlatform()
-                    .name("flash-accept-" + idx)
-                    .daemon(false)
-                    .start(this::acceptLoop);
+        for (int li = 0; li < boundListeners.size(); li++) {
+            BoundListener listener = boundListeners.get(li);
+            for (int i = 0; i < ACCEPT_THREADS; i++) {
+                Thread.ofPlatform()
+                        .name("flash-accept-" + li + "-" + i)
+                        .daemon(false)
+                        .start(() -> acceptLoop(listener));
+            }
         }
     }
 
@@ -165,14 +212,15 @@ class HttpServer implements ServerHandle {
 
     /**
      * Single accept loop body — runs on each of the {@code ACCEPT_THREADS}
-     * platform threads. All threads block on the same {@link ServerSocket};
-     * the JVM ensures only one wakes per incoming connection (no thundering herd).
+     * platform threads bound to one {@code listener}. All threads for that listener block on
+     * the same {@link ServerSocket}; the JVM ensures only one wakes per incoming connection
+     * (no thundering herd). Other listeners' accept threads are entirely independent.
      */
-    private void acceptLoop() {
+    private void acceptLoop(BoundListener listener) {
         try {
             while (!stopped) {
                 try {
-                    process(serverSocket.accept());
+                    process(listener.socket().accept());
                 } catch (IOException e) {
                     if (!stopped) log.error("Accept error", e);
                 }
@@ -186,7 +234,9 @@ class HttpServer implements ServerHandle {
     public CompletableFuture<Void> stop() {
         return CompletableFuture.runAsync(() -> {
             stopped = true;
-            try { serverSocket.close(); } catch (IOException e) { log.error("Error closing server socket", e); }
+            for (BoundListener bl : boundListeners) {
+                try { bl.socket().close(); } catch (IOException e) { log.error("Error closing server socket", e); }
+            }
             activeSockets.forEach(s -> { try { s.close(); } catch (IOException ignored) {} });
             executorService.shutdown();
             try {
@@ -281,6 +331,14 @@ class HttpServer implements ServerHandle {
                         else
                             log.error("I/O error handling request", e);
                     }
+                } catch (Exception e) {
+                    // Anything not an IOException here means a collaborator misbehaved on the TLS
+                    // handshake path — most likely a custom TlsConfig#ofContext KeyManager/
+                    // TrustManager throwing (e.g. a failed DB lookup or on-demand cert issuance).
+                    // That failure is isolated to this one virtual thread/connection: the
+                    // try-with-resources above still closes the socket, the finally below still
+                    // runs, and the accept loop (a different thread entirely) never sees this.
+                    if (!stopped) log.error("Unexpected error handling connection", e);
                 } finally {
                     activeSockets.remove(socket);
                 }
