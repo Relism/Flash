@@ -90,4 +90,41 @@ class HeaderMapTest {
         assertTrue(map.all("Host").isEmpty());
         assertTrue(map.all().isEmpty());
     }
+
+    // --- forEach ---
+
+    @Test
+    void forEach_visitsEveryHeaderInDeclarationOrder() {
+        HeaderMap map = parse("Host: localhost", "Accept: text/plain", "Cookie: a=1");
+        List<String> seen = new java.util.ArrayList<>();
+        map.forEach((name, value) -> seen.add(toStr(name) + "=" + toStr(value)));
+        assertEquals(List.of("Host=localhost", "Accept=text/plain", "Cookie=a=1"), seen);
+    }
+
+    @Test
+    void forEach_emptyMap_neverInvokesConsumer() {
+        HeaderMap map = new HeaderMap();
+        map.forEach((name, value) -> fail("must not be called on an empty map"));
+    }
+
+    @Test
+    void forEach_reusesTheSameTwoViewInstancesAcrossEveryHeader() {
+        // The zero-allocation contract: forEach must reposition two ByteViews in place, not
+        // allocate a fresh pair per header — same instances across all three calls here.
+        HeaderMap map = parse("A: 1", "B: 2", "C: 3");
+        List<ByteView> names = new java.util.ArrayList<>();
+        List<ByteView> values = new java.util.ArrayList<>();
+        map.forEach((name, value) -> { names.add(name); values.add(value); });
+
+        assertSame(names.get(0), names.get(1));
+        assertSame(names.get(1), names.get(2));
+        assertSame(values.get(0), values.get(1));
+        assertSame(values.get(1), values.get(2));
+    }
+
+    private static String toStr(ByteView v) {
+        byte[] b = new byte[v.length()];
+        for (int i = 0; i < b.length; i++) b[i] = v.byteAt(i);
+        return new String(b, StandardCharsets.UTF_8);
+    }
 }

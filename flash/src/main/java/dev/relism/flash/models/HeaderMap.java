@@ -36,11 +36,74 @@ public class HeaderMap {
     private int sectionStart;
     private int sectionEnd;
 
+    // Lazily created, then reused for the life of this HeaderMap (i.e. the connection —
+    // see the class javadoc) across every #forEach call and every header within a call.
+    // Same idiom as #view's per-call anonymous ByteView, just amortized to zero allocations
+    // instead of two per header: the slices are repositioned in place, not reallocated.
+    private Slice nameSlice;
+    private Slice valueSlice;
+
     /** Resets this map to the header section {@code buffer[sectionStart, sectionEnd)}. */
     public void reset(byte[] buffer, int sectionStart, int sectionEnd) {
         this.buffer       = buffer;
         this.sectionStart = sectionStart;
         this.sectionEnd   = sectionEnd;
+    }
+
+    /**
+     * Visits every header in declaration order without allocating — no per-header {@code
+     * String}/{@link ByteView}/list-entry object, unlike {@link #all()}. {@code name}/{@code
+     * value} are the same two {@link ByteView} instances on every call, repositioned in place;
+     * they are valid only for the duration of that single {@link HeaderConsumer#accept} call —
+     * same "do not retain past the handler" rule as {@link #view}, just per-invocation instead
+     * of per-request. Prefer a non-capturing or field-reusing {@link HeaderConsumer} (see its
+     * javadoc) if the call site itself needs to stay allocation-free too.
+     *
+     * <p>Exists for callers that must handle an open-ended set of header names — e.g. a reverse
+     * proxy forwarding whatever the client sent — where {@link #first}/{@link #all}'s per-name
+     * lookup isn't usable because the set of names isn't known upfront.
+     */
+    public void forEach(HeaderConsumer consumer) {
+        if (buffer == null) return;
+        if (nameSlice == null) {
+            nameSlice  = new Slice();
+            valueSlice = new Slice();
+        }
+        int i = sectionStart;
+        while (i < sectionEnd) {
+            int lineEnd = findCR(i);
+            int colon   = findColon(i, lineEnd);
+            if (colon != -1) {
+                int vs = skipSpaces(colon + 1, lineEnd);
+                nameSlice.start  = i;
+                nameSlice.len    = colon - i;
+                valueSlice.start = vs;
+                valueSlice.len   = lineEnd - vs;
+                consumer.accept(nameSlice, valueSlice);
+            }
+            i = lineEnd + 2;
+        }
+    }
+
+    /**
+     * Callback for {@link #forEach}. Implement with a reusable, field-holding instance (reset
+     * before each {@code forEach} call) rather than a capturing lambda if the call site itself
+     * needs to be allocation-free too — a capturing lambda is its own per-call allocation, same
+     * as anywhere else on a hot path (see {@code docs/CODE-STYLE.md} in the Pathway project for
+     * the idiom this mirrors).
+     */
+    @FunctionalInterface
+    public interface HeaderConsumer {
+        void accept(ByteView name, ByteView value);
+    }
+
+    /** Mutable zero-copy slice into {@link #buffer} — see {@link #forEach}. */
+    private final class Slice implements ByteView {
+        int start;
+        int len;
+
+        @Override public int length()       { return len; }
+        @Override public byte byteAt(int i) { return buffer[start + i]; }
     }
 
     /** Returns the first value of header {@code name} (case-insensitive), or {@code null}. */

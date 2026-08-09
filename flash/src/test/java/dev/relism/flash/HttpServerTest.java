@@ -228,4 +228,37 @@ class HttpServerTest {
             assertTrue(second.contains("Connection: keep-alive"));
         }
     }
+
+    /**
+     * Regression guard for the shared {@code STREAM_RELAY_BUFFER}: both the non-chunked
+     * ({@code /api/stream}) and chunked ({@code /api/chunked-out}) streaming paths reuse the same
+     * per-connection buffer now — sending one of each back to back on one connection must not
+     * leave either response corrupted by the other reusing the array mid-transfer.
+     */
+    @Test
+    void testKeepAlive_streamedAndChunkedResponsesOnSameConnectionDontCorruptEachOther() throws Exception {
+        String streamReq = "GET /api/stream HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        String chunkedReq = "GET /api/chunked-out HTTP/1.1\r\nHost: localhost\r\n\r\n";
+
+        try (Socket socket = new Socket("127.0.0.1", port);
+             OutputStream out = socket.getOutputStream();
+             InputStream in = socket.getInputStream()) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            out.write(streamReq.getBytes(StandardCharsets.UTF_8));
+            out.write(chunkedReq.getBytes(StandardCharsets.UTF_8));
+            out.write(streamReq.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+
+            String first = readOneResponse(in);
+            String second = readOneResponse(in);
+            String third = readOneResponse(in);
+
+            assertTrue(first.contains("Content-Length: 23"));
+            assertTrue(first.endsWith("streaming response body"));
+            assertTrue(second.contains("Transfer-Encoding: chunked"));
+            assertTrue(second.endsWith("streaming response body"));
+            assertTrue(third.contains("Content-Length: 23"));
+            assertTrue(third.endsWith("streaming response body"));
+        }
+    }
 }

@@ -1,9 +1,12 @@
 package dev.relism.flash.websocket;
 
+import dev.relism.flash.models.Request;
+
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -39,20 +42,41 @@ public final class WebSocketSession {
     private final InputStream   in;
     private final OutputStream  out;
     private final byte[]        readBuf;
+    private final Request       request;
+    private final boolean       maskOutgoing;
 
     private final AtomicBoolean open      = new AtomicBoolean(true);
     private       int           closeCode = 1000;
 
-    private final byte[] hdrScratch = new byte[10];
+    /** 1 opcode byte + up to 8 extended-length bytes + up to 4 mask-key bytes (masked mode only). */
+    private final byte[] hdrScratch = new byte[14];
 
     public WebSocketSession(InputStream in, OutputStream out, int bufferSize) {
-        this.in      = in;
-        this.out     = out;
-        this.readBuf = new byte[bufferSize];
+        this(in, out, bufferSize, null, false);
+    }
+
+    /**
+     * @param request      the HTTP request that upgraded to this session, or {@code null} if the
+     *                     caller has no use for it (e.g. a session opened as a WS client rather
+     *                     than accepted as a WS server). Stored as-is, no copy.
+     * @param maskOutgoing {@code true} if this session is acting as a WS <em>client</em> — RFC 6455
+     *                     requires client-to-server frames to be masked, unlike the server-to-client
+     *                     direction {@link #writeFrame} originally only supported. See {@link
+     *                     #writeFrame} for how masking is applied without allocating.
+     */
+    public WebSocketSession(InputStream in, OutputStream out, int bufferSize, Request request, boolean maskOutgoing) {
+        this.in           = in;
+        this.out          = out;
+        this.readBuf      = new byte[bufferSize];
+        this.request      = request;
+        this.maskOutgoing = maskOutgoing;
     }
 
     public boolean isOpen()    { return open.get(); }
     public int     closeCode() { return closeCode; }
+
+    /** The request that upgraded this connection, or {@code null} — see the 4-arg constructor. */
+    public Request request() { return request; }
 
     // ── Public send API ────────────────────────────────────────────────────
 
@@ -146,8 +170,9 @@ public final class WebSocketSession {
     // ── Private ────────────────────────────────────────────────────────────
 
     /**
-     * Encodes the WS frame header into {@link #hdrScratch} (at most 10 bytes),
-     * then writes header + payload in two bulk calls to the raw socket stream.
+     * Encodes the WS frame header into {@link #hdrScratch} (at most 14 bytes: 1 opcode + up to 8
+     * extended-length + up to 4 mask-key), then writes header + payload in two bulk calls to the
+     * raw socket stream.
      *
      * <p>No {@code flush()} — {@code out} is the unbuffered socket {@link OutputStream}
      * (see {@code HttpServer#process}). Each {@code write()} lands directly in the
@@ -156,25 +181,45 @@ public final class WebSocketSession {
      * (header then payload) will be merged into a single TCP segment by the kernel
      * because they arrive faster than the ACK from the peer — exactly the coalescing
      * we want, at zero cost.
+     *
+     * <p><b>{@link #maskOutgoing} (client mode):</b> RFC 6455 requires every client-to-server frame
+     * to be masked. The mask key is generated into {@link #hdrScratch} (no new allocation — same
+     * fixed field every frame reuses) and the payload is masked <em>in place</em> via {@link
+     * #unmaskInPlace} — XOR is its own inverse, so the exact routine {@link #readFrame} already
+     * uses to unmask an inbound payload masks an outbound one too, with no separate code path and
+     * no copy. This mutates the caller's {@code payload} array as a side effect: callers using
+     * masked mode must not reuse that buffer expecting it unchanged after the call.
      */
     private void writeFrame(byte opcode, byte[] payload, int off, int len) throws IOException {
         synchronized (out) {
             int hlen = 0;
             hdrScratch[hlen++] = (byte) (0x80 | opcode);
+            int maskBit = maskOutgoing ? 0x80 : 0x00;
             if (len <= 125) {
-                hdrScratch[hlen++] = (byte) len;
+                hdrScratch[hlen++] = (byte) (maskBit | len);
             } else if (len <= 0xFFFF) {
-                hdrScratch[hlen++] = 126;
+                hdrScratch[hlen++] = (byte) (maskBit | 126);
                 hdrScratch[hlen++] = (byte) ((len >> 8) & 0xFF);
                 hdrScratch[hlen++] = (byte)  (len       & 0xFF);
             } else {
-                hdrScratch[hlen++] = 127;
+                hdrScratch[hlen++] = (byte) (maskBit | 127);
                 hdrScratch[hlen++] = 0; hdrScratch[hlen++] = 0;
                 hdrScratch[hlen++] = 0; hdrScratch[hlen++] = 0;
                 hdrScratch[hlen++] = (byte) ((len >> 24) & 0xFF);
                 hdrScratch[hlen++] = (byte) ((len >> 16) & 0xFF);
                 hdrScratch[hlen++] = (byte) ((len >>  8) & 0xFF);
                 hdrScratch[hlen++] = (byte)  (len        & 0xFF);
+            }
+            if (maskOutgoing) {
+                // ThreadLocalRandom needs no seeding/allocation per call; the four mask bytes are
+                // carved out of one int, never boxed.
+                int  mask = ThreadLocalRandom.current().nextInt();
+                byte m0 = (byte) (mask >>> 24), m1 = (byte) (mask >>> 16), m2 = (byte) (mask >>> 8), m3 = (byte) mask;
+                hdrScratch[hlen++] = m0;
+                hdrScratch[hlen++] = m1;
+                hdrScratch[hlen++] = m2;
+                hdrScratch[hlen++] = m3;
+                unmaskInPlace(payload, off, len, m0, m1, m2, m3);
             }
             out.write(hdrScratch, 0, hlen);
             out.write(payload, off, len);

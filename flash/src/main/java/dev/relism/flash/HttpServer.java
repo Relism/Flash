@@ -34,9 +34,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * Pure I/O transport layer. Owns the {@link ServerSocket}, the virtual-thread
  * executor, and the keep-alive accept loop. Routing is delegated to HTTP and WS routers.
  *
- * <h3>Allocation model (unchanged)</h3>
+ * <h3>Allocation model</h3>
  * <ul>
- *   <li>{@code LONG_BUF} (20 bytes) is the only {@link ThreadLocal} kept here.</li>
+ *   <li>{@code LONG_BUF} (20 bytes) and {@code STREAM_RELAY_BUFFER} (8 KB, for a streaming
+ *       {@link Response} body — see {@link #writeStreamingBody}) are the only {@link ThreadLocal}s
+ *       kept here. Both are per-connection, not per-request: one virtual thread runs a
+ *       connection's whole keep-alive request loop (see {@link #process}), so a handler that
+ *       streams a large response on every request allocates its relay buffer once per
+ *       connection, not once per request.</li>
  *   <li>WS handshake SHA-1: {@link ThreadLocal}&lt;{@link MessageDigest}&gt; — one per
  *       accept thread (there are now {@code ACCEPT_THREADS} of them, not one).</li>
  * </ul>
@@ -121,6 +126,19 @@ class HttpServer implements ServerHandle {
             });
 
     private static final ThreadLocal<byte[]> LONG_BUF = ThreadLocal.withInitial(() -> new byte[20]);
+
+    /**
+     * Relay buffer for copying a streaming {@link Response} body to the client — shared by
+     * {@link #writeStreamingBody}'s non-chunked path and {@link #writeChunked}, so both draw
+     * from the same reused array instead of each allocating its own {@code byte[8192]} (the
+     * non-chunked path previously relied on {@link InputStream#transferTo}, which allocates
+     * internally on every call). Sized to match the pre-existing behavior this replaces, not
+     * newly tuned — not exposed as a {@link FlashConfiguration} tunable since nothing here
+     * needed one before.
+     */
+    private static final int STREAM_RELAY_BUFFER_SIZE = 8192;
+    private static final ThreadLocal<byte[]> STREAM_RELAY_BUFFER =
+            ThreadLocal.withInitial(() -> new byte[STREAM_RELAY_BUFFER_SIZE]);
 
     private static final int SHA1_LEN      = 20;
     private static final int WS_ACCEPT_LEN = 28;
@@ -248,7 +266,7 @@ class HttpServer implements ServerHandle {
                             out.flush();
                             request.drain();
                             WebSocketSession session = new WebSocketSession(
-                                    in, rawOut, configuration.getWsFrameBufferSize());
+                                    in, rawOut, configuration.getWsFrameBufferSize(), request, false);
                             runWsLoop(session, wsHandler);
                             return;
                         }
@@ -420,13 +438,25 @@ class HttpServer implements ServerHandle {
             out.write(CRLF);
             out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
             out.write(CRLF);
-            response.getStream().transferTo(out);
+            relay(response.getStream(), out);
         } else {
             out.write(TRANSFER_CHUNKED);
             out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
             out.write(CRLF);
             writeChunked(out, response.getStream());
         }
+    }
+
+    /**
+     * Copies {@code in} to {@code out} until EOF, same contract as {@link InputStream#transferTo}
+     * — but via {@link #STREAM_RELAY_BUFFER} instead of a fresh {@code byte[]} per call, which is
+     * what {@code transferTo}'s own (JDK-internal) implementation would otherwise allocate on
+     * every streamed response.
+     */
+    private static void relay(InputStream in, OutputStream out) throws IOException {
+        byte[] buf = STREAM_RELAY_BUFFER.get();
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
     }
 
     private static void writeStatusPhrase(OutputStream out, int statusCode) throws IOException {
@@ -447,7 +477,7 @@ class HttpServer implements ServerHandle {
     }
 
     private static void writeChunked(OutputStream out, InputStream stream) throws IOException {
-        byte[] buf = new byte[8192];
+        byte[] buf = STREAM_RELAY_BUFFER.get();
         int n;
         while ((n = stream.read(buf)) > 0) {
             writeHex(out, n);
