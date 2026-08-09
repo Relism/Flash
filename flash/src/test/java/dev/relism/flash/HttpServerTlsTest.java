@@ -10,13 +10,21 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import dev.relism.flash.websocket.WebSocketFrame;
+import dev.relism.flash.websocket.WebSocketHandler;
+import dev.relism.flash.websocket.WebSocketSession;
+
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509ExtendedKeyManager;
 
@@ -30,7 +38,9 @@ import java.security.KeyStore;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -248,7 +258,7 @@ class HttpServerTlsTest {
             if (calls.getAndIncrement() == 0) throw new RuntimeException("simulated KeyManager failure");
         }
 
-        @Override public String chooseEngineServerAlias(String keyType, Principal[] issuers, javax.net.ssl.SSLEngine engine) {
+        @Override public String chooseEngineServerAlias(String keyType, Principal[] issuers, SSLEngine engine) {
             maybeFail();
             return delegate.chooseEngineServerAlias(keyType, issuers, engine);
         }
@@ -300,5 +310,262 @@ class HttpServerTlsTest {
             assertTrue(response.startsWith("HTTP/1.1 200 OK"));
             assertTrue(response.endsWith("pong"));
         }
+    }
+
+    // ── ALPN visibility for on-demand cert issuance (TLS-ALPN-01 / RFC 8737) ──
+
+    /** Delegates alias selection, but first records what the KeyManager itself observed as the
+     *  negotiated ALPN protocol at the exact point a real ACME-style KeyManager would decide
+     *  whether to serve a challenge certificate instead of the real one. */
+    private static final class RecordingKeyManager extends X509ExtendedKeyManager {
+        private final X509ExtendedKeyManager delegate;
+        private final AtomicReference<String> observedProtocol = new AtomicReference<>();
+
+        RecordingKeyManager(X509ExtendedKeyManager delegate) { this.delegate = delegate; }
+
+        @Override public String chooseEngineServerAlias(String keyType, Principal[] issuers, SSLEngine engine) {
+            observedProtocol.set(engine.getHandshakeApplicationProtocol());
+            return delegate.chooseEngineServerAlias(keyType, issuers, engine);
+        }
+        @Override public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket) {
+            observedProtocol.set(((SSLSocket) socket).getHandshakeApplicationProtocol());
+            return delegate.chooseServerAlias(keyType, issuers, socket);
+        }
+        @Override public String[] getClientAliases(String keyType, Principal[] issuers) { return delegate.getClientAliases(keyType, issuers); }
+        @Override public String chooseClientAlias(String[] keyType, Principal[] issuers, Socket socket) { return delegate.chooseClientAlias(keyType, issuers, socket); }
+        @Override public String[] getServerAliases(String keyType, Principal[] issuers) { return delegate.getServerAliases(keyType, issuers); }
+        @Override public X509Certificate[] getCertificateChain(String alias) { return delegate.getCertificateChain(alias); }
+        @Override public PrivateKey getPrivateKey(String alias) { return delegate.getPrivateKey(alias); }
+    }
+
+    private static RecordingKeyManager buildRecordingContext(java.nio.file.Path ks, SSLContext[] outCtx) throws Exception {
+        KeyStore store = load(ks, "changeit");
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(store, "changeit".toCharArray());
+
+        RecordingKeyManager recorder = null;
+        KeyManager[] managers = kmf.getKeyManagers();
+        for (int i = 0; i < managers.length; i++) {
+            if (managers[i] instanceof X509ExtendedKeyManager x509) {
+                recorder = new RecordingKeyManager(x509);
+                managers[i] = recorder;
+            }
+        }
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(managers, null, null);
+        outCtx[0] = ctx;
+        return recorder;
+    }
+
+    @Test
+    void alpn_negotiatedProtocolIsVisibleToKeyManagerBeforeCertificateIsChosen(@TempDir java.nio.file.Path dir) throws Exception {
+        var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
+
+        SSLContext[] boxedCtx = new SSLContext[1];
+        RecordingKeyManager recorder = buildRecordingContext(ks, boxedCtx);
+
+        int port = freePort();
+        app = FlashApp.create(FlashConfiguration.builder()
+                .port(port).host("127.0.0.1")
+                .tls(TlsConfig.ofContext(boxedCtx[0]).applicationProtocols("acme-tls/1", "http/1.1"))
+                .build());
+        app.get("/ping", (req, res) -> "pong");
+        app.start();
+
+        // Each connection below uses its own fresh client SSLContext, deliberately — reusing one
+        // SSLContext across connections lets JSSE resume the second handshake's TLS session,
+        // which skips the Certificate message (and therefore the KeyManager call) entirely. A
+        // fresh SSLContext has nothing to resume, forcing a full handshake every time, which is
+        // what this test needs to observe the KeyManager on every connection.
+
+        // A client offering only the ACME challenge protocol: the KeyManager must see it
+        // *before* choosing which certificate to serve — this is the hook the challenge-cert
+        // decision hangs off.
+        try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
+                .getSocketFactory().createSocket("127.0.0.1", port)) {
+            SSLParameters params = socket.getSSLParameters();
+            params.setApplicationProtocols(new String[] { "acme-tls/1" });
+            socket.setSSLParameters(params);
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.startHandshake();
+            assertEquals("acme-tls/1", recorder.observedProtocol.get());
+            assertEquals("acme-tls/1", socket.getApplicationProtocol());
+        }
+
+        // Zero regression: a normal client (http/1.1) behaves exactly as before ALPN existed —
+        // same route, same response, and the KeyManager sees the normal protocol, not the
+        // challenge one.
+        try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
+                .getSocketFactory().createSocket("127.0.0.1", port)) {
+            SSLParameters params = socket.getSSLParameters();
+            params.setApplicationProtocols(new String[] { "http/1.1" });
+            socket.setSSLParameters(params);
+            String response = httpGet(socket, "/ping");
+            assertTrue(response.startsWith("HTTP/1.1 200 OK"));
+            assertTrue(response.endsWith("pong"));
+            assertEquals("http/1.1", recorder.observedProtocol.get());
+        }
+
+        // Zero regression: a client sending no ALPN at all — today's default — is unaffected.
+        try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
+                .getSocketFactory().createSocket("127.0.0.1", port)) {
+            String response = httpGet(socket, "/ping");
+            assertTrue(response.startsWith("HTTP/1.1 200 OK"));
+            assertTrue(response.endsWith("pong"));
+            // "" — not null — is JSSE's sentinel for "peer sent no ALPN extension at all".
+            assertEquals("", recorder.observedProtocol.get());
+        }
+    }
+
+    // ── Request.isSecure() / sslSession() ─────────────────────────────────────
+
+    @Test
+    void request_isSecureAndSessionAvailableOverTls(@TempDir java.nio.file.Path dir) throws Exception {
+        var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
+        int port = freePort();
+        app = FlashApp.create(FlashConfiguration.builder()
+                .port(port).host("127.0.0.1")
+                .tls(TlsConfig.keystore(ks, "changeit"))
+                .build());
+        app.get("/secure-info", (req, res) -> {
+            SSLSession session = req.sslSession();
+            return req.isSecure() + ":" + (session != null) + ":" + (session != null ? session.getCipherSuite() : "");
+        });
+        app.start();
+
+        try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
+                .getSocketFactory().createSocket("127.0.0.1", port)) {
+            String response = httpGet(socket, "/secure-info");
+            assertTrue(response.startsWith("HTTP/1.1 200 OK"));
+            assertTrue(response.contains("true:true:TLS_"),
+                    "expected isSecure=true, non-null session, real cipher suite; got: " + response);
+        }
+    }
+
+    @Test
+    void request_peerCertificateVisibleWhenClientPresentsOne(@TempDir java.nio.file.Path dir) throws Exception {
+        var serverKs = TestKeystores.build(dir, "server.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
+        var clientKs = TestKeystores.build(dir, "client.p12", "changeit", TestKeystores.Entry.of("cli", "test-client"));
+
+        KeyStore serverIdentity = load(serverKs, "changeit");
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(serverIdentity, "changeit".toCharArray());
+        KeyStore clientTrust = load(clientKs, "changeit"); // client's own cert as its trust anchor, as elsewhere in this file
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(clientTrust);
+        SSLContext serverCtx = SSLContext.getInstance("TLS");
+        serverCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+        int port = freePort();
+        app = FlashApp.create(FlashConfiguration.builder()
+                .port(port).host("127.0.0.1")
+                // OPTIONAL, not REQUIRE: proves getPeerCertificates() works without also
+                // re-testing the REQUIRE-rejection path already covered elsewhere in this file.
+                .tls(TlsConfig.ofContext(serverCtx).clientAuth(ClientAuth.OPTIONAL))
+                .build());
+        app.get("/secure-info", (req, res) -> {
+            try {
+                X509Certificate peer = (X509Certificate) req.sslSession().getPeerCertificates()[0];
+                return "peer:" + peer.getSubjectX500Principal().getName();
+            } catch (SSLPeerUnverifiedException e) {
+                return "no-peer-cert";
+            }
+        });
+        app.start();
+
+        KeyStore clientIdentity = load(clientKs, "changeit");
+        KeyManagerFactory clientKmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        clientKmf.init(clientIdentity, "changeit".toCharArray());
+        SSLContext clientCtx = SSLContext.getInstance("TLS");
+        clientCtx.init(clientKmf.getKeyManagers(), new TrustManager[] { trustAll() }, null);
+
+        try (SSLSocket socket = (SSLSocket) clientCtx.getSocketFactory().createSocket("127.0.0.1", port)) {
+            String response = httpGet(socket, "/secure-info");
+            assertTrue(response.startsWith("HTTP/1.1 200 OK"));
+            assertTrue(response.contains("peer:CN=test-client"), "response was: " + response);
+        }
+    }
+
+    @Test
+    void request_isNotSecureAndSessionIsNullOnPlainListener() throws Exception {
+        int port = freePort();
+        app = FlashApp.create(FlashConfiguration.builder().port(port).host("127.0.0.1").build());
+        app.get("/secure-info", (req, res) -> req.isSecure() + ":" + (req.sslSession() == null));
+        app.start();
+
+        try (Socket socket = new Socket("127.0.0.1", port)) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.getOutputStream().write(
+                    "GET /secure-info HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+                            .getBytes(StandardCharsets.UTF_8));
+            String response = new String(socket.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(response.startsWith("HTTP/1.1 200 OK"));
+            assertTrue(response.endsWith("false:true"), "expected isSecure=false, session=null; got: " + response);
+        }
+    }
+
+    // ── WebSocketSession.isSecure() / sslSession() — same info, WSS path ──────
+
+    private static String wsHandshakeKey() {
+        return Base64.getEncoder().encodeToString("flash-tls-test-key".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String readWsHandshakeResponse(InputStream in) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        int b, prev3 = -1, prev2 = -1, prev1 = -1;
+        while ((b = in.read()) != -1) {
+            out.write(b);
+            if (prev3 == '\r' && prev2 == '\n' && prev1 == '\r' && b == '\n') break;
+            prev3 = prev2; prev2 = prev1; prev1 = b;
+        }
+        return out.toString(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void wss_sessionIsSecureAndExposesSslSession(@TempDir java.nio.file.Path dir) throws Exception {
+        var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
+        int port = freePort();
+        app = FlashApp.create(FlashConfiguration.builder()
+                .port(port).host("127.0.0.1")
+                .tls(TlsConfig.keystore(ks, "changeit"))
+                .build());
+
+        AtomicReference<Boolean> observedSecure = new AtomicReference<>();
+        AtomicReference<SSLSession> observedSession = new AtomicReference<>();
+        // onOpen runs on the server's virtual thread, asynchronously with respect to the client
+        // reading the 101 response bytes below (both happen after the same flush, in either
+        // order) — the latch is what makes the assertions below wait for onOpen, not the socket read.
+        java.util.concurrent.CountDownLatch opened = new java.util.concurrent.CountDownLatch(1);
+        app.ws("/echo", new WebSocketHandler() {
+            @Override public void onOpen(WebSocketSession session) {
+                observedSecure.set(session.isSecure());
+                observedSession.set(session.sslSession());
+                opened.countDown();
+            }
+            @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {}
+        });
+        app.start();
+
+        try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
+                .getSocketFactory().createSocket("127.0.0.1", port)) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.startHandshake();
+            OutputStream out = socket.getOutputStream();
+            out.write(("GET /echo HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
+                    "Upgrade: websocket\r\n" +
+                    "Connection: Upgrade\r\n" +
+                    "Sec-WebSocket-Key: " + wsHandshakeKey() + "\r\n" +
+                    "Sec-WebSocket-Version: 13\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            out.flush();
+
+            String headers = readWsHandshakeResponse(socket.getInputStream());
+            assertTrue(headers.startsWith("HTTP/1.1 101 Switching Protocols"), "handshake response: " + headers);
+            assertTrue(opened.await(SOCKET_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    "onOpen was not called within timeout");
+        }
+
+        assertEquals(Boolean.TRUE, observedSecure.get());
+        assertNotNull(observedSession.get());
     }
 }

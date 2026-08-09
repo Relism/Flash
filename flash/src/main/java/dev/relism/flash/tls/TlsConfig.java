@@ -27,14 +27,24 @@ import java.security.KeyStore;
  *       JDK's own curated default, which each JDK security release keeps current — Flash does
  *       not maintain its own suite allow-list.</li>
  *   <li>{@link #ofContext(SSLContext)} — escape hatch. The given {@link SSLContext} is used
- *       exactly as built: Flash never calls {@code setSSLParameters} on this path, so protocols,
- *       cipher suites, and ALPN (e.g. {@code acme-tls/1} for TLS-ALPN-01) you configured on it
- *       are 100% authoritative.</li>
+ *       exactly as built: Flash never calls {@code setSSLParameters} on this path unless you
+ *       explicitly call {@link #applicationProtocols} or {@link #clientAuth} yourself, so
+ *       anything else you configured on it is 100% authoritative.</li>
  * </ul>
  *
- * <p>{@link #clientAuth(ClientAuth)} applies on either path — it is an explicit instruction
- * through this API, not a Flash-chosen default, so it is only ever applied when called. The
- * {@link ClientAuth#NONE} default makes no client-auth call at all, on either path.
+ * <p>{@link #clientAuth(ClientAuth)} and {@link #applicationProtocols(String...)} apply on
+ * either path — they are explicit instructions through this API, not Flash-chosen defaults, so
+ * each is only ever applied when called. Neither has a value by default, on either path.
+ *
+ * <h3>ALPN (e.g. TLS-ALPN-01 / RFC 8737)</h3>
+ * {@link #applicationProtocols(String...)} sets the listener's negotiable protocol list via
+ * {@link SSLParameters#setApplicationProtocols}, inherited by every accepted socket exactly like
+ * {@link ClientAuth} — no per-connection code needed. ALPN is resolved during {@code ClientHello}
+ * processing/{@code ServerHello} production, which always precedes {@code Certificate} production
+ * — so a custom {@link javax.net.ssl.X509ExtendedKeyManager} deciding which certificate to serve
+ * can read the client's negotiated protocol via {@code engine.getHandshakeApplicationProtocol()}
+ * (or {@code ((SSLSocket) socket).getHandshakeApplicationProtocol()}) inside
+ * {@code chooseEngineServerAlias}/{@code chooseServerAlias} and it is already resolved by then.
  */
 public final class TlsConfig {
 
@@ -43,11 +53,13 @@ public final class TlsConfig {
     private final SSLContext context;
     private final boolean    hardenDefaults;
     private final ClientAuth clientAuth;
+    private final String[]   applicationProtocols;
 
-    private TlsConfig(SSLContext context, boolean hardenDefaults, ClientAuth clientAuth) {
-        this.context        = context;
-        this.hardenDefaults = hardenDefaults;
-        this.clientAuth     = clientAuth;
+    private TlsConfig(SSLContext context, boolean hardenDefaults, ClientAuth clientAuth, String[] applicationProtocols) {
+        this.context              = context;
+        this.hardenDefaults       = hardenDefaults;
+        this.clientAuth           = clientAuth;
+        this.applicationProtocols = applicationProtocols;
     }
 
     /**
@@ -73,20 +85,32 @@ public final class TlsConfig {
 
             SSLContext ctx = SSLContext.getInstance("TLS");
             ctx.init(managers, null, null);
-            return new TlsConfig(ctx, true, ClientAuth.NONE);
+            return new TlsConfig(ctx, true, ClientAuth.NONE, null);
         } catch (GeneralSecurityException | IOException e) {
             throw new IllegalArgumentException("Failed to load TLS keystore: " + path, e);
         }
     }
 
-    /** Escape hatch — see class Javadoc. Flash applies nothing to the socket beyond {@link #clientAuth}. */
+    /**
+     * Escape hatch — see class Javadoc. Flash applies nothing to the socket beyond what you
+     * explicitly call ({@link #clientAuth}/{@link #applicationProtocols}) on this instance.
+     */
     public static TlsConfig ofContext(SSLContext context) {
-        return new TlsConfig(context, false, ClientAuth.NONE);
+        return new TlsConfig(context, false, ClientAuth.NONE, null);
     }
 
     /** Client-certificate requirement. Applies on either construction path — see class Javadoc. */
     public TlsConfig clientAuth(ClientAuth mode) {
-        return new TlsConfig(context, hardenDefaults, mode);
+        return new TlsConfig(context, hardenDefaults, mode, applicationProtocols);
+    }
+
+    /**
+     * ALPN protocols this listener negotiates, in preference order (e.g.
+     * {@code "acme-tls/1", "http/1.1"}). Applies on either construction path — see class Javadoc
+     * for how a custom {@code KeyManager} observes the negotiated value.
+     */
+    public TlsConfig applicationProtocols(String... protocols) {
+        return new TlsConfig(context, hardenDefaults, clientAuth, protocols.clone());
     }
 
     // ── Consumed by HttpServer at bind time — not meant for direct use ──────────
@@ -96,9 +120,10 @@ public final class TlsConfig {
     }
 
     public void applyTo(SSLServerSocket socket) {
-        if (hardenDefaults) {
+        if (hardenDefaults || applicationProtocols != null) {
             SSLParameters params = socket.getSSLParameters();
-            params.setProtocols(SECURE_PROTOCOLS);
+            if (hardenDefaults)               params.setProtocols(SECURE_PROTOCOLS);
+            if (applicationProtocols != null) params.setApplicationProtocols(applicationProtocols);
             socket.setSSLParameters(params);
         }
         if (clientAuth == ClientAuth.REQUIRE)       socket.setNeedClientAuth(true);

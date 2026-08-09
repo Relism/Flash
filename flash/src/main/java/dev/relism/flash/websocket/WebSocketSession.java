@@ -2,6 +2,8 @@ package dev.relism.flash.websocket;
 
 import dev.relism.flash.models.Request;
 
+import javax.net.ssl.SSLSession;
+
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -77,6 +79,17 @@ public final class WebSocketSession {
 
     /** The request that upgraded this connection, or {@code null} — see the 4-arg constructor. */
     public Request request() { return request; }
+
+    /**
+     * Whether this connection is TLS (WSS). Delegates to the upgrading {@link #request}'s
+     * {@link Request#isSecure()} rather than tracking the socket a second time — the request
+     * already carries it. {@code false} if this session has no backing request (e.g. one opened
+     * in WS *client* mode via the 5-arg constructor with {@code request == null}).
+     */
+    public boolean isSecure() { return request != null && request.isSecure(); }
+
+    /** TLS session for this connection, or {@code null} for plain WS or no backing request. */
+    public SSLSession sslSession() { return request != null ? request.sslSession() : null; }
 
     // ── Public send API ────────────────────────────────────────────────────
 

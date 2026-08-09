@@ -19,6 +19,7 @@ import dev.relism.fpr.core.ByteView;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLSocket;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -296,7 +297,8 @@ class HttpServer implements ServerHandle {
 
                     RequestParser parser = new RequestParser(
                             configuration.getMaxHeaderBufferSize(),
-                            (InetSocketAddress) socket.getRemoteSocketAddress());
+                            (InetSocketAddress) socket.getRemoteSocketAddress(),
+                            socket instanceof SSLSocket sslSocket ? sslSocket : null);
 
                     while (!stopped) {
                         Request request = parser.parse(in);

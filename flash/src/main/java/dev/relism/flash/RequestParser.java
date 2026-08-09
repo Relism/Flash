@@ -8,6 +8,8 @@ import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
 
 import lombok.extern.slf4j.Slf4j;
 
+import javax.net.ssl.SSLSocket;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -40,6 +42,7 @@ public class RequestParser {
 
     private final int               maxHeaderBufferSize;
     private final InetSocketAddress remoteAddress;
+    private final SSLSocket         sslSocket;
     private final HeaderMap         headerMap = new HeaderMap();
     private byte[] buffer;
 
@@ -48,11 +51,17 @@ public class RequestParser {
     private int bufBase = 0;
     private int bufLen  = 0;
 
-    public RequestParser() { this(64 * 1024, null); }
-    public RequestParser(int maxHeaderBufferSize) { this(maxHeaderBufferSize, null); }
+    public RequestParser() { this(64 * 1024, null, null); }
+    public RequestParser(int maxHeaderBufferSize) { this(maxHeaderBufferSize, null, null); }
     public RequestParser(int maxHeaderBufferSize, InetSocketAddress remoteAddress) {
+        this(maxHeaderBufferSize, remoteAddress, null);
+    }
+
+    /** {@code sslSocket} is {@code null} for a plain connection — see {@link Request#isSecure()}. */
+    public RequestParser(int maxHeaderBufferSize, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         this.maxHeaderBufferSize = maxHeaderBufferSize;
         this.remoteAddress       = remoteAddress;
+        this.sslSocket           = sslSocket;
         this.buffer = new byte[Math.min(INITIAL_BUFFER_SIZE, maxHeaderBufferSize)];
     }
 
@@ -177,9 +186,9 @@ public class RequestParser {
         if (isChunked) {
             return Request.forParsed(requestLine,
                     new ChunkedInputStream(in, buffer, bodyStart, preBufLen),
-                    -1L, null, 0, 0, remoteAddress);
+                    -1L, null, 0, 0, remoteAddress, sslSocket);
         }
-        return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress);
+        return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress, sslSocket);
     }
 
     // ── Buffer scanning utilities (hot path — keep branch-free where possible) ──

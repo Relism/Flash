@@ -9,6 +9,9 @@ import lombok.ToString;
 import lombok.Value;
 import lombok.experimental.NonFinal;
 
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -60,12 +63,30 @@ public class Request {
     @ToString.Exclude
     InetSocketAddress remoteAddress;
 
-    private Request(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress) {
+    /**
+     * The accepted socket for this connection, or {@code null} if plain HTTP — set once per
+     * connection by {@link RequestParser}, same lifetime and reference-only cost as
+     * {@link #remoteAddress}. Every request on the same keep-alive connection shares the
+     * identical instance.
+     *
+     * <p>Never exposed directly: {@link #isSecure()} and {@link #sslSession()} are the public
+     * surface. {@link javax.net.ssl.SSLSocket#getSession()} is deferred to {@link #sslSession()}
+     * rather than called here — by the time a handler can call it, the handshake this connection
+     * needed to reach the handler has already completed, so it is a cached-field read, never a
+     * forced handshake.
+     */
+    @Getter(lombok.AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    SSLSocket sslSocket;
+
+    private Request(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         this.requestLine   = requestLine;
         this.body          = body;
         this.pathParams    = null;
         this.queryParams   = null;
         this.remoteAddress = remoteAddress;
+        this.sslSocket     = sslSocket;
     }
 
     /**
@@ -75,19 +96,19 @@ public class Request {
      */
     void setPathParams(PathParams p) { this.pathParams = p; }
 
-    /** Test / manual constructor — {@code remoteAddress()} returns {@code null}. */
+    /** Test / manual constructor — {@code remoteAddress()} returns {@code null}, {@code isSecure()} is {@code false}. */
     public Request(RequestLine requestLine, byte[] body) {
-        this(requestLine, RequestBody.of(body), null);
+        this(requestLine, RequestBody.of(body), null, null);
     }
 
     public static Request forParsed(RequestLine requestLine, InputStream stream,
                                     long contentLength, byte[] headerBuf,
                                     int bodyStart, int preBufLen,
-                                    InetSocketAddress remoteAddress) {
+                                    InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         RequestBody rb = contentLength > 0  ? new RequestBody(stream, contentLength, headerBuf, bodyStart, preBufLen)
                        : contentLength == 0 ? RequestBody.empty()
                        : /* chunked */        new RequestBody(stream, -1L, null, 0, 0);
-        return new Request(requestLine, rb, remoteAddress);
+        return new Request(requestLine, rb, remoteAddress, sslSocket);
     }
 
     // ── Request line ──────────────────────────────────────────────────────────
@@ -169,6 +190,21 @@ public class Request {
      * }</pre>
      */
     public InetSocketAddress remoteAddress() { return remoteAddress; }
+
+    // ── TLS ───────────────────────────────────────────────────────────────────
+
+    /** Whether this request arrived over TLS (HTTPS). */
+    public boolean isSecure() { return sslSocket != null; }
+
+    /**
+     * Returns the TLS session for this connection, or {@code null} for plain HTTP.
+     * Gives access to {@link SSLSession#getPeerCertificates()} (mTLS — the caller's certificate
+     * chain, if {@code TlsConfig.clientAuth} required or requested one), and to
+     * {@link SSLSession#getCipherSuite()} / {@link SSLSession#getProtocol()} for logging and
+     * diagnostics. {@code null} rather than throwing when {@link #isSecure()} is {@code false} —
+     * check that first, or just null-check the result.
+     */
+    public SSLSession sslSession() { return sslSocket != null ? sslSocket.getSession() : null; }
 
     // ── Body ──────────────────────────────────────────────────────────────────
 
