@@ -34,6 +34,7 @@ class HttpMethodTest {
         assertEquals(HttpMethod.TRACE,   parse("TRACE"));
         assertEquals(HttpMethod.CONNECT, parse("CONNECT"));
         assertEquals(HttpMethod.PURGE,   parse("PURGE"));
+        assertEquals(HttpMethod.QUERY,   parse("QUERY"));
     }
 
     @Test

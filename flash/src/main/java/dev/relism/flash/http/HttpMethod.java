@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 
 @Getter
 public enum HttpMethod {
-    GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD, TRACE, CONNECT, PURGE;
+    GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD, TRACE, CONNECT, PURGE, QUERY;
 
     private static final HttpMethod[] VALUES = values();
     private final byte[] bytes;
@@ -35,6 +35,7 @@ public enum HttpMethod {
             case 'H' -> (len == 4 && buf[off + 1] == 'E' && buf[off + 2] == 'A' && buf[off + 3] == 'D') ? HEAD : null;
             case 'T' -> (len == 5 && buf[off + 1] == 'R' && buf[off + 2] == 'A' && buf[off + 3] == 'C' && buf[off + 4] == 'E') ? TRACE : null;
             case 'C' -> (len == 7 && buf[off + 1] == 'O' && buf[off + 2] == 'N' && buf[off + 3] == 'N' && buf[off + 4] == 'E' && buf[off + 5] == 'C' && buf[off + 6] == 'T') ? CONNECT : null;
+            case 'Q' -> (len == 5 && buf[off + 1] == 'U' && buf[off + 2] == 'E' && buf[off + 3] == 'R' && buf[off + 4] == 'Y') ? QUERY : null;
             default -> null;
         };
     }

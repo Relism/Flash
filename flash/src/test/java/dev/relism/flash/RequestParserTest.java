@@ -76,6 +76,16 @@ class RequestParserTest {
     }
 
     @Test
+    void body_parsed_forQueryMethod() throws IOException {
+        String body = "{\"filter\":\"active\"}";
+        String raw  = "QUERY / HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: " + body.length() + "\r\n\r\n" + body;
+        Request r   = new RequestParser().parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+        assertNotNull(r);
+        assertEquals(dev.relism.flash.http.HttpMethod.QUERY, r.method());
+        assertEquals(body, new String(r.body().bytes(), StandardCharsets.UTF_8));
+    }
+
+    @Test
     void body_emptyWhenNoContentLength() throws IOException {
         Request r = parse(req("GET / HTTP/1.1", "Host: localhost"));
         assertTrue(r.body().isEmpty());
