@@ -45,6 +45,7 @@ public abstract class FlashRegistrar<SELF extends FlashRegistrar<SELF>> {
     public final SELF trace  (String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.TRACE,   path, h, mw); }
     public final SELF connect(String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.CONNECT, path, h, mw); }
     public final SELF purge  (String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.PURGE,   path, h, mw); }
+    public final SELF query  (String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.QUERY,   path, h, mw); }
 
     // ── Middleware ────────────────────────────────────────────────────────────
 
