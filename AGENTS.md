@@ -38,7 +38,7 @@ Format: `<type>(<scope>): <short description>`
 
 Allowed scopes: `core`, `ext-jackson`, `ext-openapi`, `ext-oidc`, `ext-routeviewer`,
 `ext-view-core`, `ext-view-jte`, `ext-view-thymeleaf`, `ext-limiter`, `ext-web-bundler`,
-`ext-data-core`, `ext-data-jdbc`, `ext-data-hibernate`, `release`, `deps`, `ci`.
+`ext-mcp`, `ext-data-core`, `ext-data-jdbc`, `ext-data-hibernate`, `release`, `deps`, `ci`.
 
 Examples:
 ```

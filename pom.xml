@@ -99,6 +99,11 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-mcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
                 <artifactId>fpr-core</artifactId>
                 <version>1.1.1</version>
             </dependency>

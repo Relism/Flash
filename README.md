@@ -10,6 +10,7 @@ A high-performance HTTP/1.1 server library for Java 21, built around virtual thr
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
+| `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, optional OAuth2 via flash-ext-oidc |
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
@@ -142,6 +143,7 @@ See extension-specific READMEs for full details:
 - [`flash-ext-jackson`](flash-extensions/flash-ext-jackson/README.md)
 - [`flash-ext-openapi`](flash-extensions/flash-ext-openapi/README.md)
 - [`flash-ext-oidc`](flash-extensions/flash-ext-oidc/README.md)
+- [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
 

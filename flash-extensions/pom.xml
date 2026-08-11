@@ -23,6 +23,7 @@
         <module>flash-ext-view-thymeleaf</module>
         <module>flash-ext-limiter</module>
         <module>flash-ext-web-bundler</module>
+        <module>flash-ext-mcp</module>
         <module>flash-ext-data-core</module>
         <module>flash-ext-data-jdbc</module>
         <module>flash-ext-data-hibernate</module>
