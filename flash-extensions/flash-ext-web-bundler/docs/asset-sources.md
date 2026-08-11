@@ -13,7 +13,14 @@ Builder shortcuts:
 - `.assetsFromClasspath("web/dist")`
 
 Classpath source requires `asset-manifest.json` generated at build time.
-The developer does not maintain this file manually.
+The developer does not maintain this file manually — generate it with `WebBundlerBuild`
+(`dev.relism.flash.ext.webbundler.WebBundlerBuild`), which scans a prebuilt directory (a Vite
+`dist/` or a `STATIC` asset folder) and writes the manifest into it, ready to be picked up as a
+classpath resource once that directory lands under `target/classes`. See `build-time.md`.
+
+`WebBundlerBuild` reuses the exact same etag/mimeType/immutable computation `FilesystemAssetsSource`
+uses at runtime, so a file served from disk in dev and the same file served from the classpath in
+prod get identical cache semantics.
 
 Production startup is fail-fast if:
 

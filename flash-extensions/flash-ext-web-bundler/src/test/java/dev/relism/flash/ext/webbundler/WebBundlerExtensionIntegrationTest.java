@@ -76,4 +76,47 @@ class WebBundlerExtensionIntegrationTest {
         assertTrue(fallback.body().contains("spa"));
     }
 
+    @Test
+    void staticFrontend_servesAssetsWithoutOrchestration() throws Exception {
+        Path webRoot = tempDir.resolve("public");
+        Files.createDirectories(webRoot);
+        Files.writeString(webRoot.resolve("index.html"), "<html>static</html>");
+        Files.writeString(webRoot.resolve("style.css"), "body{color:red}");
+
+        int port;
+        try (ServerSocket s = new ServerSocket(0)) {
+            port = s.getLocalPort();
+        }
+
+        // PROD is deterministic in a test JVM (Flash.DEV depends on env/system-property detection
+        // that can't be forced per-test); STATIC's actual guarantee — that it never orchestrates,
+        // in DEV or PROD — is enforced structurally by the same requiresOrchestration() gate in
+        // both WebBundlerExtension.provide() and .routes(), not by this test.
+        WebBundlerConfig config = WebBundlerConfig.builder()
+                .runtimeMode(RuntimeMode.PROD)
+                .frontendType(FrontendType.STATIC)
+                .webRoot(webRoot)
+                .build();
+
+        app = FlashApp.create(port);
+        app.install(new WebBundlerExtension(config));
+        app.get("/api/ping", (req, res) -> "pong");
+        app.start();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> backend = client.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/ping")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, backend.statusCode());
+        assertEquals("pong", backend.body());
+
+        HttpResponse<String> asset = client.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/style.css")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, asset.statusCode());
+        assertTrue(asset.body().contains("color:red"));
+    }
+
 }

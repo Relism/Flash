@@ -51,7 +51,7 @@ public final class WebBundlerExtension implements FlashExtension {
         SpaFallbackPolicy fallbackPolicy = null;
 
         try {
-            if (environment == RuntimeEnvironment.DEV) {
+            if (environment == RuntimeEnvironment.DEV && config.frontendType().requiresOrchestration()) {
                 bootstrapDev(strategy, pmAdapter, orchestrator, watchList);
             } else {
                 AssetCatalog catalog = config.assetsSource().load(new AssetLoadRequest(
@@ -79,7 +79,8 @@ public final class WebBundlerExtension implements FlashExtension {
     @Override
     public void routes(FlashRegistrar<?> app, FlashContext ctx) {
         WebBundlerRuntime runtime = ctx.require(WebBundlerRuntime.class);
-        if (runtime.environment() == RuntimeEnvironment.DEV || config.operationMode() == OperationMode.ORCHESTRATE_ONLY) {
+        boolean orchestrated = runtime.environment() == RuntimeEnvironment.DEV && config.frontendType().requiresOrchestration();
+        if (orchestrated || config.operationMode() == OperationMode.ORCHESTRATE_ONLY) {
             return;
         }
 

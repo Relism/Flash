@@ -55,4 +55,22 @@ class WebBundlerConfigTest {
                 .build();
         assertTrue(cfg.assetsSource() instanceof ClasspathAssetsSource);
     }
+
+    @Test
+    void staticFrontend_defaultsToManagedAndFilesystemSource() {
+        WebBundlerConfig cfg = WebBundlerConfig.builder()
+                .frontendType(FrontendType.STATIC)
+                .build();
+        assertEquals(OperationMode.MANAGED, cfg.operationMode());
+        assertTrue(cfg.assetsSource() instanceof FilesystemAssetsSource);
+    }
+
+    @Test
+    void staticFrontend_skipsOrchestrationValidation() {
+        assertDoesNotThrow(() -> WebBundlerConfig.builder()
+                .frontendType(FrontendType.STATIC)
+                .devPort(0)
+                .watchList(List.of())
+                .build());
+    }
 }
