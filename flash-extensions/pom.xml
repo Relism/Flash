@@ -126,18 +126,13 @@
         </dependencies>
     </dependencyManagement>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <version>3.1.2</version>
-                <inherited>false</inherited>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+    <!--
+      No maven-deploy-plugin skip here (there used to be one): flash-extensions is a
+      pom-packaging aggregator with no jar of its own, but every flash-ext-* submodule's
+      effective POM inherits from it via <parent> — skipping its deploy meant remote consumers
+      (anything resolving a flash-ext-* artifact from Gitea's Maven registry rather than a
+      local ~/.m2 install) couldn't resolve that parent POM at all. See
+      pathway/.gitea/workflows/docker-build.yml and pathway/docs/CI-CD.md.
+    -->
 
 </project>
