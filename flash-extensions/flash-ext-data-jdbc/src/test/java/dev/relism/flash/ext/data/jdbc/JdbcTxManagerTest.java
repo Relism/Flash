@@ -4,15 +4,12 @@ import dev.relism.flash.ext.data.core.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class JdbcTxManagerTest {
-    private final JdbcTxManager manager = new JdbcTxManager(dataSource());
+    private final JdbcTxManager manager = new JdbcTxManager(new TestDataSource());
 
     @AfterEach
     void cleanup() {
@@ -53,52 +50,38 @@ class JdbcTxManagerTest {
         manager.rollback(outer);
     }
 
-    private static DataSource dataSource() {
-        return new DataSource() {
-            @Override
-            public Connection getConnection() throws SQLException {
-                return DriverManager.getConnection("jdbc:h2:mem:tx-jdbc;DB_CLOSE_DELAY=-1");
-            }
+    /**
+     * SUPPORTS without an active transaction yields a connectionless status — it must not be a
+     * transaction, and asking it for a connection must say so rather than NPE. Both propagations
+     * that produce one used to throw {@link NullPointerException} straight out of {@code begin()}.
+     */
+    @Test
+    void supports_without_active_transaction_is_a_connectionless_no_op() {
+        TxStatus s = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS));
 
-            @Override
-            public Connection getConnection(String username, String password) throws SQLException {
-                return DriverManager.getConnection("jdbc:h2:mem:tx-jdbc;DB_CLOSE_DELAY=-1", username, password);
-            }
+        assertFalse(s.isNewTransaction());
+        assertThrows(IllegalStateException.class, () -> s.resource(Connection.class));
+        assertDoesNotThrow(() -> manager.commit(s));
+    }
 
-            @Override
-            public <T> T unwrap(Class<T> iface) {
-                throw new UnsupportedOperationException();
-            }
+    @Test
+    void not_supported_suspends_the_active_transaction_and_restores_it_on_commit() {
+        TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
+        Connection outerConnection = outer.resource(Connection.class);
 
-            @Override
-            public boolean isWrapperFor(Class<?> iface) {
-                return false;
-            }
+        TxStatus suspended = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.NOT_SUPPORTED));
+        assertFalse(suspended.isNewTransaction());
+        assertThrows(IllegalStateException.class, () -> suspended.resource(Connection.class));
+        manager.commit(suspended);
 
-            @Override
-            public java.io.PrintWriter getLogWriter() {
-                throw new UnsupportedOperationException();
-            }
+        TxStatus rejoined = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRED));
+        assertSame(outerConnection, rejoined.resource(Connection.class), "the suspended transaction must be back");
+        manager.rollback(outer);
+    }
 
-            @Override
-            public void setLogWriter(java.io.PrintWriter out) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public void setLoginTimeout(int seconds) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLoginTimeout() {
-                return 0;
-            }
-
-            @Override
-            public java.util.logging.Logger getParentLogger() {
-                throw new UnsupportedOperationException();
-            }
-        };
+    @Test
+    void mandatory_without_active_transaction_is_rejected() {
+        assertThrows(IllegalStateException.class,
+                () -> manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.MANDATORY)));
     }
 }

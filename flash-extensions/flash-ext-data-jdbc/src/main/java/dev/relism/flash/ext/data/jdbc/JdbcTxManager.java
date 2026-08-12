@@ -41,6 +41,9 @@ public class JdbcTxManager implements TxManager {
 
     private TxStatus beginNew(TxDefinition definition) {
         Connection conn = null;
+        // Anything already registered belongs to an enclosing transaction this one is nested
+        // inside (or suspended over) — see ResourceRegistry#fireSynchronizations.
+        int synchronizationBaseline = ResourceRegistry.synchronizationCount();
         JdbcTxStatus suspended = suspendIfNeeded();
         boolean bound = false;
         try {
@@ -55,7 +58,8 @@ public class JdbcTxManager implements TxManager {
                     true,
                     definition.readOnly(),
                     suspended,
-                    new JdbcTxStatus.RollbackMarker()
+                    new JdbcTxStatus.RollbackMarker(),
+                    synchronizationBaseline
             );
             ResourceRegistry.bind(JDBC_STATUS_KEY, status);
             bound = true;
@@ -76,12 +80,15 @@ public class JdbcTxManager implements TxManager {
         if (definition.readOnly() && !existing.isReadOnly()) {
             throw new TxException("Cannot join read-write tx as read-only");
         }
+        // Baseline 0 is never read: a joined status isn't a new transaction, so commit()/rollback()
+        // hand it straight back to the transaction it joined without firing anything.
         return new JdbcTxStatus(
                 existing.connection(),
                 false,
                 definition.readOnly(),
                 null,
-                existing.rollbackMarker()
+                existing.rollbackMarker(),
+                0
         );
     }
 
@@ -90,7 +97,7 @@ public class JdbcTxManager implements TxManager {
     }
 
     private TxStatus noOp(TxDefinition definition, JdbcTxStatus suspended) {
-        return new JdbcTxStatus(null, false, definition.readOnly(), suspended, new JdbcTxStatus.RollbackMarker());
+        return new JdbcTxStatus(null, false, definition.readOnly(), suspended, new JdbcTxStatus.RollbackMarker(), 0);
     }
 
     private JdbcTxStatus suspendIfNeeded() {
@@ -110,18 +117,23 @@ public class JdbcTxManager implements TxManager {
             cleanupIfIdle();
             return;
         }
+        TxOutcome outcome = null;
         try {
             if (s.isRollbackOnly()) {
                 s.connection().rollback();
-                ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK);
-                return;
+                outcome = TxOutcome.ROLLED_BACK;
+            } else {
+                s.connection().commit();
+                outcome = TxOutcome.COMMITTED;
             }
-            s.connection().commit();
-            ResourceRegistry.fireSynchronizations(TxOutcome.COMMITTED);
         } catch (SQLException e) {
             throw new TxException(e);
         } finally {
+            // Unbind the connection before firing, so a callback that opens its own transaction
+            // gets a fresh one instead of joining the connection that just committed — and fire
+            // before cleanupIfIdle(), whose ResourceRegistry.cleanup() drops the pending list.
             cleanupAndResume(s);
+            if (outcome != null) ResourceRegistry.fireSynchronizations(outcome, s.synchronizationBaseline());
             cleanupIfIdle();
         }
     }
@@ -137,11 +149,12 @@ public class JdbcTxManager implements TxManager {
         }
         try {
             s.connection().rollback();
-            ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK);
         } catch (SQLException e) {
             throw new TxException(e);
         } finally {
+            // Same order as commit() above, for the same two reasons.
             cleanupAndResume(s);
+            ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK, s.synchronizationBaseline());
             cleanupIfIdle();
         }
     }

@@ -43,6 +43,9 @@ public class HibernateTxManager implements TxManager {
     }
 
     private TxStatus beginNew(TxDefinition definition, HibernateTxStatus suspended) {
+        // Anything already registered belongs to an enclosing transaction this one is nested
+        // inside (or suspended over) — see ResourceRegistry#fireSynchronizations.
+        int synchronizationBaseline = ResourceRegistry.synchronizationCount();
         Session s = sf.openSession();
         boolean bound = false;
         try {
@@ -56,7 +59,8 @@ public class HibernateTxManager implements TxManager {
                     true,
                     definition.readOnly(),
                     suspended,
-                    new HibernateTxStatus.RollbackMarker()
+                    new HibernateTxStatus.RollbackMarker(),
+                    synchronizationBaseline
             );
             ResourceRegistry.bind(HIBERNATE_STATUS_KEY, status);
             bound = true;
@@ -80,12 +84,15 @@ public class HibernateTxManager implements TxManager {
         if (definition.readOnly() && !existing.isReadOnly()) {
             throw new TxException("Cannot join read-write tx as read-only");
         }
+        // Baseline 0 is never read: a joined status isn't a new transaction, so commit()/rollback()
+        // hand it straight back to the transaction it joined without firing anything.
         return new HibernateTxStatus(
                 existing.session(),
                 false,
                 definition.readOnly(),
                 null,
-                existing.rollbackMarker()
+                existing.rollbackMarker(),
+                0
         );
     }
 
@@ -94,7 +101,7 @@ public class HibernateTxManager implements TxManager {
     }
 
     private TxStatus noOp(TxDefinition definition, HibernateTxStatus suspended) {
-        return new HibernateTxStatus(null, false, definition.readOnly(), suspended, new HibernateTxStatus.RollbackMarker());
+        return new HibernateTxStatus(null, false, definition.readOnly(), suspended, new HibernateTxStatus.RollbackMarker(), 0);
     }
 
     private HibernateTxStatus suspendIfNeeded() {
@@ -114,7 +121,7 @@ public class HibernateTxManager implements TxManager {
             cleanupIfIdle();
             return;
         }
-        TxOutcome outcome;
+        TxOutcome outcome = null;
         try {
             if (s.isRollbackOnly() && s.session().getTransaction().isActive()) {
                 s.session().getTransaction().rollback();
@@ -124,10 +131,17 @@ public class HibernateTxManager implements TxManager {
                 outcome = TxOutcome.COMMITTED;
             }
         } finally {
+            // Order is load-bearing, and getting it wrong is silent: cleanupIfIdle() calls
+            // ResourceRegistry.cleanup(), which removes the very ThreadLocal list of
+            // synchronizations still waiting to be fired — firing afterwards saw a freshly
+            // initialized empty list and dropped every callback on the floor. cleanupAndResume()
+            // still has to come first, so a synchronization that opens its own transaction
+            // (Registry#reload() in Pathway does) starts a fresh one instead of joining the
+            // session that just committed. rollback() below already had this order right.
             cleanupAndResume(s);
+            if (outcome != null) ResourceRegistry.fireSynchronizations(outcome, s.synchronizationBaseline());
             cleanupIfIdle();
         }
-        ResourceRegistry.fireSynchronizations(outcome);
     }
 
     @Override
@@ -143,9 +157,11 @@ public class HibernateTxManager implements TxManager {
             if (s.session().getTransaction().isActive()) {
                 s.session().getTransaction().rollback();
             }
-            ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK);
         } finally {
+            // Same order as commit(): unbind the session first so a callback opening its own
+            // transaction gets a fresh one, fire before cleanupIfIdle() can drop the list.
             cleanupAndResume(s);
+            ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK, s.synchronizationBaseline());
             cleanupIfIdle();
         }
     }

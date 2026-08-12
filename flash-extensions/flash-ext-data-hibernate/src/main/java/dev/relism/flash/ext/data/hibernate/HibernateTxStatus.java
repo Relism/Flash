@@ -13,19 +13,22 @@ class HibernateTxStatus implements TxStatus {
     private final boolean readOnly;
     private final HibernateTxStatus suspended;
     private final RollbackMarker rollbackMarker;
+    private final int synchronizationBaseline;
 
     HibernateTxStatus(
             Session session,
             boolean newTransaction,
             boolean readOnly,
             HibernateTxStatus suspended,
-            RollbackMarker rollbackMarker
+            RollbackMarker rollbackMarker,
+            int synchronizationBaseline
     ) {
         this.session = session;
         this.newTransaction = newTransaction;
         this.readOnly = readOnly;
         this.suspended = suspended;
         this.rollbackMarker = rollbackMarker;
+        this.synchronizationBaseline = synchronizationBaseline;
     }
 
     @Override public boolean isNewTransaction() { return newTransaction; }
@@ -44,4 +47,7 @@ class HibernateTxStatus implements TxStatus {
     Session session() { return session; }
     HibernateTxStatus suspended() { return suspended; }
     RollbackMarker rollbackMarker() { return rollbackMarker; }
+
+    /** Index into {@code ResourceRegistry}'s synchronization list where this transaction's own callbacks start. */
+    int synchronizationBaseline() { return synchronizationBaseline; }
 }
