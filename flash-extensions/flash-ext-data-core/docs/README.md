@@ -1,93 +1,93 @@
 # flash-ext-data-core
 
-Core comune per il layer dati di Flash.
+Shared core for Flash's data layer.
 
-## Scopo
+## Purpose
 
-Questo modulo definisce il contratto transazionale condiviso tra le implementazioni backend.
-Non parla con Hibernate o JDBC direttamente: espone solo astrazioni e un runtime minimale.
+This module defines the transactional contract shared across backend implementations. It does not
+talk to Hibernate or JDBC directly: it exposes abstractions and a minimal runtime, nothing else.
 
-## Componenti
+## Components
 
-- `TxDefinition`: metadata immutabile della transazione.
-- `TxStatus`: stato runtime restituito dal manager.
-- `TxManager`: contratto per `begin`, `commit`, `rollback`.
-- `Tx`: orchestration runtime e stack transazionale per thread.
-- `ResourceRegistry`: storage thread-local di risorse e synchronizations.
-- `Repository<T, ID>`: base repository auto-transazionale.
-- `Spec<T>`: predicato componibile.
-- `Query<T>`: oggetto query con spec, sort e paging.
-- `SpecBuilder<T>`: DSL fluente per costruire spec tipizzate.
-- `RepositorySupport<T, ID>`: helper interno condiviso.
-- `TransactionPropagation`: semantica di propagazione.
-- `TransactionIsolation`: livello di isolamento.
-- `TxSynchronization`: hook lifecycle (vedi sotto).
+- `TxDefinition`: immutable transaction metadata.
+- `TxStatus`: runtime state returned by the manager.
+- `TxManager`: the `begin`/`commit`/`rollback` contract.
+- `Tx`: runtime orchestration and the per-thread transaction stack.
+- `ResourceRegistry`: thread-local storage for resources and synchronizations.
+- `Repository<T, ID>`: self-transactional base repository.
+- `Spec<T>`: composable predicate.
+- `Query<T>`: query object carrying spec, sort and paging.
+- `SpecBuilder<T>`: fluent DSL for building typed specs.
+- `RepositorySupport<T, ID>`: shared internal helper.
+- `TransactionPropagation`: propagation semantics.
+- `TransactionIsolation`: isolation level.
+- `TxSynchronization`: lifecycle hooks (see below).
 
-## Modello di esecuzione
+## Execution model
 
-Il flusso è:
+The flow is:
 
-1. `Tx.call(definition, work)` chiama `TxManager.begin(definition)`.
-2. Il `TxManager` crea un `TxStatus` backend-specific.
-3. Lo status viene pushato nello stack thread-local.
-4. Il lavoro usa `Tx.resource(Class)` per ottenere la risorsa corrente.
-5. A fine lavoro `Tx` decide tra `commit` e `rollback`.
-6. Lo stack viene poppato e il thread-local viene pulito se vuoto.
+1. `Tx.call(definition, work)` calls `TxManager.begin(definition)`.
+2. The `TxManager` creates a backend-specific `TxStatus`.
+3. The status is pushed onto the thread-local stack.
+4. The work uses `Tx.resource(Class)` to obtain the current resource.
+5. When the work ends, `Tx` chooses between `commit` and `rollback`.
+6. The stack is popped, and the thread-local is cleared once it is empty.
 
-## Propagation supportata
+## Supported propagation
 
-- `REQUIRED`: usa la tx attiva oppure ne apre una nuova.
-- `REQUIRES_NEW`: sospende la tx corrente e apre una nuova tx.
-- `SUPPORTS`: se esiste una tx attiva si aggancia, altrimenti esegue senza tx.
-- `NOT_SUPPORTED`: sospende la tx corrente ed esegue senza tx.
-- `MANDATORY`: richiede una tx attiva.
+- `REQUIRED`: use the active transaction, or open a new one.
+- `REQUIRES_NEW`: suspend the current transaction and open a new one.
+- `SUPPORTS`: join the active transaction if there is one, otherwise run without a transaction.
+- `NOT_SUPPORTED`: suspend the current transaction and run without one.
+- `MANDATORY`: require an active transaction.
 
-## Synchronization (`TxSynchronization`)
+## Synchronizations (`TxSynchronization`)
 
-Hook sul ciclo di vita di **una** transazione, registrati con `Data.afterCommit(...)` (o
-direttamente con `ResourceRegistry.addSynchronization(...)`).
+Lifecycle hooks for **one** transaction, registered through `Data.afterCommit(...)` (or directly
+with `ResourceRegistry.addSynchronization(...)`).
 
-Ogni callback appartiene esattamente alla transazione più interna attiva al momento della
-registrazione, e scatta una volta sola quando *quella* transazione completa:
+Every callback belongs to exactly the innermost transaction active at registration time, and fires
+exactly once, when *that* transaction completes:
 
-- una tx interna **joined** (`REQUIRED`) non è una transazione a sé, quindi i callback registrati
-  al suo interno aspettano il commit più esterno;
-- una tx `REQUIRES_NEW` lo è, quindi completarla fa scattare solo i propri callback e lascia in
-  sospeso quelli della transazione esterna sospesa.
+- a **joined** inner transaction (`REQUIRED`) is not a transaction of its own, so callbacks
+  registered inside one wait for the outermost commit;
+- a `REQUIRES_NEW` transaction is, so completing it fires only its own callbacks and leaves the
+  suspended outer transaction's pending.
 
-### Posizione rispetto al commit
+### Which side of the commit each hook sits on
 
-| hook | quando | risorsa |
+| hook | when | resource |
 | --- | --- | --- |
-| `beforeCommit(readOnly)` | subito **prima** del commit reale | sessione/connection ancora **bound**, tx ancora attiva |
-| `afterCommit()` / `afterRollback()` | dopo il completamento | risorsa già **sganciata** |
-| `afterCompletion(outcome)` | dopo i due precedenti | risorsa già sganciata |
+| `beforeCommit(readOnly)` | immediately **before** the real commit | session/connection still **bound**, transaction still active |
+| `afterCommit()` / `afterRollback()` | after completion | resource already **unbound** |
+| `afterCompletion(outcome)` | after the two above | resource already unbound |
 
-`beforeCommit` è l'unico hook che può ancora scrivere sulla stessa risorsa e finire nella stessa
-unità atomica: flush di un buffer, riga di audit, valore derivato. Non viene eseguito se la
-transazione è già `rollback-only`, perché non c'è nessun commit da precedere.
+`beforeCommit` is the only hook that can still write through the same resource and have the write
+land in the same atomic unit: flush a buffer, stamp an audit row, materialize a derived value. It
+is skipped when the transaction is already `rollback-only`, since there is no commit to precede.
 
-I callback post-completamento girano invece a risorsa sganciata: uno che apre una propria
-transazione ne ottiene una **nuova** invece di agganciarsi a quella appena conclusa. È questo che
-li rende il posto giusto per invalidare una cache, accodare un messaggio o notificare qualcosa
-fuori dal database.
+Post-completion callbacks run with the resource unbound instead: one that opens its own transaction
+gets a **fresh** one rather than joining the transaction that just finished. That is what makes
+them the right place to refresh a cache, enqueue a message, or notify anything outside the
+database.
 
-### Fallimenti
+### Failure
 
-Lanciare da `beforeCommit` **veta il commit**: la transazione va in rollback, scattano
-`afterRollback`/`afterCompletion(ROLLED_BACK)` e l'eccezione arriva al chiamante. È il motivo per
-cui l'hook gira prima del commit e non dopo — può ancora rifiutare.
+Throwing from `beforeCommit` **vetoes the commit**: the transaction is rolled back,
+`afterRollback`/`afterCompletion(ROLLED_BACK)` fire, and the exception reaches the caller. That is
+the reason the hook runs before the commit rather than after — it can still refuse.
 
-Gli hook post-completamento non hanno questo potere: la transazione è già chiusa quando girano,
-quindi un'eccezione si propaga ma non cambia nulla di ciò che è stato committato, e blocca i
-callback in coda dietro di lei.
+The post-completion hooks have no such power: the transaction is already over by the time they run,
+so an exception propagates but changes nothing already committed, and stops the callbacks queued
+behind it.
 
-## Uso di `Repository`
+## Using `Repository`
 
-`Repository` è la base comune per le repository concrete.
-Ogni operazione pubblica usa internamente una tx `REQUIRED` o `REQUIRED` read-only.
+`Repository` is the shared base for concrete repositories. Every public operation internally uses a
+`REQUIRED` transaction, read-only where applicable.
 
-Le sottoclassi implementano i metodi `doXxx(...)` del nuovo modello:
+Subclasses implement the `doXxx(...)` methods:
 
 - `doFind(Query<T>)`
 - `doFindOne(Spec<T>)`
@@ -95,7 +95,8 @@ Le sottoclassi implementano i metodi `doXxx(...)` del nuovo modello:
 - `doDeleteAll(Spec<T>)`
 - `doUpdateAll(Spec<T>, T)`
 
-I vecchi overload di `findAll(...)` e `findPage(...)` sono stati ridotti a una combinazione di `Query<T>` e `Spec<T>`.
+The old `findAll(...)` and `findPage(...)` overloads were reduced to a combination of `Query<T>` and
+`Spec<T>`.
 
 ```java
 public abstract class Repository<T, ID> {
@@ -104,21 +105,21 @@ public abstract class Repository<T, ID> {
 }
 ```
 
-## Composizione con Flash
+## Composing with Flash
 
-`DataExtension` registra:
+`DataExtension` registers:
 
-- `Tx` nel `FlashContext`
-- `TxManager` nel `FlashContext`
-- un annotation processor per `@Transactional`
+- `Tx` in the `FlashContext`
+- `TxManager` in the `FlashContext`
+- an annotation processor for `@Transactional`
 
-Questo rende il layer dati componibile con il sistema di extension di Flash senza stato globale.
+This makes the data layer composable with Flash's extension system without global state.
 
-## Note implementative
+## Implementation notes
 
-- Lo stack transazionale è thread-local e viene ripulito quando torna vuoto.
-- Le risorse backend sono sospese e ripristinate per `REQUIRES_NEW` e `NOT_SUPPORTED`.
-- `TxSynchronization` è il punto di aggancio per hook di commit/rollback/completion.
-- Le synchronization sono in una lista thread-local; ogni transazione nuova registra quante ne
-  esistevano già alla sua apertura e fa scattare solo la propria coda, così una `REQUIRES_NEW`
-  non trascina con sé quelle della transazione sospesa.
+- The transaction stack is thread-local and is cleared once it becomes empty.
+- Backend resources are suspended and restored for `REQUIRES_NEW` and `NOT_SUPPORTED`.
+- `TxSynchronization` is the hook point for commit/rollback/completion callbacks.
+- Synchronizations live in a thread-local list; every new transaction records how many were already
+  registered when it opened and fires only its own tail, so a `REQUIRES_NEW` does not drag along
+  the suspended transaction's callbacks.
