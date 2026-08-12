@@ -1,0 +1,24 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <!--
+      Used only by .gitea/workflows/publish-maven.yml (mvn -s .gitea/maven-settings.xml deploy).
+      Not used for local builds. The token is read from the GITEA_TOKEN env var the workflow
+      already exports (Gitea Actions' built-in per-job token, scoped to this repo/org — see
+      https://docs.gitea.com/usage/packages/maven#configuring-the-package-registry), never
+      written to disk.
+    -->
+    <servers>
+        <server>
+            <id>gitea</id>
+            <configuration>
+                <httpHeaders>
+                    <property>
+                        <name>Authorization</name>
+                        <value>token ${env.GITEA_TOKEN}</value>
+                    </property>
+                </httpHeaders>
+            </configuration>
+        </server>
+    </servers>
+</settings>

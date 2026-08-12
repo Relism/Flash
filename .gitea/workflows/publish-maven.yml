@@ -1,0 +1,37 @@
+name: Publish Maven packages
+
+# Flash's own POM keeps `2.1.0-SNAPSHOT` as its committed version — that's what local
+# `mvn install` (Pathway's normal dev loop, see its pom.xml `flash.version` comment) always
+# produces, and changing it here would break that. Gitea's Maven registry, unlike a real
+# snapshot repository, refuses to re-publish an existing name+version (must delete first —
+# see https://docs.gitea.com/usage/packages/maven#publish-a-package), so every push instead
+# publishes under a throwaway version stamped with the commit it built from
+# (`2.1.0-<short-sha>`), via `versions:set` on a checkout copy — never touching the committed
+# POMs. Consumers (Pathway's `docker` Maven profile) pin `flash.version` to one specific
+# published build and bump it by hand to pick up newer Flash changes; see
+# pathway/pom.xml's `docker` profile for the other half of this.
+on:
+  push:
+    branches: [master]
+
+jobs:
+  publish:
+    runs-on: docker
+    container:
+      image: maven:3.9-eclipse-temurin-21
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp every module with a commit-scoped version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          mvn -B versions:set -DnewVersion="2.1.0-${SHORT_SHA}" -DprocessAllModules=true -DgenerateBackupPoms=false
+          echo "Publishing as 2.1.0-${SHORT_SHA}"
+
+      - name: Deploy to the Gitea Maven registry
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          mvn -B -s .gitea/maven-settings.xml -DskipTests deploy \
+            -DaltReleaseDeploymentRepository=gitea::https://git.pixel-services.com/api/packages/Relism/maven \
+            -DaltSnapshotDeploymentRepository=gitea::https://git.pixel-services.com/api/packages/Relism/maven
