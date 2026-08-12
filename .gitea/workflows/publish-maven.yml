@@ -17,11 +17,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Deploy got a 401 without this: this repo's default Actions token permission mode is
-    # Restricted (read-only on packages), not Permissive — see
-    # https://docs.gitea.com/usage/actions/token-permissions.
-    permissions:
-      packages: write
     # No actions/checkout here on purpose: it's a Node-based action, and this container
     # (chosen for its preinstalled mvn/JDK 21) has no Node — checkout would fail with
     # "node: executable file not found". A plain git clone needs neither.
@@ -40,22 +35,14 @@ jobs:
           mvn -B versions:set -DnewVersion="2.1.0-${SHORT_SHA}" -DprocessAllModules=true -DgenerateBackupPoms=false
           echo "Publishing as 2.1.0-${SHORT_SHA}"
 
-      # Diagnostic for the 401s seen so far: confirms GITEA_TOKEN actually reaches this step
-      # non-empty, and whether the token itself authenticates against the API at all —
-      # independent of whatever Maven/wagon-http does with it. Remove once deploy is green.
-      - name: Debug token
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-        run: |
-          apt-get install -y --no-install-recommends curl >/dev/null
-          echo "token length: ${#GITEA_TOKEN}"
-          echo "whoami via token header:"
-          curl -s -o /dev/null -w "  token header -> %{http_code}\n" -H "Authorization: token ${GITEA_TOKEN}" https://git.pixel-services.com/api/v1/user
-          curl -s -o /dev/null -w "  basic auth   -> %{http_code}\n" -u "Relism:${GITEA_TOKEN}" https://git.pixel-services.com/api/v1/user
-
       - name: Deploy to the Gitea Maven registry
         env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          # Not GITEA_TOKEN: Gitea's own job token can't publish to package registries at
+          # all (a known, still-unimplemented limitation — see
+          # https://github.com/go-gitea/gitea/issues/23642). Confirmed by testing: GITEA_TOKEN
+          # authenticated fine against the plain API but still got 401 from this endpoint no
+          # matter the auth style. PACKAGES_TOKEN is a real PAT with write:package scope.
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
         run: |
           mvn -B -s .gitea/maven-settings.xml -DskipTests deploy \
             -DaltReleaseDeploymentRepository=gitea::https://git.pixel-services.com/api/packages/Relism/maven \

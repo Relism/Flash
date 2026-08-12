@@ -3,22 +3,22 @@
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
     <!--
       Used only by .gitea/workflows/publish-maven.yml (mvn -s .gitea/maven-settings.xml deploy).
-      Not used for local builds. The token is read from the GITEA_TOKEN env var the workflow
-      already exports (Gitea Actions' built-in per-job token, scoped to this repo/org — see
-      https://docs.gitea.com/usage/packages/maven#configuring-the-package-registry), never
-      written to disk.
+      Not used for local builds. PACKAGES_TOKEN is a real personal access token (write:package
+      scope) on the Relism account, read from the env var the workflow exports — never written
+      to disk. Deliberately not Gitea's own per-job GITEA_TOKEN: that token can't publish to
+      any package registry at all, a known unimplemented limitation
+      (https://github.com/go-gitea/gitea/issues/23642) — confirmed here by testing: it
+      authenticated fine against the plain API but still got 401 from this endpoint.
 
-      Basic auth (username/password), not the <httpHeaders> form Gitea's own docs show: that
-      form is honored by Maven's resolver (used for reading <repositories>) but not reliably
-      by the wagon-http provider maven-deploy-plugin actually uploads through, which silently
-      dropped it and deployed unauthenticated (401). Basic auth is wagon-http's oldest,
-      always-supported path.
+      Basic auth (username/password): the <httpHeaders> form Gitea's own docs show for this is
+      honored by Maven's resolver (used for reading <repositories>) but not reliably by the
+      wagon-http provider maven-deploy-plugin actually uploads through.
     -->
     <servers>
         <server>
             <id>gitea</id>
             <username>Relism</username>
-            <password>${env.GITEA_TOKEN}</password>
+            <password>${env.PACKAGES_TOKEN}</password>
         </server>
     </servers>
 </settings>
