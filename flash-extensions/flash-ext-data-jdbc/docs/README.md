@@ -1,14 +1,15 @@
 # flash-ext-data-jdbc
 
-Backend JDBC per `flash-ext-data-core`.
+JDBC backend for `flash-ext-data-core`.
 
-## Scopo
+## Purpose
 
-Questo modulo implementa `TxManager` sopra `DataSource` e fornisce una base repository SQL raw.
+This module implements `TxManager` on top of a `DataSource` and provides a raw-SQL repository base
+class.
 
-## Come si usa
+## How to use it
 
-### 1. Creare il manager
+### 1. Create the manager
 
 ```java
 DataSource dataSource = ...;
@@ -16,11 +17,12 @@ JdbcTxManager txManager = new JdbcTxManager(dataSource);
 DataExtension extension = new DataExtension(txManager);
 ```
 
-### 2. Installare l’estensione in Flash
+### 2. Install the extension in Flash
 
-Come per Hibernate, `DataExtension` registra `Tx` nel `FlashContext` e abilita `@Transactional` sugli handler class-based.
+As with Hibernate, `DataExtension` registers `Tx` in the `FlashContext` and enables
+`@Transactional` on class-based handlers.
 
-### 3. Definire una repository
+### 3. Define a repository
 
 ```java
 public final class UserRepository extends JdbcRepository<User, Long> {
@@ -35,7 +37,7 @@ public final class UserRepository extends JdbcRepository<User, Long> {
 }
 ```
 
-Anche qui puoi esporre `Spec` riusabili e comporre query dal service layer:
+Here too you can expose reusable `Spec`s and compose queries from the service layer:
 
 ```java
 public final class UserRepository extends JdbcRepository<User, Long> {
@@ -47,7 +49,7 @@ public final class UserRepository extends JdbcRepository<User, Long> {
 }
 ```
 
-Per il salvataggio e l’update devi fornire il binding esplicito:
+Saving and updating need an explicit binding:
 
 ```java
 @Override
@@ -61,36 +63,39 @@ protected void bindInsert(PreparedStatement ps, User entity) throws SQLException
 }
 ```
 
-## Come funziona sotto
+## How it works underneath
 
-- La tx corrente espone una `Connection`.
-- `Tx.resource(Connection.class)` recupera la connessione bindata al thread.
-- `REQUIRES_NEW` sospende la connessione attiva e ne apre una nuova.
-- `NOT_SUPPORTED` sospende il contesto e prosegue senza tx.
+- The current transaction exposes a `Connection`.
+- `Tx.resource(Connection.class)` retrieves the connection bound to the thread.
+- `REQUIRES_NEW` suspends the active connection and opens a new one.
+- `NOT_SUPPORTED` suspends the context and continues without a transaction.
 
-## Repository base
+## Repository base class
 
-`JdbcRepository` fornisce:
+`JdbcRepository` provides:
 
-- query `select` con `queryOne`, `queryMany`
-- mutation con `mutate`
-- persistenza con `doSave`, `doUpdate`
-- paging con `doFindPage`
+- `select` queries through `queryOne`, `queryMany`
+- mutations through `mutate`
+- persistence through `doSave`, `doUpdate`
+- paging through `doFindPage`
 - bulk `deleteAll(Spec<T>)`
-- helper raw `queryOne(...)`, `queryMany(...)`, `mutate(...)`
+- raw helpers `queryOne(...)`, `queryMany(...)`, `mutate(...)`
 
-Le repository concrete devono solo tradurre tra `ResultSet` e dominio.
+Concrete repositories only have to translate between `ResultSet` and the domain.
 
-## Semantica transazionale
+## Transactional semantics
 
-- `REQUIRED`: join o apertura nuova tx.
-- `REQUIRES_NEW`: sospensione del contesto corrente.
-- `SUPPORTS`: join se c’è tx, altrimenti no-op.
-- `NOT_SUPPORTED`: sospende e prosegue senza tx.
-- `MANDATORY`: fallisce se non c’è tx.
+- `REQUIRED`: join, or open a new transaction.
+- `REQUIRES_NEW`: suspend the current context.
+- `SUPPORTS`: join if a transaction exists, otherwise no-op.
+- `NOT_SUPPORTED`: suspend and continue without a transaction.
+- `MANDATORY`: fail if there is no transaction.
 
-## Note
+## Notes
 
-- La `Connection` viene chiusa a fine tx nuova.
-- Le synchronizations vengono eseguite al commit/rollback.
-- Se una repository usa `doDelete(T)`, il comportamento predefinito è non supportato: usare `deleteById` o override specifico.
+- The `Connection` is closed when a new transaction ends.
+- Synchronizations registered in a transaction fire when *that* transaction completes:
+  `beforeCommit` while it is still active and the `Connection` still bound, the post-completion
+  hooks once it is unbound. See `flash-ext-data-core/docs/README.md` for the full contract.
+- If a repository uses `doDelete(T)`, the default behaviour is unsupported: use `deleteById` or
+  override it.

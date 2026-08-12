@@ -65,4 +65,44 @@ class HibernateTxManagerTest {
         assertTrue(outer.isRollbackOnly());
         manager.rollback(outer);
     }
+
+    /** SUPPORTS without an active transaction yields a sessionless status: not a transaction, no session to hand out. */
+    @Test
+    void supports_without_active_transaction_is_a_sessionless_no_op() {
+        TxStatus s = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS));
+
+        assertFalse(s.isNewTransaction());
+        assertThrows(IllegalStateException.class, () -> s.resource(Session.class));
+        assertDoesNotThrow(() -> manager.commit(s));
+    }
+
+    @Test
+    void not_supported_suspends_the_active_transaction_and_restores_it_on_commit() {
+        TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
+        Session outerSession = outer.resource(Session.class);
+
+        TxStatus suspended = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.NOT_SUPPORTED));
+        assertFalse(suspended.isNewTransaction());
+        assertThrows(IllegalStateException.class, () -> suspended.resource(Session.class));
+        manager.commit(suspended);
+
+        TxStatus rejoined = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRED));
+        assertSame(outerSession, rejoined.resource(Session.class), "the suspended transaction must be back");
+        manager.rollback(outer);
+    }
+
+    @Test
+    void mandatory_without_active_transaction_is_rejected() {
+        assertThrows(IllegalStateException.class,
+                () -> manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.MANDATORY)));
+    }
+
+    /** A read-only join onto a read-write transaction is a contract violation, not a silent downgrade. */
+    @Test
+    void read_only_cannot_join_a_read_write_transaction() {
+        TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
+        assertThrows(TxException.class,
+                () -> manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRED).asReadOnly()));
+        manager.rollback(outer);
+    }
 }
