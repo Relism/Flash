@@ -61,7 +61,8 @@ public class McpExtension implements FlashExtension {
         // @ScopesAllowed are backed by real OAuth2 protection or a boot-time misconfiguration
         // (see McpOidcIntegration#compileToolPolicy) — must run first, not after.
         McpOidcIntegration.Resolved secured = resolveSecurity(ctx);
-        McpRegistry registry = McpRegistry.scan(config.toolsPackage(), ctx, secured != null, config.rolesClaimPath());
+        McpRegistry registry = McpRegistry.scan(config.toolsPackage(), ctx, secured != null,
+                secured == null ? null : secured.rolesClaimPath());
         McpDispatcher dispatcher = new McpDispatcher(registry, config.name(), config.version(), config.instructions());
 
         List<Middleware> chain = new ArrayList<>(3);

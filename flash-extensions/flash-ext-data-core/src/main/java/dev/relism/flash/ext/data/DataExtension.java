@@ -1,6 +1,7 @@
 package dev.relism.flash.ext.data;
 
 import dev.relism.flash.ext.data.core.Tx;
+import dev.relism.flash.ext.data.core.Data;
 import dev.relism.flash.ext.data.core.TxDefinition;
 import dev.relism.flash.ext.data.core.TxManager;
 import dev.relism.flash.ext.data.core.TransactionPropagation;
@@ -19,16 +20,23 @@ public final class DataExtension implements FlashExtension {
     private static final MiddlewareKey TRANSACTION = MiddlewareKey.of("flash.data.transaction");
     private final TxManager txManager;
     private final Tx tx;
+    private final Data data;
 
     public DataExtension(TxManager txManager) {
+        this(txManager, null);
+    }
+
+    public DataExtension(TxManager txManager, Data data) {
         this.txManager = Objects.requireNonNull(txManager);
-        this.tx = new Tx(txManager);
+        this.data = data;
+        this.tx = data != null ? data.tx() : new Tx(txManager);
     }
 
     @Override
     public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         ctx.provide(Tx.class, tx);
         ctx.provide(TxManager.class, txManager);
+        if (data != null) ctx.provide(Data.class, data);
         ctx.addAnnotationProcessor(handlerClass -> {
             Transactional ann = handlerClass.getAnnotation(Transactional.class);
             if (ann == null) {

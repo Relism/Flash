@@ -114,18 +114,20 @@ public class HibernateTxManager implements TxManager {
             cleanupIfIdle();
             return;
         }
+        TxOutcome outcome;
         try {
             if (s.isRollbackOnly() && s.session().getTransaction().isActive()) {
                 s.session().getTransaction().rollback();
-                ResourceRegistry.fireSynchronizations(TxOutcome.ROLLED_BACK);
+                outcome = TxOutcome.ROLLED_BACK;
             } else {
                 s.session().getTransaction().commit();
-                ResourceRegistry.fireSynchronizations(TxOutcome.COMMITTED);
+                outcome = TxOutcome.COMMITTED;
             }
         } finally {
             cleanupAndResume(s);
             cleanupIfIdle();
         }
+        ResourceRegistry.fireSynchronizations(outcome);
     }
 
     @Override

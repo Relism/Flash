@@ -45,8 +45,7 @@ final class McpRegistry {
      *                      {@code @RolesAllowed}/{@code @ScopesAllowed} on a tool are honored or
      *                      rejected at boot as a misconfiguration; see
      *                      {@link McpOidcIntegration#compileToolPolicy}.
-     * @param rolesClaimPath claim path forwarded to {@code @RolesAllowed} checks; see
-     *                      {@link McpConfig#rolesClaimPath(String)}.
+     * @param rolesClaimPath claim path resolved from the installed OIDC extension.
      */
     static McpRegistry scan(String packageName, FlashContext ctx, boolean oidcActive, String rolesClaimPath) {
         McpPackageScanner.ScanResult found = McpPackageScanner.scan(packageName);
