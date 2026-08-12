@@ -17,6 +17,11 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Deploy got a 401 without this: this repo's default Actions token permission mode is
+    # Restricted (read-only on packages), not Permissive — see
+    # https://docs.gitea.com/usage/actions/token-permissions.
+    permissions:
+      packages: write
     # No actions/checkout here on purpose: it's a Node-based action, and this container
     # (chosen for its preinstalled mvn/JDK 21) has no Node — checkout would fail with
     # "node: executable file not found". A plain git clone needs neither.
