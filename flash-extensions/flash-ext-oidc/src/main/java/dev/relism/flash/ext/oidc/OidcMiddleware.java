@@ -60,6 +60,9 @@ public class OidcMiddleware {
 
     // -- Public API -----------------------------------------------------------
 
+    /** The single configured claim path used by every transport for role checks. */
+    public String rolesClaimPath() { return config.rolesClaimPath(); }
+
     /**
      * Validates the bearer token or session cookie. Browser clients are redirected
      * to the login page on failure; API clients receive 401.

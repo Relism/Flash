@@ -28,7 +28,6 @@ public final class McpConfig {
     private final String authorizationServerIssuer;
     private final List<String> allowedOrigins;
     private final List<String> scopesSupported;
-    private final String rolesClaimPath;
 
     private McpConfig(Builder b) {
         this.name = b.name;
@@ -41,7 +40,6 @@ public final class McpConfig {
         this.authorizationServerIssuer = b.authorizationServerIssuer;
         this.allowedOrigins = List.copyOf(b.allowedOrigins);
         this.scopesSupported = List.copyOf(b.scopesSupported);
-        this.rolesClaimPath = b.rolesClaimPath;
     }
 
     String name()                     { return name; }
@@ -54,7 +52,6 @@ public final class McpConfig {
     String authorizationServerIssuer() { return authorizationServerIssuer; }
     List<String> allowedOrigins()     { return allowedOrigins; }
     List<String> scopesSupported()    { return scopesSupported; }
-    String rolesClaimPath()           { return rolesClaimPath; }
 
     public static Builder builder(String name) { return new Builder(name); }
 
@@ -69,7 +66,6 @@ public final class McpConfig {
         private String authorizationServerIssuer;
         private final List<String> allowedOrigins = new ArrayList<>();
         private final List<String> scopesSupported = new ArrayList<>();
-        private String rolesClaimPath = "realm_access.roles";
 
         private Builder(String name) {
             if (name == null || name.isBlank())
@@ -131,15 +127,6 @@ public final class McpConfig {
          * the same way regardless of what a client requested.
          */
         public Builder scopesSupported(String... scopes) { this.scopesSupported.addAll(List.of(scopes)); return this; }
-
-        /**
-         * Claim path used to resolve roles for {@code @RolesAllowed} on an {@link McpTool} —
-         * same dot-path syntax and default (Keycloak's {@code realm_access.roles}) as {@code
-         * OidcConfig#rolesClaimPath()}. Set this only if the two configs diverge; there is no
-         * way to auto-derive it from the installed {@code OidcExtension} (see {@code
-         * docs/security.md}'s {@code @RolesAllowed}/{@code @ScopesAllowed} section for why).
-         */
-        public Builder rolesClaimPath(String rolesClaimPath) { this.rolesClaimPath = rolesClaimPath; return this; }
 
         public McpConfig build() {
             if (toolsPackage == null || toolsPackage.isBlank())

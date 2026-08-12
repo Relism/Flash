@@ -25,7 +25,7 @@ import java.util.jar.JarFile;
  * class cannot be loaded, an {@link InitializationException} is thrown immediately.
  * A clear crash at boot is always preferable to a server that starts "empty".
  */
-final class PackageScanner {
+public final class PackageScanner {
 
     private PackageScanner() {}
 
@@ -39,6 +39,60 @@ final class PackageScanner {
      */
     static List<Class<?>> findHandlers(String packageName) {
         return scan(packageName).httpHandlers();
+    }
+
+    /**
+     * Shared deterministic classpath discovery primitive for Flash extensions. It owns the
+     * directory/JAR traversal, anonymous-class exclusion and load diagnostics; extensions only
+     * classify the returned classes according to their own component contract.
+     */
+    public static List<Class<?>> discover(String packageName) {
+        if (packageName == null || packageName.isBlank())
+            throw new InitializationException("scan() called with null or blank package name");
+        String resourcePath = packageName.replace('.', '/');
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        List<Class<?>> result = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        boolean found = false;
+        try {
+            Enumeration<URL> resources = cl.getResources(resourcePath);
+            while (resources.hasMoreElements()) {
+                found = true;
+                URL url = resources.nextElement();
+                if ("file".equals(url.getProtocol())) discoverDirectory(new File(url.toURI()), packageName, cl, result, errors);
+                else if ("jar".equals(url.getProtocol())) {
+                    String path = url.getPath();
+                    try (JarFile jar = new JarFile(path.substring(path.indexOf("file:") + 5, path.indexOf('!')))) {
+                        discoverJar(jar, resourcePath, cl, result, errors);
+                    }
+                }
+            }
+        } catch (Exception e) { throw new InitializationException("Failed to scan package: " + packageName, e); }
+        if (!found) throw new InitializationException("scan(\"" + packageName + "\") — package not found on classpath");
+        if (!errors.isEmpty()) throw new InitializationException("scan(\"" + packageName + "\") — failed to load classes:\n  • " + String.join("\n  • ", errors));
+        return List.copyOf(result);
+    }
+
+    private static void discoverDirectory(File dir, String packageName, ClassLoader cl, List<Class<?>> result, List<String> errors) {
+        File[] files = dir.listFiles(); if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) discoverDirectory(file, packageName + '.' + file.getName(), cl, result, errors);
+            else if (file.getName().endsWith(".class") && !isAnonymous(file.getName())) discoverClass(packageName + '.' + file.getName().replace(".class", ""), cl, result, errors);
+        }
+    }
+
+    private static void discoverJar(JarFile jar, String resourcePath, ClassLoader cl, List<Class<?>> result, List<String> errors) {
+        String prefix = resourcePath + "/";
+        Enumeration<JarEntry> entries = jar.entries();
+        while (entries.hasMoreElements()) {
+            String name = entries.nextElement().getName();
+            if (name.startsWith(prefix) && name.endsWith(".class") && !isAnonymous(name)) discoverClass(name.replace('/', '.').replace(".class", ""), cl, result, errors);
+        }
+    }
+
+    private static void discoverClass(String name, ClassLoader cl, List<Class<?>> result, List<String> errors) {
+        try { result.add(cl.loadClass(name)); }
+        catch (ClassNotFoundException | LinkageError e) { errors.add(name + " — " + e.getMessage()); }
     }
 
     static ScanResult scan(String packageName) {

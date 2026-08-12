@@ -46,7 +46,8 @@ final class McpOidcIntegration {
     private McpOidcIntegration() {}
 
     /** Everything {@link McpExtension} needs once oidc security is resolved. */
-    record Resolved(Middleware security, String issuer, Function<Request, String> resourceIdentifier) {}
+    record Resolved(Middleware security, String issuer, String rolesClaimPath,
+                    Function<Request, String> resourceIdentifier) {}
 
     /** Returns the resolved security bundle, or {@code null} if oidc is not installed. */
     static Resolved resolve(FlashContext ctx, McpConfig config) {
@@ -63,7 +64,7 @@ final class McpOidcIntegration {
 
         Middleware protect = oidcMw.protect(resourceMetadataPath);
         Middleware secured = Middleware.of(protect, audienceGuard(resourceId));
-        return new Resolved(secured, issuer, resourceId);
+        return new Resolved(secured, issuer, oidcMw.rolesClaimPath(), resourceId);
     }
 
     /**
