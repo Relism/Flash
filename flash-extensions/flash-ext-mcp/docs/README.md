@@ -53,4 +53,6 @@ public class GetWeatherTool extends McpTool {
 - [`tools-resources-prompts.md`](tools-resources-prompts.md) — defining tools, resources, prompts
 - [`transport.md`](transport.md) — Streamable HTTP scope, session/SSE limitations, Origin validation
 - [`security.md`](security.md) — `McpSecurity` policy, OAuth2 resolution, RFC 9728 / RFC 8707
+- [`keycloak.md`](keycloak.md) — Keycloak-specific setup cookbook: Dynamic Client Registration,
+  the RFC 8707 audience mapper gotcha, and how to verify/debug it
 - [`jackson-interop.md`](jackson-interop.md) — why this extension does not depend on `flash-ext-jackson`

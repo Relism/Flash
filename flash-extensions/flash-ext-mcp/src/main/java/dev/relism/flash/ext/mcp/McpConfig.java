@@ -12,7 +12,7 @@ import java.util.List;
  *     .rootPath("/mcp")
  *     .toolsPackage("com.example.tools")
  *     .security(McpSecurity.REQUIRED)
- *     .resourceIdentifier("https://mcp.example.com/mcp")
+ *     .scopesSupported("openid", "profile", "email")
  *     .build();
  * }</pre>
  */
@@ -27,6 +27,8 @@ public final class McpConfig {
     private final String resourceIdentifier;
     private final String authorizationServerIssuer;
     private final List<String> allowedOrigins;
+    private final List<String> scopesSupported;
+    private final String rolesClaimPath;
 
     private McpConfig(Builder b) {
         this.name = b.name;
@@ -38,6 +40,8 @@ public final class McpConfig {
         this.resourceIdentifier = b.resourceIdentifier;
         this.authorizationServerIssuer = b.authorizationServerIssuer;
         this.allowedOrigins = List.copyOf(b.allowedOrigins);
+        this.scopesSupported = List.copyOf(b.scopesSupported);
+        this.rolesClaimPath = b.rolesClaimPath;
     }
 
     String name()                     { return name; }
@@ -49,6 +53,8 @@ public final class McpConfig {
     String resourceIdentifier()       { return resourceIdentifier; }
     String authorizationServerIssuer() { return authorizationServerIssuer; }
     List<String> allowedOrigins()     { return allowedOrigins; }
+    List<String> scopesSupported()    { return scopesSupported; }
+    String rolesClaimPath()           { return rolesClaimPath; }
 
     public static Builder builder(String name) { return new Builder(name); }
 
@@ -62,6 +68,8 @@ public final class McpConfig {
         private String resourceIdentifier;
         private String authorizationServerIssuer;
         private final List<String> allowedOrigins = new ArrayList<>();
+        private final List<String> scopesSupported = new ArrayList<>();
+        private String rolesClaimPath = "realm_access.roles";
 
         private Builder(String name) {
             if (name == null || name.isBlank())
@@ -85,18 +93,22 @@ public final class McpConfig {
         public Builder security(McpSecurity security) { this.security = security; return this; }
 
         /**
-         * Resource identifier used for RFC 8707 audience binding: tokens whose {@code aud} claim
-         * does not include this value are rejected. Optional — if unset, only standard bearer
-         * validation (signature/issuer/expiry) is enforced, not audience binding.
+         * Canonical URI of this MCP endpoint, used for RFC 8707 audience binding: tokens whose
+         * {@code aud} claim does not include this value are rejected. Optional — when
+         * {@code flash-ext-oidc} is installed, this is auto-derived per request from the
+         * forwarded/{@code Host} headers (same resolution {@code OidcExtension} uses for its own
+         * redirect URIs) and audience binding is enforced unconditionally. Set this explicitly
+         * only to override that guess — a reverse proxy that forwards neither
+         * {@code X-Forwarded-Host} nor {@code X-Forwarded-Proto}.
          */
         public Builder resourceIdentifier(String resourceIdentifier) { this.resourceIdentifier = resourceIdentifier; return this; }
 
         /**
-         * Authorization server issuer URL, used to publish an RFC 9728 Protected Resource
-         * Metadata document at {@code /.well-known/oauth-protected-resource{rootPath}} so MCP
-         * clients can discover it automatically. Requires {@link #resourceIdentifier(String)}
-         * to also be set. Optional — without it, bearer validation still works, clients just
-         * need the authorization server configured out-of-band.
+         * Authorization server issuer URL, published in the RFC 9728 Protected Resource
+         * Metadata document at {@code /.well-known/oauth-protected-resource{rootPath}}. Optional
+         * — when {@code flash-ext-oidc} is installed, this is auto-derived from its configured
+         * issuer. Set this explicitly only to override that (e.g. publishing a different issuer
+         * than the one actually validating tokens).
          */
         public Builder authorizationServerIssuer(String issuer) { this.authorizationServerIssuer = issuer; return this; }
 
@@ -106,6 +118,28 @@ public final class McpConfig {
          * is logged at boot.
          */
         public Builder allowedOrigins(String... origins) { this.allowedOrigins.addAll(List.of(origins)); return this; }
+
+        /**
+         * OAuth2 scopes this server expects clients to request, published as {@code
+         * scopes_supported} in the RFC 9728 Protected Resource Metadata document. Optional per
+         * the spec — omitted from the document entirely if never set. A spec-compliant client
+         * reads this to know what to put in its authorization/token requests instead of
+         * requesting nothing; see {@code docs/keycloak.md}'s "same story for any other claim"
+         * section for why this matters in practice (a client that requests no scope only gets
+         * whatever your authorization server treats as always-included, e.g. Keycloak's `basic`).
+         * Purely advertisement — this server still validates whatever token it actually receives
+         * the same way regardless of what a client requested.
+         */
+        public Builder scopesSupported(String... scopes) { this.scopesSupported.addAll(List.of(scopes)); return this; }
+
+        /**
+         * Claim path used to resolve roles for {@code @RolesAllowed} on an {@link McpTool} —
+         * same dot-path syntax and default (Keycloak's {@code realm_access.roles}) as {@code
+         * OidcConfig#rolesClaimPath()}. Set this only if the two configs diverge; there is no
+         * way to auto-derive it from the installed {@code OidcExtension} (see {@code
+         * docs/security.md}'s {@code @RolesAllowed}/{@code @ScopesAllowed} section for why).
+         */
+        public Builder rolesClaimPath(String rolesClaimPath) { this.rolesClaimPath = rolesClaimPath; return this; }
 
         public McpConfig build() {
             if (toolsPackage == null || toolsPackage.isBlank())

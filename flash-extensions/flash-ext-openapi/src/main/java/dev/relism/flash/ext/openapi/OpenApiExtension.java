@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.RouteEvent;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
@@ -65,7 +65,7 @@ public class OpenApiExtension implements FlashExtension {
     // ── FlashExtension ────────────────────────────────────────────────────────
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         OpenApiBuilder             builder  = new OpenApiBuilder().title(title).version(version).description(description);
         OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
 
@@ -76,22 +76,20 @@ public class OpenApiExtension implements FlashExtension {
         // Collect operation metadata from final compiled routes.
         // This guarantees full runtime paths (namespaces/prefixes/rewrites) in the spec.
         ctx.addRouteListener(event -> addOperationFromEvent(builder, event));
-    }
-
-    @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
-        ObjectMapper jsonMapper = ctx.find(ObjectMapper.class).orElseGet(() -> JsonMapper.builder().build());
-        YAMLMapper   yamlMapper = new YAMLMapper();
-        OpenApiBuilder builder  = ctx.require(OpenApiBuilder.class);
+        ctx.onReady(() -> {
+            ObjectMapper jsonMapper = ctx.find(ObjectMapper.class).orElseGet(() -> JsonMapper.builder().build());
+            YAMLMapper   yamlMapper = new YAMLMapper();
+            OpenApiBuilder resolvedBuilder = ctx.require(OpenApiBuilder.class);
 
         String jsonPath    = basePath + ".json";
         String yamlPath    = basePath + ".yaml";
         String swaggerPath = basePath + "/swagger";
         String swaggerHtml = buildSwaggerHtml(jsonPath);
 
-        app.get(jsonPath,    (req, res) -> { res.type(ContentType.JSON);     return jsonMapper.writeValueAsString(builder.build()); });
-        app.get(yamlPath,    (req, res) -> { res.type(YAML_CONTENT_TYPE);              return yamlMapper.writeValueAsString(builder.build()); });
-        app.get(swaggerPath, (req, res) -> { res.type(ContentType.TEXT_HTML); return swaggerHtml; });
+        app.get(jsonPath,    (req, res) -> { res.type(ContentType.JSON);     return jsonMapper.writeValueAsString(resolvedBuilder.build()); });
+        app.get(yamlPath,    (req, res) -> { res.type(YAML_CONTENT_TYPE);              return yamlMapper.writeValueAsString(resolvedBuilder.build()); });
+            app.get(swaggerPath, (req, res) -> { res.type(ContentType.TEXT_HTML); return swaggerHtml; });
+        });
     }
 
     // ── Swagger UI HTML ───────────────────────────────────────────────────────

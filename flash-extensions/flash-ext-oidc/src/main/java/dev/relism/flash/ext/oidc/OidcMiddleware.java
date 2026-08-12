@@ -65,8 +65,21 @@ public class OidcMiddleware {
      * to the login page on failure; API clients receive 401.
      */
     public Middleware protect() {
+        return protect(null);
+    }
+
+    /**
+     * Like {@link #protect()}, but a 401 challenge also carries {@code resource_metadata}
+     * (RFC 9728 §5.1), resolved against this request's own scheme/host exactly like
+     * {@link OidcExtension}'s redirect URIs. {@code resourceMetadataPath} is an absolute path
+     * (e.g. {@code "/.well-known/oauth-protected-resource/mcp"}); pass {@code null} for plain
+     * challenges. Used by {@code flash-ext-mcp} to make its Protected Resource Metadata
+     * document discoverable straight from the {@code WWW-Authenticate} header, per the MCP
+     * Authorization spec.
+     */
+    public Middleware protect(String resourceMetadataPath) {
         return next -> (req, res) -> {
-            Map<String, Object> claims = resolve(req, res);
+            Map<String, Object> claims = resolve(req, res, resourceMetadataPath);
             if (claims == null) return null;    // redirect already written
             ClaimsHolder.set(claims);
             try {
@@ -76,6 +89,12 @@ public class OidcMiddleware {
             }
         };
     }
+
+    /** OIDC issuer this middleware validates tokens against — the {@code iss} claim it enforces. */
+    public String issuer() { return config.issuer(); }
+
+    /** Scheme used to build this app's own absolute URLs — see {@link OidcConfig#selfScheme()}. */
+    public String selfScheme() { return config.selfScheme(); }
 
     /**
      * Silently populates {@link ClaimsHolder} if a valid bearer token or session cookie
@@ -195,13 +214,17 @@ public class OidcMiddleware {
      * {@code res}. Throws {@link HttpException} 401/403 for API clients.
      */
     private Map<String, Object> resolve(Request req, Response res) {
+        return resolve(req, res, null);
+    }
+
+    private Map<String, Object> resolve(Request req, Response res, String resourceMetadataPath) {
         // 1. Bearer token
         String bearerToken = extractBearerToken(req.header("Authorization"));
         if (bearerToken != null) {
             try {
                 return validator.validate(bearerToken);
             } catch (HttpException e) {
-                res.header("WWW-Authenticate", invalidTokenChallenge());
+                res.header("WWW-Authenticate", invalidTokenChallenge(req, resourceMetadataPath));
                 throw e;
             }
         }
@@ -233,7 +256,7 @@ public class OidcMiddleware {
         // 3. No valid credentials
         String accept = req.header("Accept");
         if (accept != null && accept.contains("application/json")) {
-            res.header("WWW-Authenticate", bearerChallenge());
+            res.header("WWW-Authenticate", bearerChallenge(req, resourceMetadataPath));
             throw HttpException.unauthorized();
         }
 
@@ -300,16 +323,48 @@ public class OidcMiddleware {
     }
 
     String bearerChallenge() {
-        return BEARER + " realm=\"" + quoted(config.schemeName()) + "\"";
+        return bearerChallenge(null, null);
+    }
+
+    private String bearerChallenge(Request req, String resourceMetadataPath) {
+        String base = BEARER + " realm=\"" + quoted(config.schemeName()) + "\"";
+        if (resourceMetadataPath == null) return base;
+        return base + ", resource_metadata=\"" + quoted(absoluteSelf(req, resourceMetadataPath)) + "\"";
     }
 
     String invalidTokenChallenge() {
-        return bearerChallenge() + ", error=\"invalid_token\"";
+        return invalidTokenChallenge(null, null);
+    }
+
+    private String invalidTokenChallenge(Request req, String resourceMetadataPath) {
+        return bearerChallenge(req, resourceMetadataPath) + ", error=\"invalid_token\"";
     }
 
     String insufficientScopeChallenge(String[] requiredScopes) {
         return bearerChallenge() + ", error=\"insufficient_scope\", scope=\""
                 + quoted(spaceDelimited(requiredScopes)) + "\"";
+    }
+
+    private String absoluteSelf(Request req, String path) {
+        if (!path.startsWith("/")) return path;
+        return selfOrigin(req, config.selfScheme()) + path;
+    }
+
+    /**
+     * {@code scheme://host} clients actually reach this app on — the basis for every absolute
+     * URL it publishes about itself (OAuth2 {@code redirect_uri}, the RFC 9728 resource
+     * identifier and the {@code resource_metadata} challenge). Behind a reverse proxy the
+     * request's own {@code Host} is the upstream address the proxy dialled, so
+     * {@code X-Forwarded-Host}/{@code -Proto} win whenever present: without them the app would
+     * name an address no client can resolve, and OAuth2 discovery fails with no error anyone
+     * can trace back to here. Trusted unconditionally — a caller able to reach this app without
+     * passing the proxy can do worse than spoof a self URL.
+     */
+    public static String selfOrigin(Request req, String fallbackScheme) {
+        String forwardedHost = req.header("X-Forwarded-Host");
+        if (forwardedHost == null) return fallbackScheme + "://" + req.header("Host");
+        String forwardedProto = req.header("X-Forwarded-Proto");
+        return (forwardedProto != null ? forwardedProto : fallbackScheme) + "://" + forwardedHost;
     }
 
     private static String spaceDelimited(String[] values) {

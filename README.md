@@ -65,24 +65,24 @@ app.get("/users/{id}", (req, res) -> {
 
 ### Class-based handlers
 
-Extend `RequestHandler` (or a subclass like `JacksonHandler`) and annotate with `@Route`:
+Extend `RequestHandler`, annotate it, then scan its package. Dependencies are cached in
+`onInit()` after Flash has resolved its complete boot-time service graph:
 
 ```java
-@Route(method = HttpMethod.GET, path = "/api/users")
-public class ListUsers extends JacksonHandler {
-    @Override
-    public Object handle(Request req, Response res) throws Exception {
-        return json(res, List.of("alice", "bob"));
-    }
+@GET("/api/users")
+public class ListUsers extends RequestHandler {
+    private UserService users;
+
+    @Override protected void onInit() { users = require(UserService.class); }
+    @Override public Object handle(Request req, Response res) { return users.list(); }
 }
 
-// Register:
-app.register(new ListUsers());
+app.scan("dev.example.api");
 ```
 
 ### Middleware
 
-Apply middleware via `.with()` on the `RouteHandle` returned by any registration call:
+Apply middleware at registration. Flash composes the final chain at boot:
 
 ```java
 Middleware authCheck = next -> (req, res) -> {
@@ -91,14 +91,13 @@ Middleware authCheck = next -> (req, res) -> {
     return next.handle(req, res);
 };
 
-app.get("/secure", (req, res) -> "secret data")
-   .with(authCheck);
+app.get("/secure", (req, res) -> "secret data", authCheck);
 ```
 
 Multiple middlewares are composed outermost-first (left-to-right in the call):
 
 ```java
-app.get("/admin", handler).with(logging, auth, rateLimit);
+app.get("/admin", handler, logging, auth, rateLimit);
 // execution order: logging → auth → rateLimit → handler
 ```
 
@@ -120,22 +119,22 @@ processors, services):
 ```java
 app.mount("/api", scope -> {
     scope.get("/health", (req, res) -> "ok");          // → GET /api/health
-    scope.register(new UserHandler());                  // @Route(path="/users") → GET /api/users
     scope.scan("dev.example.api");
 });
 ```
 
 ## Extensions
 
-Extensions are installed before route registration. Each extension receives the `FlashRegistrar`
-and `FlashContext` — it can register routes, expose services, and register annotation processors.
+Extensions have one declarative `configure` method. They declare services, processors and route
+callbacks; Flash resolves the complete graph, materialises routes, compiles both routers, then
+opens listeners. Extension install order never makes a service “not ready”.
 
 ```java
 FlashApp.create(8080)
     .install(new JacksonExtension())
     .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
     .install(new OidcExtension(oidcConfig))
-    .register(new MyHandler())
+    .scan("dev.example.handlers")
     .start();
 ```
 

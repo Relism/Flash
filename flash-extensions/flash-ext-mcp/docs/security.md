@@ -1,5 +1,10 @@
 # Security
 
+Provider-specific setup steps (not generic OAuth2 mechanics) live in separate cookbooks —
+[`keycloak.md`](keycloak.md) for Keycloak: enabling Dynamic Client Registration, why the RFC 8707
+audience mapper needs to go on the built-in `basic` scope instead of a custom one, and the exact
+Allowed Client Scopes configuration `scopes_supported` needs to actually work.
+
 ## `McpSecurity`
 
 `McpConfig.security(...)` controls how the MCP endpoint reacts to `flash-ext-oidc` being
@@ -34,44 +39,120 @@ MCP-only install, no OAuth2 anywhere in the app), the first such reference throw
 fails, and only when there's something to fail. This mirrors `OidcExtension`'s own lazy bridge to
 `flash-ext-openapi` — same technique, same reason.
 
-## OAuth2 resolution details
+## OAuth2 resolution details — zero-config by default
 
-When oidc is available and `security() != NONE`:
+When oidc is available and `security() != NONE`, `McpOidcIntegration` (an isolated,
+lazily-loaded bridge — see its javadoc) derives everything an MCP OAuth2 resource server needs
+straight from the installed `OidcMiddleware`, with no additional `McpConfig` calls required:
 
-1. The MCP route is wrapped with `flash-ext-oidc`'s own `OidcMiddleware.protect()` — the same
-   Bearer-token/JWKS validation path used everywhere else in Flash5. No JWT parsing or JWKS
-   handling is reimplemented here.
-2. If `McpConfig.resourceIdentifier(...)` is set, an additional audience guard runs after
-   `protect()`: it reads the validated claims from `ClaimsHolder` and rejects (`403`) any token
-   whose `aud` claim does not include the configured resource identifier — **RFC 8707 Resource
-   Indicators / audience binding**. This is genuinely new behavior, not something
-   `flash-ext-oidc` does on its own: `OidcMiddleware` validates `aud` against its own
-   `clientId` for ID tokens, but deliberately does not enforce audience on access tokens (it
-   varies by provider) — the MCP extension adds that check on top, scoped to its own resource
-   identifier.
-3. If `resourceIdentifier(...)` is left unset, only standard bearer validation runs — no
-   audience binding. Fine for a first integration; RFC 8707 becomes meaningful once you have
-   more than one resource server sharing the same authorization server.
+1. The MCP route is wrapped with `flash-ext-oidc`'s own `OidcMiddleware.protect(resourceMetadataPath)`
+   — the same Bearer-token/JWKS validation path used everywhere else in Flash5, plus a
+   `resource_metadata` challenge parameter (see below). No JWT parsing or JWKS handling is
+   reimplemented here.
+2. An audience guard always runs after `protect(...)`: it reads the validated claims from
+   `ClaimsHolder` and rejects (`403`) any token whose `aud` claim does not include the resource
+   identifier — **RFC 8707 Resource Indicators / audience binding**, enforced unconditionally,
+   not opt-in. `OidcMiddleware` itself validates `aud` against its own `clientId` for ID
+   tokens, but deliberately does not enforce audience on access tokens (it varies by provider)
+   — the MCP extension adds that check on top, scoped to its own resource identifier.
+3. The resource identifier is the canonical URI of the MCP endpoint, resolved **per request** by
+   `OidcMiddleware#selfOrigin` + `rootPath` — the same scheme/host resolution `OidcExtension`
+   uses for its own redirect URIs: `X-Forwarded-Host`/`X-Forwarded-Proto` when the request came
+   through a reverse proxy, otherwise `{selfScheme()}://{Host header}`. Behind a proxy the
+   `Host` alone is the upstream address the proxy dialled, which would publish a resource
+   identifier no client can reach. `McpConfig.resourceIdentifier(...)` still overrides it
+   outright for a proxy that forwards neither header.
+4. The authorization server issuer is read from `OidcMiddleware#issuer()` unless
+   `McpConfig.authorizationServerIssuer(...)` overrides it.
 
 ## RFC 9728 Protected Resource Metadata
 
-If both `resourceIdentifier(...)` and `authorizationServerIssuer(...)` are set (and the endpoint
-ends up protected), `flash-ext-mcp` publishes a Protected Resource Metadata document at
-`/.well-known/oauth-protected-resource{rootPath}`:
+Whenever the endpoint ends up protected, `flash-ext-mcp` publishes a Protected Resource Metadata
+document at `/.well-known/oauth-protected-resource{rootPath}` — no explicit `resourceIdentifier`/
+`authorizationServerIssuer` configuration required, both are auto-derived as described above:
 
 ```json
 { "resource": "https://mcp.example.com/mcp", "authorization_servers": ["https://auth.example.com/realms/myrealm"] }
 ```
 
-This lets a spec-compliant MCP client discover which authorization server to use without
-out-of-band configuration. `authorizationServerIssuer` has to be supplied explicitly because
-`flash-ext-oidc` does not expose its resolved issuer/discovery metadata through `FlashContext` —
-only `OidcMiddleware` and `JwtValidator` are registered there. Passing it separately avoids
-reaching into `flash-ext-oidc` internals for a value the app owner already has at hand (it's the
-same issuer they configured `OidcExtension` with).
+`resource` is computed per request from the incoming request's forwarded/`Host` headers (see
+above), so the document is correct without hardcoding the server's own public URL.
 
-Without an issuer configured, bearer validation still works exactly the same — the client just
-needs the authorization server configured out-of-band instead of discovering it automatically.
+### `scopes_supported`
+
+Optional per RFC 9728, omitted from the document entirely unless set via
+`McpConfig.scopesSupported("openid", "profile", "email")`:
+
+```json
+{ "resource": "...", "authorization_servers": ["..."], "scopes_supported": ["openid", "profile", "email"] }
+```
+
+This is pure advertisement — token validation doesn't change based on it — but it matters in
+practice: a client that ignores it and requests no scope at all (many do — see `keycloak.md`)
+only gets back whatever the authorization server treats as always-included regardless of
+request, which for Keycloak is just its built-in `basic` scope. A client that *does* read
+`scopes_supported` and echoes it back in its authorization/token requests gets a token with the
+claims those scopes actually provide (`profile` → `preferred_username`/`name`, etc.), without
+needing every one of those claims hand-mapped onto `basic`. Set it to whatever scopes your
+`McpTool`s actually read off `ClaimsHolder`/`OidcUser` — there's no way to auto-derive this list,
+it depends entirely on what your tools do with the claims.
+
+## `WWW-Authenticate: resource_metadata` (RFC 9728 §5.1)
+
+The MCP Authorization spec **requires** a `401` to carry `resource_metadata` in
+`WWW-Authenticate`, pointing at the Protected Resource Metadata document above — this is how a
+spec-compliant client discovers the authorization server without out-of-band configuration.
+`OidcMiddleware.protect(String resourceMetadataPath)` (an overload added specifically for this)
+builds that challenge automatically:
+
+```
+WWW-Authenticate: Bearer realm="...", resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"
+```
+
+The plain `OidcMiddleware.protect()` (no argument), used by every other Flash5 app, is
+unaffected — this parameter is additive and MCP-specific.
+
+## Per-tool `@RolesAllowed`/`@ScopesAllowed`
+
+`McpTool` subclasses can carry `flash-ext-oidc`'s `@RolesAllowed`/`@ScopesAllowed`:
+
+```java
+@Tool(name = "delete_route", description = "Delete a route")
+@RolesAllowed("admin")
+public class DeleteRouteTool extends McpTool {
+    @Override public ToolResponse call(ToolArguments args) { ... }
+}
+```
+
+This does **not** reuse `flash-ext-oidc`'s per-route middleware mechanism (`ctx.addAnnotationProcessor`,
+the thing that makes these annotations work on a `RequestHandler`) — it can't: every tool shares
+one HTTP route (`POST {rootPath}`), already wrapped by whatever `McpSecurity` resolved above, so
+there is no per-tool route to attach a different middleware chain to. Instead,
+`McpOidcIntegration.compileToolPolicy` reads the annotations once at boot (`McpRegistry.scan`)
+and compiles them into a closure (`McpAuthPolicy`) that `McpDispatcher` runs *after* the
+route-wide auth has already succeeded and *before* invoking the specific tool named in the
+`tools/call` request — narrowing what's already-authenticated, not replacing it. A denial is a
+normal `isError: true` tool result (see `ToolResponse.error`), not an HTTP-level rejection — the
+model sees why, the same as any other tool failure.
+
+Roles are read via `OidcUser#hasRole` against `McpConfig.rolesClaimPath(...)` (default
+`"realm_access.roles"`, matching `OidcConfig`'s own default — set this explicitly if the two
+diverge; there's no way to read `OidcConfig`'s actual configured value from here). Scopes use
+`OidcUser#hasScope`'s built-in default claim paths (`scope`/`scp`), no extra config needed.
+`@ScopesAllowed(match = ScopesAllowed.Match.ANY)` and multi-role `@RolesAllowed({"admin",
+"editor"})` (OR semantics) both work exactly as they do on a `RequestHandler`.
+
+**`@Authenticated` alone has no effect and fails boot.** Once oidc is active for a server, every
+tool call is already authenticated — there's no per-tool public/authenticated split the way
+there is for HTTP routes, so a bare `@Authenticated` on a tool can't mean anything and would
+silently do nothing if allowed to compile. Boot fails instead, with a message pointing at
+`@RolesAllowed`/`@ScopesAllowed` as the actual narrowing mechanism.
+
+**Annotating a tool without active OAuth2 also fails boot**, not silently at request time: if
+`@RolesAllowed`/`@ScopesAllowed`/`@Authenticated` shows up on a tool while `McpSecurity` resolved
+to unprotected (`NONE`, or `AUTO` with no oidc installed), that's very likely a forgotten
+`OidcExtension` install or a `McpSecurity.NONE` left over from local dev — `IllegalStateException`
+at `app.start()`.
 
 ## The `HttpException` safety net
 

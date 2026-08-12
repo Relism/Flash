@@ -104,6 +104,7 @@ class OidcOpenApiInteropTest {
         FlashContext ctx = new FlashContext();
         OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
         ctx.provide(OpenApiContributorRegistry.class, registry);
+        ctx.complete();
 
         OidcConfig config = OidcConfig.builder("https://issuer", "c", "s", "/cb").build();
         OidcProviderMetadata meta = new OidcProviderMetadata("a", "t", "u", "j", "e");

@@ -19,6 +19,8 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -56,22 +58,35 @@ final class FakeOidcProvider implements AutoCloseable {
 
     /** Mints a valid RS256 access token — bearer-validation only, no full authorization-code round-trip needed. */
     String signToken(String subject, String audience) {
+        return signToken(subject, audience, null, NO_ROLES);
+    }
+
+    /**
+     * Same as {@link #signToken(String, String)}, plus a {@code scope} claim (space-delimited,
+     * matching {@link dev.relism.flash.ext.oidc.OidcUser#hasScope}'s default claim path) and a
+     * Keycloak-shaped {@code realm_access.roles} claim (matching {@code McpConfig}'s default
+     * {@code rolesClaimPath}) when {@code roles} is non-empty.
+     */
+    String signToken(String subject, String audience, String scope, String... roles) {
         try {
-            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+            JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                     .issuer(issuer)
                     .subject(subject)
                     .audience(audience)
                     .issueTime(Date.from(Instant.now()))
-                    .expirationTime(Date.from(Instant.now().plusSeconds(300)))
-                    .build();
+                    .expirationTime(Date.from(Instant.now().plusSeconds(300)));
+            if (scope != null) builder.claim("scope", scope);
+            if (roles.length > 0) builder.claim("realm_access", Map.of("roles", List.of(roles)));
             SignedJWT jwt = new SignedJWT(
-                    new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(rsaKey.getKeyID()).build(), claims);
+                    new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(rsaKey.getKeyID()).build(), builder.build());
             jwt.sign(new RSASSASigner(rsaKey));
             return jwt.serialize();
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
     }
+
+    private static final String[] NO_ROLES = new String[0];
 
     private String discoveryDocument() {
         return "{"

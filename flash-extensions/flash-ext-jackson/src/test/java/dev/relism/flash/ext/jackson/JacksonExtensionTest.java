@@ -19,12 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class JacksonExtensionTest {
 
     @Test
-    void provide_registers_json_mapper_and_middleware() {
+    void configure_registers_json_mapper_and_middleware() {
         FlashContext ctx = new FlashContext();
         ObjectMapper mapper = new ObjectMapper();
         JacksonExtension ext = new JacksonExtension(mapper);
 
-        ext.provide(ctx);
+        ext.configure(null, ctx);
+        ctx.complete();
 
         assertNotNull(ctx.require(Json.class));
         assertNotNull(ctx.require(JacksonMiddleware.class));

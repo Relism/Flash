@@ -1,10 +1,9 @@
 package dev.relism.flash.ext.routeviewer;
 
 import dev.relism.flash.ext.routeviewer.model.RouteGraph;
-import dev.relism.flash.extension.ExtensionPhase;
 import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.http.ContentType;
 
 /**
@@ -41,9 +40,6 @@ public class RouteViewerExtension implements FlashExtension {
     private final String     path;
     private final RouteGraph graph = new RouteGraph();
 
-    /** Observability — runs last so the viewer sees the complete middleware chain. */
-    @Override public int priority() { return ExtensionPhase.LATE.value; }
-
     /** Installs the viewer at {@value #DEFAULT_PATH}. */
     public RouteViewerExtension() { this(DEFAULT_PATH); }
 
@@ -54,16 +50,14 @@ public class RouteViewerExtension implements FlashExtension {
     public RouteViewerExtension(String path) { this.path = path; }
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         // Register listener before any routes compile — captures everything.
         ctx.addRouteListener(graph::add);
-    }
-
-    @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
-        app.get(path,              new RouteViewerHandler()::handle);
-        app.get(path + "/app.js",  new RouteViewerStaticHandler("routeviewer/app.js",  ContentType.TEXT_JAVASCRIPT)::handle);
-        app.get(path + "/app.css", new RouteViewerStaticHandler("routeviewer/app.css", ContentType.TEXT_CSS)::handle);
-        app.get(path + "/data",    new RouteViewerDataHandler(graph)::handle);
+        ctx.onReady(() -> {
+            app.get(path,              new RouteViewerHandler()::handle);
+            app.get(path + "/app.js",  new RouteViewerStaticHandler("routeviewer/app.js",  ContentType.TEXT_JAVASCRIPT)::handle);
+            app.get(path + "/app.css", new RouteViewerStaticHandler("routeviewer/app.css", ContentType.TEXT_CSS)::handle);
+            app.get(path + "/data",    new RouteViewerDataHandler(graph)::handle);
+        });
     }
 }

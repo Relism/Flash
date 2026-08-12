@@ -1,9 +1,11 @@
 package dev.relism.flash.ext.view.core;
 
 import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestHandler;
+import dev.relism.flash.routing.MiddlewareNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +32,7 @@ public abstract class BaseViewExtension<TTarget> implements FlashExtension {
     }
 
     @Override
-    public final void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         ViewRuntimeBridge<TTarget> runtime = createRuntime(List.copyOf(globals));
         ctx.provide(ViewRuntimeBridge.class, runtime);
         ctx.addAnnotationProcessor(handlerClass -> {

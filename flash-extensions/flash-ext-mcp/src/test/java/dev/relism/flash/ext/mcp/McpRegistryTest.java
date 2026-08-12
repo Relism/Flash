@@ -16,7 +16,7 @@ class McpRegistryTest {
 
     @Test
     void scan_findsAndPrecompilesToolsResourcesPrompts() throws Exception {
-        McpRegistry registry = McpRegistry.scan("dev.relism.flash.ext.mcp.fixtures", new FlashContext());
+        McpRegistry registry = McpRegistry.scan("dev.relism.flash.ext.mcp.fixtures", new FlashContext(), false, "realm_access.roles");
 
         assertTrue(registry.hasTools());
         assertTrue(registry.hasResources());
@@ -47,7 +47,7 @@ class McpRegistryTest {
     @Test
     void scan_emptyPackage_throwsInitializationException() {
         assertThrows(InitializationException.class,
-                () -> McpRegistry.scan("dev.relism.flash.ext.mcp.doesnotexist", new FlashContext()));
+                () -> McpRegistry.scan("dev.relism.flash.ext.mcp.doesnotexist", new FlashContext(), false, "realm_access.roles"));
     }
 
     private static JsonNode findByField(JsonNode array, String field, String value) {

@@ -57,15 +57,17 @@ public final class JteExtension extends BaseViewExtension<JteTarget> {
     }
 
     @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
-        if (!settings.serveStatics()) return;
-        JteStaticServing staticServing = JteStaticServing.load(settings);
-        if (staticServing == null) return;
-
-        String wildcard = settings.staticPrefix() + "/**";
-        StaticJteHandler handler = new StaticJteHandler(staticServing);
-        app.get(wildcard, handler::handle);
-        app.head(wildcard, (req, res) -> { staticServing.serve(req, res, true); return null; });
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
+        super.configure(app, ctx);
+        ctx.onReady(() -> {
+            if (!settings.serveStatics()) return;
+            JteStaticServing staticServing = JteStaticServing.load(settings);
+            if (staticServing == null) return;
+            String wildcard = settings.staticPrefix() + "/**";
+            StaticJteHandler handler = new StaticJteHandler(staticServing);
+            app.get(wildcard, handler::handle);
+            app.head(wildcard, (req, res) -> { staticServing.serve(req, res, true); return null; });
+        });
     }
 
     @Override

@@ -25,14 +25,14 @@ import java.util.List;
  *         .build()))
  *     .start();
  *
- * // With flash-ext-oidc as the OAuth2 resource server
+ * // With flash-ext-oidc as the OAuth2 resource server — zero extra config: issuer, canonical
+ * // resource identifier, RFC 8707 audience binding and RFC 9728 metadata are all derived from
+ * // the installed OidcExtension.
  * FlashApp.create(8080)
  *     .install(new OidcExtension(oidcConfig))
  *     .install(new McpExtension(McpConfig.builder("my-mcp-server")
  *         .toolsPackage("com.example.tools")
  *         .security(McpSecurity.REQUIRED)
- *         .resourceIdentifier("https://mcp.example.com/mcp")
- *         .authorizationServerIssuer("https://auth.example.com/realms/myrealm")
  *         .build()))
  *     .start();
  * }</pre>
@@ -51,42 +51,40 @@ public class McpExtension implements FlashExtension {
         this.config = config;
     }
 
-    /**
-     * Everything — scanning, binding, security resolution, route registration — happens here
-     * rather than in {@link #provide}, because binding a tool calls its {@code onInit()}, which
-     * may call {@code require()} on services other extensions registered lazily via
-     * {@code ctx.supply()}. Per {@link FlashExtension}'s contract, {@code require()} is only
-     * safe once {@code routes()} runs, after every extension's {@code provide()} phase has
-     * completed and {@code FlashContext.resolveAll()} has run.
-     */
     @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
-        McpRegistry registry = McpRegistry.scan(config.toolsPackage(), ctx);
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
+        ctx.onReady(() -> registerRoutes(app, ctx));
+    }
+
+    private void registerRoutes(FlashRegistrar<?> app, FlashContext ctx) {
+        // Resolved before scanning so McpRegistry knows, per tool, whether @RolesAllowed/
+        // @ScopesAllowed are backed by real OAuth2 protection or a boot-time misconfiguration
+        // (see McpOidcIntegration#compileToolPolicy) — must run first, not after.
+        McpOidcIntegration.Resolved secured = resolveSecurity(ctx);
+        McpRegistry registry = McpRegistry.scan(config.toolsPackage(), ctx, secured != null, config.rolesClaimPath());
         McpDispatcher dispatcher = new McpDispatcher(registry, config.name(), config.version(), config.instructions());
 
         List<Middleware> chain = new ArrayList<>(3);
         chain.add(McpTransportGuards.httpExceptionGuard());
         chain.add(McpTransportGuards.originGuard(config.allowedOrigins()));
-
-        Middleware security = resolveSecurity(ctx);
-        if (security != null) chain.add(security);
+        if (secured != null) chain.add(secured.security());
 
         app.post(config.rootPath(), (req, res) -> { dispatcher.handle(req, res); return null; },
                 chain.toArray(Middleware[]::new));
 
-        registerResourceMetadata(app, security != null);
+        registerResourceMetadata(app, secured);
     }
 
-    private Middleware resolveSecurity(FlashContext ctx) {
+    private McpOidcIntegration.Resolved resolveSecurity(FlashContext ctx) {
         if (config.security() == McpSecurity.NONE) return null;
 
-        Middleware oidcSecurity;
+        McpOidcIntegration.Resolved resolved;
         try {
-            oidcSecurity = McpOidcIntegration.resolve(ctx, config);
+            resolved = McpOidcIntegration.resolve(ctx, config);
         } catch (NoClassDefFoundError e) {
-            oidcSecurity = null; // flash-ext-oidc not on the classpath at all
+            resolved = null; // flash-ext-oidc not on the classpath at all
         }
-        if (oidcSecurity != null) return oidcSecurity;
+        if (resolved != null) return resolved;
 
         if (config.security() == McpSecurity.REQUIRED) {
             throw new IllegalStateException(
@@ -102,17 +100,20 @@ public class McpExtension implements FlashExtension {
         return null;
     }
 
-    private void registerResourceMetadata(FlashRegistrar<?> app, boolean secured) {
-        if (!secured) return;
-        String resourceId = config.resourceIdentifier();
-        String issuer = config.authorizationServerIssuer();
-        if (resourceId == null || resourceId.isBlank() || issuer == null || issuer.isBlank()) return;
-
-        String body = McpResourceMetadata.build(resourceId, issuer);
+    /**
+     * RFC 9728 Protected Resource Metadata, built once security is resolved — no longer
+     * conditioned on {@code resourceIdentifier}/{@code authorizationServerIssuer} being set
+     * explicitly, since {@link McpOidcIntegration#resolve} now derives both by default. The
+     * {@code resource} field is computed per request (it depends on that request's own
+     * forwarded/{@code Host} headers) via {@link McpOidcIntegration.Resolved#resourceIdentifier()}.
+     */
+    private void registerResourceMetadata(FlashRegistrar<?> app, McpOidcIntegration.Resolved secured) {
+        if (secured == null) return;
         String path = "/.well-known/oauth-protected-resource" + config.rootPath();
         app.get(path, (req, res) -> {
             res.type(ContentType.JSON);
-            return body;
+            return McpResourceMetadata.build(
+                    secured.resourceIdentifier().apply(req), secured.issuer(), config.scopesSupported());
         });
     }
 }

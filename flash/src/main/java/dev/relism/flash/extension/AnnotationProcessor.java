@@ -1,7 +1,7 @@
 package dev.relism.flash.extension;
 
 import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareNode;
 
 import java.util.List;
 
@@ -18,5 +18,5 @@ import java.util.List;
  */
 @FunctionalInterface
 public interface AnnotationProcessor {
-    List<Middleware> process(Class<? extends RequestHandler> handlerClass);
+    List<MiddlewareNode> process(Class<? extends RequestHandler> handlerClass);
 }

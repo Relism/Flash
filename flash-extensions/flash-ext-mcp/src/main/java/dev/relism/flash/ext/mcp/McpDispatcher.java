@@ -17,7 +17,11 @@ import java.io.IOException;
  * error — the model needs to see it. Everything else that goes wrong (bad params, unknown
  * tool/resource/prompt name, resource/prompt handler exceptions) is a JSON-RPC error object,
  * always returned with HTTP 200: the HTTP request itself succeeded, only the RPC did not. Only
- * malformed HTTP-level input (unparsable JSON, not a JSON object) gets HTTP 400.
+ * malformed HTTP-level input (unparsable JSON, not a JSON object) gets HTTP 400. A
+ * {@code @RolesAllowed}/{@code @ScopesAllowed} denial (see {@link McpAuthPolicy}) is the same
+ * category — {@code isError: true}, tool never invoked — not a transport-level rejection; the
+ * route-wide 401/403 for "not authenticated at all" already happened earlier, in the {@code
+ * OidcMiddleware}/audience-guard middleware chain, before this dispatcher ever runs.
  */
 final class McpDispatcher {
 
@@ -132,12 +136,17 @@ final class McpDispatcher {
         if (tool == null)
             throw McpProtocolException.invalidParams("Unknown tool: " + name);
 
-        ToolArguments args = new ToolArguments(params.path("arguments"));
         ToolResponse result;
-        try {
-            result = tool.instance().call(args);
-        } catch (Exception e) {
-            result = ToolResponse.error("Tool \"" + name + "\" failed: " + e.getMessage());
+        String denied = tool.policy() != null ? tool.policy().check().get() : null;
+        if (denied != null) {
+            result = ToolResponse.error("Tool \"" + name + "\" denied: " + denied);
+        } else {
+            ToolArguments args = new ToolArguments(params.path("arguments"));
+            try {
+                result = tool.instance().call(args);
+            } catch (Exception e) {
+                result = ToolResponse.error("Tool \"" + name + "\" failed: " + e.getMessage());
+            }
         }
         ToolResponse finalResult = result;
         writeResult(res, id, gen -> {

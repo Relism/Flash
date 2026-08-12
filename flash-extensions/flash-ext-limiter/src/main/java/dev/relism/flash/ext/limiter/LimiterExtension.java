@@ -5,12 +5,13 @@ import dev.relism.flash.ext.openapi.OpenApiContributorRegistry;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
 import dev.relism.flash.extension.AnnotationProcessor;
-import dev.relism.flash.extension.ExtensionPhase;
+import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.extension.FlashExtension;
-import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareKey;
+import dev.relism.flash.routing.MiddlewareNode;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -44,20 +45,15 @@ import java.util.Map;
  * app.install(new LimiterExtension(
  *     new LimiterConfig().registerResolver("auth_user", req -> ClaimsHolder.user().sub())));
  *
- * // inside FlashExtension.routes() or after install():
+ * // inside a FlashContext.onReady(...) callback:
  * Guard guard = ctx.require(Guard.class);
  * app.get("/api/search", handler, guard.limit("ip", 50, 1, TimeUnit.SECONDS));
  * }</pre>
  */
 public final class LimiterExtension implements FlashExtension {
+    private static final MiddlewareKey LIMIT = MiddlewareKey.of("flash.limiter.limit");
 
     private final LimiterConfig config;
-
-    /**
-     * Rate limiting runs before authentication — cheaper check rejects over-limit
-     * requests before any token validation occurs.
-     */
-    @Override public int priority() { return ExtensionPhase.EARLY.value; }
 
     /** Installs with default config (only the built-in {@code "ip"} resolver). */
     public LimiterExtension() {
@@ -70,7 +66,7 @@ public final class LimiterExtension implements FlashExtension {
     }
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         BucketStore store = new BucketStore();
         Guard       guard = new Guard(config, store);
 
@@ -90,17 +86,15 @@ public final class LimiterExtension implements FlashExtension {
                     ann.strategy().create()
             );
 
-            return List.of(buildMiddleware(resolver, cfg, store));
+            return List.of(MiddlewareNode.of(LIMIT, buildMiddleware(resolver, cfg, store)));
         });
-    }
-
-    @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
-        try {
-            OpenApiIntegration.register(ctx);
-        } catch (NoClassDefFoundError ignored) {
-            // flash-ext-openapi not available — OpenAPI integration disabled
-        }
+        ctx.onReady(() -> {
+            try {
+                OpenApiIntegration.register(ctx);
+            } catch (NoClassDefFoundError ignored) {
+                // flash-ext-openapi not available — OpenAPI integration disabled
+            }
+        });
     }
 
     // ── Package-private helper — shared with Guard ────────────────────────────

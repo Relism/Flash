@@ -8,6 +8,9 @@ import dev.relism.flash.websocket.WebSocketHandler;
 
 public abstract class AbstractWsRouter {
 
+    /** Eagerly validates and compiles this WebSocket route graph before traffic is accepted. */
+    public void compile() {}
+
     public final AbstractWsRouter register(HttpMethod method, String path, WebSocketHandler handler) {
         return addRoute(method, PathUtils.sanitize(path), handler);
     }

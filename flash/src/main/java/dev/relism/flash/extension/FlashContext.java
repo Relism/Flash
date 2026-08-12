@@ -1,176 +1,160 @@
 package dev.relism.flash.extension;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
-/**
- * Central service registry and boot-time hook coordinator.
- *
- * <p>Every handler, extension, and scope shares one (or a child of one) {@code FlashContext}.
- * Three capabilities:
- * <ol>
- *   <li><b>Service registry</b> — {@link #provide}/{@link #supply}/{@link #require}/{@link #find}.</li>
- *   <li><b>Annotation processors</b> — middleware injection from handler annotations at boot.</li>
- *   <li><b>Route listeners</b> — boot-time observation of the route graph.</li>
- * </ol>
- *
- * <h3>Eager vs lazy registration</h3>
- * <ul>
- *   <li>{@link #provide(Class, Object)} — instance is already constructed, registered immediately.</li>
- *   <li>{@link #supply(Class, Supplier)} — factory is registered; it runs once, at
- *       {@link #resolveAll()} time (called by {@link FlashApp#start()}) after all
- *       {@link FlashExtension#provide} phases complete. The factory may call
- *       {@link #require} for its own dependencies — the runtime resolves in topological
- *       order automatically and reports circular dependencies with the full cycle path.</li>
- * </ul>
- *
- * <p>A child context (via {@link #child()}) inherits parent services and processors.
- * Services provided on the child are scoped and invisible to the parent.
- */
-public class FlashContext {
+/** Deterministic boot-time service graph, frozen before handlers are initialised. */
+public final class FlashContext {
+    private enum State { DECLARING, RESOLVING, READY }
 
     private final FlashContext parent;
-    private final Map<Class<?>, Object>      registry  = new LinkedHashMap<>();
-    private final Map<Class<?>, Supplier<?>> pending   = new LinkedHashMap<>();
-    private final List<AnnotationProcessor>  processors     = new ArrayList<>();
-    private final List<RouteListener>        routeListeners = new ArrayList<>();
-
-    // Lazy caches — nulled whenever the corresponding list is mutated.
+    private final Map<Class<?>, Binding<?>> bindings = new LinkedHashMap<>();
+    private final List<AnnotationProcessor> processors = new ArrayList<>();
+    private final List<RouteListener> routeListeners = new ArrayList<>();
+    private final List<Runnable> readyCallbacks = new ArrayList<>();
+    private final List<FlashContext> children = new ArrayList<>();
+    private final Deque<Class<?>> resolutionPath = new ArrayDeque<>();
+    private State state = State.DECLARING;
     private List<AnnotationProcessor> cachedProcessors;
-    private List<RouteListener>       cachedListeners;
+    private List<RouteListener> cachedListeners;
 
-    // DFS stack — tracks in-progress resolutions to detect circular dependencies.
-    private final LinkedHashSet<Class<?>> resolutionStack = new LinkedHashSet<>();
-
-    public FlashContext() { this.parent = null; }
+    public FlashContext() { parent = null; }
     private FlashContext(FlashContext parent) { this.parent = parent; }
 
-    /** Creates a child context that inherits this context's services and processors. */
-    public FlashContext child() { return new FlashContext(this); }
+    public FlashContext child() {
+        requireDeclaring();
+        FlashContext child = new FlashContext(this);
+        children.add(child);
+        return child;
+    }
 
-    // ── Service registry ─────────────────────────────────────────────────────
-
-    /** Registers an already-constructed {@code instance} under {@code type}. */
+    /** Binds an already-created singleton. Duplicate bindings are always an error. */
     public <T> void provide(Class<T> type, T instance) {
-        registry.put(type, instance);
+        declare(type, new Binding<>(type, List.of(), ignored -> Objects.requireNonNull(instance, "instance")));
     }
 
-    /**
-     * Registers a lazy factory for {@code type}. The factory runs once at
-     * {@link #resolveAll()} time (or on the first {@link #require} call for this type)
-     * and may call {@link #require} for its own dependencies — topological order
-     * is resolved automatically.
-     *
-     * <pre>{@code
-     * ctx.supply(JwtValidator.class, () ->
-     *     new JwtValidator(ctx.require(OidcProviderMetadata.class).jwksUri()));
-     * }</pre>
-     */
+    /** Declares a no-dependency boot factory. */
     public <T> void supply(Class<T> type, Supplier<T> factory) {
-        pending.put(type, factory);
+        declare(type, new Binding<>(type, List.of(), ignored -> factory.get()));
     }
 
-    /**
-     * Returns the service for {@code type}. Checks own scope first, then parent chain.
-     * Lazy-registered types are resolved on first access. Circular dependencies throw
-     * {@link IllegalStateException} with the full cycle path.
-     *
-     * @throws IllegalStateException if the service is not found anywhere in the context chain
-     */
+    /** Declares a boot factory and its complete dependency set. */
+    public <T> void supply(Class<T> type, ServiceFactory<T> factory, Class<?>... dependencies) {
+        Objects.requireNonNull(factory, "factory");
+        declare(type, new Binding<>(type, List.of(dependencies), factory));
+    }
+
+    /** One-dependency factory with no application-side context lookup. */
+    public <A, T> void supply(Class<T> type, Class<A> dependency, Function<A, T> factory) {
+        supply(type, ignored -> factory.apply(require(dependency)), dependency);
+    }
+
+    /** Registers work materialised after all services are resolved. */
+    public void onReady(Runnable callback) { requireDeclaring(); readyCallbacks.add(Objects.requireNonNull(callback)); }
+
     @SuppressWarnings("unchecked")
     public <T> T require(Class<T> type) {
-        Object val = registry.get(type);
-        if (val != null) return (T) val;
-        if (pending.containsKey(type)) return resolve(type);
+        if (state == State.DECLARING)
+            throw new IllegalStateException("Service graph is still being declared; use FlashContext.onReady(...)");
+        Binding<?> binding = bindings.get(type);
+        if (binding != null) {
+            verifyDeclaredDependency(type);
+            return (T) resolve((Binding<Object>) binding);
+        }
         if (parent != null) return parent.require(type);
-        throw new IllegalStateException(
-                "Service not found: " + type.getSimpleName() +
-                " — register it via FlashContext.provide()/supply() or install the required extension");
+        throw new IllegalStateException("No provider declared for " + type.getName() + dependencyTrace());
     }
 
-    /** Returns the service for {@code type}, or empty if not found in this scope or any parent. */
-    @SuppressWarnings("unchecked")
     public <T> Optional<T> find(Class<T> type) {
-        Object val = registry.get(type);
-        if (val != null) return Optional.of((T) val);
-        if (pending.containsKey(type)) return Optional.of(resolve(type));
-        return parent != null ? parent.find(type) : Optional.empty();
+        if (state == State.DECLARING)
+            throw new IllegalStateException("Service graph is still being declared; use FlashContext.onReady(...)");
+        if (bindings.containsKey(type)) return Optional.of(require(type));
+        return parent == null ? Optional.empty() : parent.find(type);
     }
-
-    /** Alias for {@link #find} — prefer when semantics are "this may or may not exist". */
     public <T> Optional<T> optional(Class<T> type) { return find(type); }
 
-    /**
-     * Eagerly resolves all pending lazy suppliers in topological order.
-     * Called once by {@link FlashApp#start()} after all {@link FlashExtension#provide}
-     * phases complete. Any circular dependency is reported with the full cycle path.
-     */
-    void resolveAll() {
-        new ArrayList<>(pending.keySet()).forEach(this::resolve);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> T resolve(Class<?> type) {
-        Object already = registry.get(type);
-        if (already != null) return (T) already;  // resolved during an earlier DFS branch
-
-        if (!resolutionStack.add(type)) {
-            // type is already on the current DFS path → circular dependency
-            List<Class<?>> cycle = new ArrayList<>(resolutionStack);
-            cycle.add(type);
-            StringBuilder msg = new StringBuilder("Circular dependency: ");
-            for (int i = 0; i < cycle.size(); i++) {
-                if (i > 0) msg.append(" → ");
-                msg.append(cycle.get(i).getSimpleName());
-            }
-            throw new IllegalStateException(msg.toString());
-        }
-
-        Supplier<?> factory = pending.get(type);
-        Object instance = factory.get();   // recursive require() calls happen here
-        registry.put(type, instance);
-        pending.remove(type);
-        resolutionStack.remove(type);
-        return (T) instance;
-    }
-
-    // ── Annotation processors ────────────────────────────────────────────────
-
-    /** Registers an {@link AnnotationProcessor}. Processors run once per class-based handler at boot. */
     public void addAnnotationProcessor(AnnotationProcessor processor) {
-        processors.add(processor);
-        cachedProcessors = null;
+        requireDeclaring(); processors.add(Objects.requireNonNull(processor)); cachedProcessors = null;
+    }
+    public void addRouteListener(RouteListener listener) {
+        requireDeclaring(); routeListeners.add(Objects.requireNonNull(listener)); cachedListeners = null;
     }
 
-    /** All processors visible from this context: parent-first, then own. Cached after first call. */
     List<AnnotationProcessor> processors() {
         if (cachedProcessors != null) return cachedProcessors;
-        if (parent == null) return cachedProcessors = List.copyOf(processors);
-        List<AnnotationProcessor> p = parent.processors();
-        if (processors.isEmpty()) return cachedProcessors = p;
-        List<AnnotationProcessor> merged = new ArrayList<>(p.size() + processors.size());
-        merged.addAll(p);
-        merged.addAll(processors);
-        return cachedProcessors = List.copyOf(merged);
+        List<AnnotationProcessor> all = parent == null ? new ArrayList<>() : new ArrayList<>(parent.processors());
+        all.addAll(processors); return cachedProcessors = List.copyOf(all);
     }
-
-    // ── Route listeners ──────────────────────────────────────────────────────
-
-    /** Registers a boot-time {@link RouteListener}. Zero overhead on the request hot-path. */
-    public void addRouteListener(RouteListener listener) {
-        routeListeners.add(listener);
-        cachedListeners = null;
-    }
-
-    /** All route listeners visible from this context: parent-first, then own. Cached after first call. */
     List<RouteListener> routeListeners() {
         if (cachedListeners != null) return cachedListeners;
-        if (parent == null) return cachedListeners = List.copyOf(routeListeners);
-        List<RouteListener> p = parent.routeListeners();
-        if (routeListeners.isEmpty()) return cachedListeners = p;
-        List<RouteListener> merged = new ArrayList<>(p.size() + routeListeners.size());
-        merged.addAll(p);
-        merged.addAll(routeListeners);
-        return cachedListeners = List.copyOf(merged);
+        List<RouteListener> all = parent == null ? new ArrayList<>() : new ArrayList<>(parent.routeListeners());
+        all.addAll(routeListeners); return cachedListeners = List.copyOf(all);
+    }
+
+    void resolveAll() {
+        if (state != State.DECLARING) throw new IllegalStateException("Service graph has already been closed");
+        state = State.RESOLVING;
+        for (Binding<?> binding : bindings.values()) resolveUnchecked(binding);
+        for (FlashContext child : children) child.resolveAll();
+        state = State.READY;
+    }
+    void runReadyCallbacks() {
+        if (state != State.READY) throw new IllegalStateException("Service graph is not ready");
+        for (Runnable callback : List.copyOf(readyCallbacks)) callback.run();
+        readyCallbacks.clear();
+        for (FlashContext child : children) child.runReadyCallbacks();
+    }
+
+    /** Completes graph resolution and runs all deferred materialisation callbacks once. */
+    public void complete() {
+        resolveAll();
+        runReadyCallbacks();
+    }
+
+    private <T> void declare(Class<T> type, Binding<T> binding) {
+        requireDeclaring(); Objects.requireNonNull(type, "type");
+        if (bindings.putIfAbsent(type, binding) != null)
+            throw new IllegalStateException("Duplicate provider declared for " + type.getName());
+    }
+    private void requireDeclaring() {
+        if (state != State.DECLARING) throw new IllegalStateException("Flash service declarations are closed");
+    }
+    @SuppressWarnings("unchecked") private void resolveUnchecked(Binding<?> binding) { resolve((Binding<Object>) binding); }
+    private <T> T resolve(Binding<T> binding) {
+        if (binding.instance != null) return binding.instance;
+        if (binding.resolving) throw cycle(binding.type);
+        binding.resolving = true; resolutionPath.addLast(binding.type);
+        try {
+            for (Class<?> dependency : binding.dependencies) require(dependency);
+            return binding.instance = Objects.requireNonNull(binding.factory.create(this),
+                    () -> "Provider returned null for " + binding.type.getName());
+        } finally {
+            resolutionPath.removeLast(); binding.resolving = false;
+        }
+    }
+    private IllegalStateException cycle(Class<?> type) {
+        StringBuilder out = new StringBuilder("Circular service dependency: ");
+        for (Class<?> node : resolutionPath) out.append(node.getSimpleName()).append(" -> ");
+        return new IllegalStateException(out.append(type.getSimpleName()).toString());
+    }
+    private String dependencyTrace() {
+        return resolutionPath.isEmpty() ? "" : " (required while creating " + resolutionPath.peekLast().getName() + ')';
+    }
+    private void verifyDeclaredDependency(Class<?> type) {
+        if (resolutionPath.isEmpty()) return;
+        Class<?> owner = resolutionPath.peekLast();
+        Binding<?> binding = bindings.get(owner);
+        if (binding != null && !binding.dependencies.contains(type))
+            throw new IllegalStateException(owner.getName() + " requested undeclared dependency " + type.getName());
+    }
+
+    @FunctionalInterface public interface ServiceFactory<T> { T create(FlashContext services); }
+    private static final class Binding<T> {
+        final Class<T> type; final List<Class<?>> dependencies; final ServiceFactory<T> factory;
+        T instance; boolean resolving;
+        Binding(Class<T> type, List<Class<?>> dependencies, ServiceFactory<T> factory) {
+            this.type = type; this.dependencies = dependencies; this.factory = factory;
+        }
     }
 }

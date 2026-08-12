@@ -32,6 +32,9 @@ import java.nio.charset.StandardCharsets;
  */
 public abstract class AbstractRouter {
 
+    /** Eagerly validates and compiles this route graph before traffic is accepted. */
+    public void compile() {}
+
     // Pre-encoded prod JSON error bodies — zero allocation on error paths.
     private static final byte[] JSON_404 = "{\"error\":\"Not Found\",\"status\":404}"
             .getBytes(StandardCharsets.UTF_8);

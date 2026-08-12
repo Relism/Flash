@@ -88,6 +88,69 @@ class McpExtensionSecurityTest {
         assertTrue(resp.body().contains("\"protocolVersion\""));
     }
 
+    @Test
+    void required_withOidc_noExplicitResourceIdentifier_derivesFromRequestAndEnforcesAudience() throws Exception {
+        int port = bootSecuredApp(null);
+        String derivedResourceId = "http://127.0.0.1:" + port + "/mcp";
+
+        String matching = provider.signToken("user-1", derivedResourceId);
+        assertEquals(200, post(port, initializeBody(), matching).statusCode());
+
+        String mismatched = provider.signToken("user-1", "https://someone-else.example.com/resource");
+        assertEquals(403, post(port, initializeBody(), mismatched).statusCode());
+    }
+
+    @Test
+    void required_withOidc_missingToken_challengeIncludesResourceMetadata() throws Exception {
+        int port = bootSecuredApp(null);
+
+        HttpResponse<String> resp = post(port, initializeBody(), null);
+        assertEquals(401, resp.statusCode());
+        String challenge = resp.headers().firstValue("WWW-Authenticate").orElse("");
+        assertTrue(challenge.contains(
+                "resource_metadata=\"http://127.0.0.1:" + port + "/.well-known/oauth-protected-resource/mcp\""),
+                "WWW-Authenticate: " + challenge);
+    }
+
+    @Test
+    void required_withOidc_noExplicitConfig_publishesProtectedResourceMetadata() throws Exception {
+        int port = bootSecuredApp(null);
+
+        HttpResponse<String> resp = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(
+                        "http://127.0.0.1:" + port + "/.well-known/oauth-protected-resource/mcp")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, resp.statusCode());
+        assertTrue(resp.body().contains("\"resource\":\"http://127.0.0.1:" + port + "/mcp\""), resp.body());
+        assertTrue(resp.body().contains("\"authorization_servers\":[\"" + provider.issuer() + "\"]"), resp.body());
+        assertTrue(!resp.body().contains("scopes_supported"), "scopes_supported must be omitted when unset: " + resp.body());
+    }
+
+    @Test
+    void scopesSupported_published_inProtectedResourceMetadata() throws Exception {
+        provider = new FakeOidcProvider();
+        int port = freePort();
+
+        app = FlashApp.create(port);
+        app.install(new OidcExtension(OidcConfig.builder(
+                provider.issuer(), "mcp-client", "secret", "/auth/callback").build()));
+        app.install(new McpExtension(McpConfig.builder("secure-server")
+                .toolsPackage(TOOLS_PACKAGE)
+                .security(McpSecurity.REQUIRED)
+                .scopesSupported("openid", "profile", "email")
+                .build()));
+        app.start();
+
+        HttpResponse<String> resp = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(
+                        "http://127.0.0.1:" + port + "/.well-known/oauth-protected-resource/mcp")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, resp.statusCode());
+        assertTrue(resp.body().contains("\"scopes_supported\":[\"openid\",\"profile\",\"email\"]"), resp.body());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private int bootSecuredApp(String resourceIdentifier) throws Exception {
