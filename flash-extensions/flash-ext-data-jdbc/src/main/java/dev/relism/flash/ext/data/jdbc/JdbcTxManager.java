@@ -123,11 +123,20 @@ public class JdbcTxManager implements TxManager {
                 s.connection().rollback();
                 outcome = TxOutcome.ROLLED_BACK;
             } else {
+                // Still inside the transaction, connection still bound: a beforeCommit callback
+                // can write through it and land in this same commit. Throwing from there vetoes
+                // the commit — see TxSynchronization.
+                ResourceRegistry.fireBeforeCommit(s.isReadOnly(), s.synchronizationBaseline());
                 s.connection().commit();
                 outcome = TxOutcome.COMMITTED;
             }
         } catch (SQLException e) {
-            throw new TxException(e);
+            TxException wrapped = new TxException(e);
+            outcome = rollbackAfterFailedCommit(s, wrapped);
+            throw wrapped;
+        } catch (RuntimeException e) {
+            outcome = rollbackAfterFailedCommit(s, e);
+            throw e;
         } finally {
             // Unbind the connection before firing, so a callback that opens its own transaction
             // gets a fresh one instead of joining the connection that just committed — and fire
@@ -136,6 +145,21 @@ public class JdbcTxManager implements TxManager {
             if (outcome != null) ResourceRegistry.fireSynchronizations(outcome, s.synchronizationBaseline());
             cleanupIfIdle();
         }
+    }
+
+    /**
+     * Nothing was committed — a vetoing {@code beforeCommit}, or a commit that failed outright —
+     * so undo whatever the transaction had done and report {@code ROLLED_BACK} to the callbacks
+     * still queued behind it. A failure to roll back is attached to the exception already on its
+     * way out rather than replacing it: that one explains what actually went wrong.
+     */
+    private static TxOutcome rollbackAfterFailedCommit(JdbcTxStatus s, Throwable propagating) {
+        try {
+            s.connection().rollback();
+        } catch (SQLException suppressed) {
+            propagating.addSuppressed(suppressed);
+        }
+        return TxOutcome.ROLLED_BACK;
     }
 
     @Override

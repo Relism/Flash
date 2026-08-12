@@ -14,9 +14,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Transaction synchronization semantics — the {@code afterCommit}/{@code afterRollback} callbacks
- * {@code Data#afterCommit} exposes, and the contract callers build on: "my callback runs once, on
- * the outermost commit, after the session is gone".
+ * Transaction synchronization semantics — the {@code beforeCommit}/{@code afterCommit}/
+ * {@code afterRollback} callbacks {@code Data#afterCommit} exposes, and the contract callers build
+ * on: "my callback runs once, for my transaction, on the right side of the commit".
  *
  * <p>None of this was covered before, and the gap was not academic: {@link #afterCommit_fires_on_commit}
  * failed against the original {@code commit()}, which fired synchronizations only after
@@ -52,10 +52,14 @@ class HibernateTxManagerSynchronizationTest {
     private static final class Recorder implements TxSynchronization {
         final List<String> calls = new ArrayList<>();
 
+        @Override public void beforeCommit(boolean readOnly) { calls.add("beforeCommit:" + readOnly); }
         @Override public void afterCommit() { calls.add("afterCommit"); }
         @Override public void afterRollback() { calls.add("afterRollback"); }
         @Override public void afterCompletion(TxOutcome outcome) { calls.add("afterCompletion:" + outcome); }
     }
+
+    private static final List<String> COMMITTED = List.of("beforeCommit:false", "afterCommit", "afterCompletion:COMMITTED");
+    private static final List<String> ROLLED_BACK = List.of("afterRollback", "afterCompletion:ROLLED_BACK");
 
     @Test
     void afterCommit_fires_on_commit() {
@@ -65,7 +69,7 @@ class HibernateTxManagerSynchronizationTest {
 
         manager.commit(tx);
 
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), recorder.calls);
+        assertEquals(COMMITTED, recorder.calls);
     }
 
     @Test
@@ -76,12 +80,12 @@ class HibernateTxManagerSynchronizationTest {
 
         manager.rollback(tx);
 
-        assertEquals(List.of("afterRollback", "afterCompletion:ROLLED_BACK"), recorder.calls);
+        assertEquals(ROLLED_BACK, recorder.calls);
     }
 
-    /** A commit() call on a tx already marked rollback-only really rolls back — the callbacks must say so. */
+    /** A commit() call on a tx already marked rollback-only really rolls back — and has no commit to precede. */
     @Test
-    void commit_of_a_rollback_only_tx_fires_the_rollback_callbacks() {
+    void commit_of_a_rollback_only_tx_rolls_back_without_running_beforeCommit() {
         Recorder recorder = new Recorder();
         TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
         tx.markRollbackOnly();
@@ -89,13 +93,72 @@ class HibernateTxManagerSynchronizationTest {
 
         manager.commit(tx);
 
-        assertEquals(List.of("afterRollback", "afterCompletion:ROLLED_BACK"), recorder.calls);
+        assertEquals(ROLLED_BACK, recorder.calls);
+    }
+
+    /** beforeCommit runs inside the transaction: session still bound, transaction still active. */
+    @Test
+    void beforeCommit_runs_while_the_transaction_is_still_active() {
+        List<Boolean> stillActive = new ArrayList<>();
+        List<Session> sessionSeen = new ArrayList<>();
+
+        TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
+        Session session = tx.resource(Session.class);
+        ResourceRegistry.addSynchronization(new TxSynchronization() {
+            @Override
+            public void beforeCommit(boolean readOnly) {
+                stillActive.add(session.getTransaction().isActive());
+                // MANDATORY only succeeds while a transaction is bound — proof this runs inside it.
+                TxStatus joined = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.MANDATORY));
+                sessionSeen.add(joined.resource(Session.class));
+                manager.commit(joined);
+            }
+        });
+
+        manager.commit(tx);
+
+        assertEquals(List.of(true), stillActive, "the transaction must not have committed yet");
+        assertSame(session, sessionSeen.get(0), "the same session must still be bound, so writes land in this commit");
+    }
+
+    @Test
+    void beforeCommit_is_told_whether_the_transaction_is_read_only() {
+        Recorder readWrite = new Recorder();
+        TxStatus rw = manager.begin(TxDefinition.DEFAULTS);
+        ResourceRegistry.addSynchronization(readWrite);
+        manager.commit(rw);
+
+        Recorder readOnly = new Recorder();
+        TxStatus ro = manager.begin(TxDefinition.DEFAULTS.asReadOnly());
+        ResourceRegistry.addSynchronization(readOnly);
+        manager.commit(ro);
+
+        assertEquals("beforeCommit:false", readWrite.calls.get(0));
+        assertEquals("beforeCommit:true", readOnly.calls.get(0));
+    }
+
+    /** Throwing from beforeCommit is a veto: no commit, the rollback callbacks run, the exception propagates. */
+    @Test
+    void a_throwing_beforeCommit_vetoes_the_commit() {
+        Recorder recorder = new Recorder();
+        TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
+        Session session = tx.resource(Session.class);
+        ResourceRegistry.addSynchronization(new TxSynchronization() {
+            @Override public void beforeCommit(boolean readOnly) { throw new IllegalStateException("veto"); }
+        });
+        ResourceRegistry.addSynchronization(recorder);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> manager.commit(tx));
+
+        assertEquals("veto", thrown.getMessage());
+        assertFalse(session.getTransaction().isActive(), "the vetoed transaction must be rolled back, not left open");
+        assertEquals(ROLLED_BACK, recorder.calls, "the surviving callbacks must hear ROLLED_BACK, not silence");
     }
 
     /**
-     * The load-bearing ordering detail: callbacks run <em>after</em> the committed session is
-     * unbound, so a callback that opens its own transaction (a cache reload, an outbox drain)
-     * gets a fresh one instead of silently joining the transaction that just committed.
+     * The load-bearing ordering detail: post-completion callbacks run <em>after</em> the committed
+     * session is unbound, so a callback that opens its own transaction (a cache reload, an outbox
+     * drain) gets a fresh one instead of silently joining the transaction that just committed.
      */
     @Test
     void a_synchronization_may_open_its_own_transaction() {
@@ -133,7 +196,7 @@ class HibernateTxManagerSynchronizationTest {
         assertEquals(List.of(), recorder.calls, "the joined commit did not commit anything yet");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), recorder.calls);
+        assertEquals(COMMITTED, recorder.calls);
     }
 
     /** Each callback belongs to one transaction: a second transaction must not re-run the first's. */
@@ -169,11 +232,11 @@ class HibernateTxManagerSynchronizationTest {
         ResourceRegistry.addSynchronization(innerSync);
         manager.commit(inner);
 
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), innerSync.calls);
+        assertEquals(COMMITTED, innerSync.calls);
         assertEquals(List.of(), outerSync.calls, "the outer transaction has not committed yet");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), outerSync.calls);
+        assertEquals(COMMITTED, outerSync.calls);
     }
 
     /** A rolled-back inner REQUIRES_NEW must not fire the outer's callbacks either — same reason, opposite outcome. */
@@ -190,6 +253,6 @@ class HibernateTxManagerSynchronizationTest {
         assertEquals(List.of(), outerSync.calls, "the outer transaction is still open");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), outerSync.calls);
+        assertEquals(COMMITTED, outerSync.calls);
     }
 }

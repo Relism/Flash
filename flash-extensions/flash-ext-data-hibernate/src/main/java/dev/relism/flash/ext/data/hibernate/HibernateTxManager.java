@@ -127,9 +127,27 @@ public class HibernateTxManager implements TxManager {
                 s.session().getTransaction().rollback();
                 outcome = TxOutcome.ROLLED_BACK;
             } else {
+                // Still inside the transaction, session still bound: a beforeCommit callback can
+                // write through it and land in this same commit. Throwing from there vetoes the
+                // commit — see TxSynchronization.
+                ResourceRegistry.fireBeforeCommit(s.isReadOnly(), s.synchronizationBaseline());
                 s.session().getTransaction().commit();
                 outcome = TxOutcome.COMMITTED;
             }
+        } catch (RuntimeException e) {
+            // A vetoing beforeCommit, or a commit that failed outright: either way nothing was
+            // committed, so roll back and let the remaining callbacks hear ROLLED_BACK rather than
+            // nothing at all. A rollback failure here is swallowed deliberately — it would mask
+            // the exception that actually explains what went wrong, which is the one propagating.
+            if (s.session().getTransaction().isActive()) {
+                try {
+                    s.session().getTransaction().rollback();
+                } catch (RuntimeException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+            }
+            outcome = TxOutcome.ROLLED_BACK;
+            throw e;
         } finally {
             // Order is load-bearing, and getting it wrong is silent: cleanupIfIdle() calls
             // ResourceRegistry.cleanup(), which removes the very ThreadLocal list of

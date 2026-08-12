@@ -29,10 +29,14 @@ class JdbcTxManagerSynchronizationTest {
     private static final class Recorder implements TxSynchronization {
         final List<String> calls = new ArrayList<>();
 
+        @Override public void beforeCommit(boolean readOnly) { calls.add("beforeCommit:" + readOnly); }
         @Override public void afterCommit() { calls.add("afterCommit"); }
         @Override public void afterRollback() { calls.add("afterRollback"); }
         @Override public void afterCompletion(TxOutcome outcome) { calls.add("afterCompletion:" + outcome); }
     }
+
+    private static final List<String> COMMITTED = List.of("beforeCommit:false", "afterCommit", "afterCompletion:COMMITTED");
+    private static final List<String> ROLLED_BACK = List.of("afterRollback", "afterCompletion:ROLLED_BACK");
 
     @Test
     void afterCommit_fires_on_commit() {
@@ -42,7 +46,7 @@ class JdbcTxManagerSynchronizationTest {
 
         manager.commit(tx);
 
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), recorder.calls);
+        assertEquals(COMMITTED, recorder.calls);
     }
 
     @Test
@@ -53,11 +57,11 @@ class JdbcTxManagerSynchronizationTest {
 
         manager.rollback(tx);
 
-        assertEquals(List.of("afterRollback", "afterCompletion:ROLLED_BACK"), recorder.calls);
+        assertEquals(ROLLED_BACK, recorder.calls);
     }
 
     @Test
-    void commit_of_a_rollback_only_tx_fires_the_rollback_callbacks() {
+    void commit_of_a_rollback_only_tx_rolls_back_without_running_beforeCommit() {
         Recorder recorder = new Recorder();
         TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
         tx.markRollbackOnly();
@@ -65,10 +69,64 @@ class JdbcTxManagerSynchronizationTest {
 
         manager.commit(tx);
 
-        assertEquals(List.of("afterRollback", "afterCompletion:ROLLED_BACK"), recorder.calls);
+        assertEquals(ROLLED_BACK, recorder.calls);
     }
 
-    /** Callbacks run after the committed connection is unbound, so opening a transaction gets a fresh one. */
+    /** beforeCommit runs inside the transaction: connection still bound, nothing committed yet. */
+    @Test
+    void beforeCommit_runs_while_the_transaction_is_still_active() {
+        List<Connection> connectionSeen = new ArrayList<>();
+
+        TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
+        Connection connection = tx.resource(Connection.class);
+        ResourceRegistry.addSynchronization(new TxSynchronization() {
+            @Override
+            public void beforeCommit(boolean readOnly) {
+                // MANDATORY only succeeds while a transaction is bound — proof this runs inside it.
+                TxStatus joined = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.MANDATORY));
+                connectionSeen.add(joined.resource(Connection.class));
+                manager.commit(joined);
+            }
+        });
+
+        manager.commit(tx);
+
+        assertSame(connection, connectionSeen.get(0), "the same connection must still be bound, so writes land in this commit");
+    }
+
+    @Test
+    void beforeCommit_is_told_whether_the_transaction_is_read_only() {
+        Recorder readWrite = new Recorder();
+        TxStatus rw = manager.begin(TxDefinition.DEFAULTS);
+        ResourceRegistry.addSynchronization(readWrite);
+        manager.commit(rw);
+
+        Recorder readOnly = new Recorder();
+        TxStatus ro = manager.begin(TxDefinition.DEFAULTS.asReadOnly());
+        ResourceRegistry.addSynchronization(readOnly);
+        manager.commit(ro);
+
+        assertEquals("beforeCommit:false", readWrite.calls.get(0));
+        assertEquals("beforeCommit:true", readOnly.calls.get(0));
+    }
+
+    /** Throwing from beforeCommit is a veto: no commit, the rollback callbacks run, the exception propagates. */
+    @Test
+    void a_throwing_beforeCommit_vetoes_the_commit() {
+        Recorder recorder = new Recorder();
+        TxStatus tx = manager.begin(TxDefinition.DEFAULTS);
+        ResourceRegistry.addSynchronization(new TxSynchronization() {
+            @Override public void beforeCommit(boolean readOnly) { throw new IllegalStateException("veto"); }
+        });
+        ResourceRegistry.addSynchronization(recorder);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> manager.commit(tx));
+
+        assertEquals("veto", thrown.getMessage());
+        assertEquals(ROLLED_BACK, recorder.calls, "the surviving callbacks must hear ROLLED_BACK, not silence");
+    }
+
+    /** Post-completion callbacks run after the committed connection is unbound, so opening a transaction gets a fresh one. */
     @Test
     void a_synchronization_may_open_its_own_transaction() {
         List<Connection> connectionsSeen = new ArrayList<>();
@@ -104,7 +162,7 @@ class JdbcTxManagerSynchronizationTest {
         assertEquals(List.of(), recorder.calls, "the joined commit did not commit anything yet");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), recorder.calls);
+        assertEquals(COMMITTED, recorder.calls);
     }
 
     @Test
@@ -133,11 +191,11 @@ class JdbcTxManagerSynchronizationTest {
         ResourceRegistry.addSynchronization(innerSync);
         manager.commit(inner);
 
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), innerSync.calls);
+        assertEquals(COMMITTED, innerSync.calls);
         assertEquals(List.of(), outerSync.calls, "the outer transaction has not committed yet");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), outerSync.calls);
+        assertEquals(COMMITTED, outerSync.calls);
     }
 
     @Test
@@ -153,6 +211,6 @@ class JdbcTxManagerSynchronizationTest {
         assertEquals(List.of(), outerSync.calls, "the outer transaction is still open");
 
         manager.commit(outer);
-        assertEquals(List.of("afterCommit", "afterCompletion:COMMITTED"), outerSync.calls);
+        assertEquals(COMMITTED, outerSync.calls);
     }
 }
