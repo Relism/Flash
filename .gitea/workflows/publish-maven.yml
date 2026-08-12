@@ -17,10 +17,17 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # No actions/checkout here on purpose: it's a Node-based action, and this container
+    # (chosen for its preinstalled mvn/JDK 21) has no Node — checkout would fail with
+    # "node: executable file not found". A plain git clone needs neither.
     container:
       image: maven:3.9-eclipse-temurin-21
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends git
+          git clone https://git.pixel-services.com/Relism/Flash5.git .
+          git checkout ${{ gitea.sha }}
 
       - name: Stamp every module with a commit-scoped version
         run: |
