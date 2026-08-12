@@ -6,7 +6,7 @@ Key fields:
 
 - `runtimeMode`: `PROD`, `ENV`, `AUTODETECT`
 - `operationMode`: `ORCHESTRATE_ONLY`, `MANAGED`
-- `frontendType`: currently `VITE`
+- `frontendType`: `VITE`, `STATIC` — see `frontend-selection.md`
 - `packageManager`: `NPM`, `PNPM`, `YARN`, `BUN`
 - `installPolicy`: `AUTO_IF_LOCK_HASH_CHANGED`, `NEVER`
 - `loggingMode`: `MERGED`, `SEPARATE`, `QUIET`, `VERBOSE`
@@ -25,6 +25,12 @@ Or by direct source object:
 
 Validation is fail-fast:
 
-- invalid `devPort`
-- blank/invalid watch entries
+- invalid `devPort` (only when `frontendType` requires orchestration — skipped for `STATIC`)
+- blank/invalid watch entries (same — skipped for `STATIC`)
 - invalid `basePath`
+
+`frontendType(...)` has side effects on other defaults, same pattern as `packageManager(...)`
+resetting `watchList`: it also resets `operationMode` (`MANAGED` for `STATIC`, `ORCHESTRATE_ONLY`
+otherwise) and `assetsSource` (`webRoot` itself for `STATIC`, `webRoot/dist` otherwise). Call
+`.frontendType(...)` before any explicit `.operationMode(...)`/`.assetsSource(...)`/`.assetsFrom*(...)`
+override, or the later call wins.

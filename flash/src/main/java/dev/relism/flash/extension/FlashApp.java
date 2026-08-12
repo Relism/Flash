@@ -9,6 +9,8 @@ import dev.relism.flash.models.SimpleHandler;
 import dev.relism.flash.routing.AbstractRouter;
 import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareGraph;
+import dev.relism.flash.routing.MiddlewareNode;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathWsRouterImpl;
 import dev.relism.flash.websocket.WebSocketEndpoint;
@@ -19,7 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -41,10 +42,9 @@ import java.util.function.Consumer;
  *
  * <h3>Startup sequence (both {@link #start()} and {@link #startAndBlock()})</h3>
  * <ol>
- *   <li>Extensions sorted by {@link FlashExtension#priority()} — lower first.</li>
- *   <li>All {@link FlashExtension#provide} — register services, processors, listeners.</li>
+ *   <li>All {@link FlashExtension#configure} declarations.</li>
  *   <li>{@link FlashContext#resolveAll()} — topo-sort, cycle detection.</li>
- *   <li>All {@link FlashExtension#routes} — routes registered, services available.</li>
+ *   <li>Ready callbacks register routes with resolved services.</li>
  *   <li>Compile all routes into one flat FSM — zero prefix scanning at runtime.</li>
  *   <li>Accept loop started.</li>
  * </ol>
@@ -62,7 +62,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     private final ServerHandle          server;
     private final FlashContext          ctx        = new FlashContext();
     private final List<FlashExtension>  extensions        = new ArrayList<>();
-    private final List<Middleware>      globalMiddlewares = new ArrayList<>();
+    private final List<MiddlewareNode>  globalMiddlewares = new ArrayList<>();
     private final List<RouteDefinition> deferredRoutes    = new ArrayList<>();
     private final List<WsRouteDefinition> deferredWsRoutes = new ArrayList<>();
 
@@ -131,10 +131,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     // ── Extensions ────────────────────────────────────────────────────────────
 
     /**
-     * Registers an extension for two-phase installation at startup.
-     * Install order is irrelevant — all {@link FlashExtension#provide} calls complete
-     * before any {@link FlashExtension#routes} call begins.
-     * Extensions are sorted by {@link FlashExtension#priority()} before execution.
+     * Registers a declarative extension contribution.
      */
     public FlashApp install(FlashExtension ext) {
         extensions.add(ext);
@@ -174,7 +171,7 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     // ── FlashRegistrar impl ───────────────────────────────────────────────────
 
     @Override
-    protected void addRoute(HttpMethod method, String path, RequestHandler handler, List<Middleware> mw) {
+    protected void addRoute(HttpMethod method, String path, RequestHandler handler, List<MiddlewareNode> mw) {
         deferredRoutes.add(new RouteDefinition(
                 method, path, handler, List.of(), mw,
                 !(handler instanceof SimpleHandler), ctx, "/"));
@@ -186,27 +183,25 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
     }
 
     @Override
-    protected void addMiddleware(Middleware mw) { globalMiddlewares.add(mw); }
+    protected void addMiddleware(MiddlewareNode mw) { globalMiddlewares.add(mw); }
 
     // ── Boot ─────────────────────────────────────────────────────────────────
 
     private void boot() {
-        extensions.sort(Comparator.comparingInt(FlashExtension::priority));
-        extensions.forEach(e -> e.provide(ctx));
-        ctx.resolveAll();
-        extensions.forEach(e -> e.routes(this, ctx));
+        extensions.forEach(e -> e.configure(this, ctx));
+        ctx.complete();
         compile();
         compileWs();
+        router.compile();
+        wsRouter.compile();
     }
 
     // ── Compilation ──────────────────────────────────────────────────────────
 
-    private static final Middleware[] EMPTY_MW = new Middleware[0];
-
     /** Middleware chain order per route: Global → Scope → Annotation → Explicit. */
     private void compile() {
         for (RouteDefinition def : deferredRoutes) {
-            List<Middleware> injected;
+            List<MiddlewareNode> injected;
             if (def.classBasedHandler()) {
                 injected = def.ctx().processors().stream()
                         .flatMap(p -> p.process(def.handler().getClass()).stream())
@@ -215,7 +210,8 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
             } else {
                 injected = List.of();
             }
-            Middleware[] all = concat(globalMiddlewares, def.scopeMiddlewares(), injected, def.explicitMiddlewares());
+            Middleware[] all = MiddlewareGraph.order(def.method() + " " + def.path(),
+                    concat(globalMiddlewares, def.scopeMiddlewares(), injected, def.explicitMiddlewares()));
             emitEvent(def, all);
             router.doRegister(def.method(), def.path(), def.handler(), all);
         }
@@ -248,16 +244,12 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         listeners.forEach(l -> l.onRoute(event));
     }
 
-    private static Middleware[] concat(List<Middleware> global, List<Middleware> scope,
-                                       List<Middleware> injected, List<Middleware> explicit) {
+    private static List<MiddlewareNode> concat(List<MiddlewareNode> global, List<MiddlewareNode> scope,
+                                       List<MiddlewareNode> injected, List<MiddlewareNode> explicit) {
         int total = global.size() + scope.size() + injected.size() + explicit.size();
-        if (total == 0) return EMPTY_MW;
-        Middleware[] all = new Middleware[total];
-        int i = 0;
-        for (Middleware m : global)   all[i++] = m;
-        for (Middleware m : scope)    all[i++] = m;
-        for (Middleware m : injected) all[i++] = m;
-        for (Middleware m : explicit) all[i++] = m;
+        if (total == 0) return List.of();
+        List<MiddlewareNode> all = new ArrayList<>(total);
+        all.addAll(global); all.addAll(scope); all.addAll(injected); all.addAll(explicit);
         return all;
     }
 }

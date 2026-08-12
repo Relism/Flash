@@ -7,6 +7,8 @@ import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.routing.MiddlewareKey;
+import dev.relism.flash.routing.MiddlewareNode;
 import dev.relism.flash.models.Request;
 
 import javax.net.ssl.SSLContext;
@@ -54,6 +56,7 @@ import java.util.*;
  * }</pre>
  */
 public class OidcExtension implements FlashExtension {
+    private static final MiddlewareKey POLICY = MiddlewareKey.of("flash.oidc.policy");
 
     private final OidcConfig config;
 
@@ -71,7 +74,7 @@ public class OidcExtension implements FlashExtension {
     // ── Phase 1: services ─────────────────────────────────────────────────────
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         HttpClient http = buildHttpClient(config);
 
         // Discover provider endpoints (blocking; fail fast at startup).
@@ -91,14 +94,12 @@ public class OidcExtension implements FlashExtension {
 
         ctx.addAnnotationProcessor(handlerClass -> {
             OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
-            return policy != null ? List.of(oidcMw.policyMiddleware(policy)) : List.of();
+            return policy != null ? List.of(MiddlewareNode.of(POLICY, oidcMw.policyMiddleware(policy))) : List.of();
         });
+        ctx.onReady(() -> registerRoutes(app, ctx));
     }
 
-    // ── Phase 2: routes ───────────────────────────────────────────────────────
-
-    @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+    private void registerRoutes(FlashRegistrar<?> app, FlashContext ctx) {
         String prefix = config.routePrefix();
 
         // ── GET {prefix}/login ────────────────────────────────────────────────
@@ -252,7 +253,7 @@ public class OidcExtension implements FlashExtension {
 
     private String absoluteSelf(Request req, String uri) {
         if (!uri.startsWith("/")) return uri;
-        return config.selfScheme() + "://" + req.header("Host") + uri;
+        return OidcMiddleware.selfOrigin(req, config.selfScheme()) + uri;
     }
 
     private static String enc(String v) {

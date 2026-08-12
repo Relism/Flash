@@ -92,4 +92,7 @@ public class FastPathRouterImpl extends AbstractRouter {
             }
         }
     }
+
+    @Override
+    public void compile() { ensureCompiled(); }
 }

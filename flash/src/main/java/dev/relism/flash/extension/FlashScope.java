@@ -3,7 +3,7 @@ package dev.relism.flash.extension;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.SimpleHandler;
-import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareNode;
 import dev.relism.flash.routing.PathUtils;
 import dev.relism.flash.websocket.WebSocketEndpoint;
 
@@ -28,7 +28,7 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
 
     private final String                namespace;
     private final FlashContext          ctx;
-    private final List<Middleware>      scopeMiddlewares = new ArrayList<>();
+    private final List<MiddlewareNode>  scopeMiddlewares = new ArrayList<>();
     private final List<RouteDefinition> deferredRoutes   = new ArrayList<>();
     private final List<WsRouteDefinition> deferredWsRoutes = new ArrayList<>();
 
@@ -44,8 +44,8 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
     // ── FlashRegistrar impl ───────────────────────────────────────────────────
 
     @Override
-    protected void addRoute(HttpMethod method, String path, RequestHandler handler, List<Middleware> mw) {
-        List<Middleware> scopeMw = scopeMiddlewares.isEmpty() ? List.of() : List.copyOf(scopeMiddlewares);
+    protected void addRoute(HttpMethod method, String path, RequestHandler handler, List<MiddlewareNode> mw) {
+        List<MiddlewareNode> scopeMw = scopeMiddlewares.isEmpty() ? List.of() : List.copyOf(scopeMiddlewares);
         deferredRoutes.add(new RouteDefinition(
                 method, ns(path), handler, scopeMw, mw,
                 !(handler instanceof SimpleHandler), ctx, namespace));
@@ -57,7 +57,7 @@ public final class FlashScope extends FlashRegistrar<FlashScope> {
     }
 
     @Override
-    protected void addMiddleware(Middleware mw) { scopeMiddlewares.add(mw); }
+    protected void addMiddleware(MiddlewareNode mw) { scopeMiddlewares.add(mw); }
 
     // ── Internal (called by FlashApp.mount) ───────────────────────────────────
 

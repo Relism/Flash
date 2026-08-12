@@ -41,7 +41,8 @@ class LimiterOpenApiInteropTest {
         OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
         ctx.provide(OpenApiContributorRegistry.class, registry);
 
-        new LimiterExtension().routes(null, ctx);
+        new LimiterExtension().configure(null, ctx);
+        ctx.complete();
 
         assertEquals(1, registry.contributors().size());
     }
@@ -51,7 +52,8 @@ class LimiterOpenApiInteropTest {
         FlashContext ctx = new FlashContext();
         OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
         ctx.provide(OpenApiContributorRegistry.class, registry);
-        new LimiterExtension().routes(null, ctx);
+        new LimiterExtension().configure(null, ctx);
+        ctx.complete();
 
         OpenApiContributor contributor = registry.contributors().getFirst();
         OpenApiOperationContribution operation = contributor.operationFor(LimitedHandler.class);
@@ -73,7 +75,8 @@ class LimiterOpenApiInteropTest {
         FlashContext ctx = new FlashContext();
         OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
         ctx.provide(OpenApiContributorRegistry.class, registry);
-        new LimiterExtension().routes(null, ctx);
+        new LimiterExtension().configure(null, ctx);
+        ctx.complete();
 
         OpenApiContributor contributor = registry.contributors().getFirst();
         OpenApiOperationContribution operation = contributor.operationFor(PlainHandler.class);

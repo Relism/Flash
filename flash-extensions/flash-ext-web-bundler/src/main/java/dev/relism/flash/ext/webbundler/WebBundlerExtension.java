@@ -1,9 +1,8 @@
 package dev.relism.flash.ext.webbundler;
 
-import dev.relism.flash.extension.ExtensionPhase;
 import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.extension.FlashExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,11 +23,6 @@ public final class WebBundlerExtension implements FlashExtension {
     private ScheduledExecutorService watchLoop;
     private Thread shutdownHook;
 
-    @Override
-    public int priority() {
-        return ExtensionPhase.LATE.value;
-    }
-
     public WebBundlerExtension() {
         this(WebBundlerConfig.builder().build());
     }
@@ -38,7 +32,7 @@ public final class WebBundlerExtension implements FlashExtension {
     }
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         RuntimeEnvironment environment = modeResolver.resolve(config);
         PackageManagerAdapter pmAdapter = new PackageManagerAdapter(config);
         FrontendStrategy strategy = frontendTypeResolver.resolve(config.frontendType());
@@ -51,7 +45,7 @@ public final class WebBundlerExtension implements FlashExtension {
         SpaFallbackPolicy fallbackPolicy = null;
 
         try {
-            if (environment == RuntimeEnvironment.DEV) {
+            if (environment == RuntimeEnvironment.DEV && config.frontendType().requiresOrchestration()) {
                 bootstrapDev(strategy, pmAdapter, orchestrator, watchList);
             } else {
                 AssetCatalog catalog = config.assetsSource().load(new AssetLoadRequest(
@@ -74,12 +68,10 @@ public final class WebBundlerExtension implements FlashExtension {
             shutdownResources(orchestrator);
             throw ex;
         }
-    }
-
-    @Override
-    public void routes(FlashRegistrar<?> app, FlashContext ctx) {
+        ctx.onReady(() -> {
         WebBundlerRuntime runtime = ctx.require(WebBundlerRuntime.class);
-        if (runtime.environment() == RuntimeEnvironment.DEV || config.operationMode() == OperationMode.ORCHESTRATE_ONLY) {
+        boolean orchestrated = runtime.environment() == RuntimeEnvironment.DEV && config.frontendType().requiresOrchestration();
+        if (orchestrated || config.operationMode() == OperationMode.ORCHESTRATE_ONLY) {
             return;
         }
 
@@ -99,6 +91,7 @@ public final class WebBundlerExtension implements FlashExtension {
             runtime.fallbackPolicy().apply(res);
             res.body(new byte[0]);
             return null;
+        });
         });
     }
 

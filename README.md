@@ -10,6 +10,7 @@ A high-performance HTTP/1.1 server library for Java 21, built around virtual thr
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
+| `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, optional OAuth2 via flash-ext-oidc |
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
@@ -64,24 +65,24 @@ app.get("/users/{id}", (req, res) -> {
 
 ### Class-based handlers
 
-Extend `RequestHandler` (or a subclass like `JacksonHandler`) and annotate with `@Route`:
+Extend `RequestHandler`, annotate it, then scan its package. Dependencies are cached in
+`onInit()` after Flash has resolved its complete boot-time service graph:
 
 ```java
-@Route(method = HttpMethod.GET, path = "/api/users")
-public class ListUsers extends JacksonHandler {
-    @Override
-    public Object handle(Request req, Response res) throws Exception {
-        return json(res, List.of("alice", "bob"));
-    }
+@GET("/api/users")
+public class ListUsers extends RequestHandler {
+    private UserService users;
+
+    @Override protected void onInit() { users = require(UserService.class); }
+    @Override public Object handle(Request req, Response res) { return users.list(); }
 }
 
-// Register:
-app.register(new ListUsers());
+app.scan("dev.example.api");
 ```
 
 ### Middleware
 
-Apply middleware via `.with()` on the `RouteHandle` returned by any registration call:
+Apply middleware at registration. Flash composes the final chain at boot:
 
 ```java
 Middleware authCheck = next -> (req, res) -> {
@@ -90,14 +91,13 @@ Middleware authCheck = next -> (req, res) -> {
     return next.handle(req, res);
 };
 
-app.get("/secure", (req, res) -> "secret data")
-   .with(authCheck);
+app.get("/secure", (req, res) -> "secret data", authCheck);
 ```
 
 Multiple middlewares are composed outermost-first (left-to-right in the call):
 
 ```java
-app.get("/admin", handler).with(logging, auth, rateLimit);
+app.get("/admin", handler, logging, auth, rateLimit);
 // execution order: logging → auth → rateLimit → handler
 ```
 
@@ -119,22 +119,22 @@ processors, services):
 ```java
 app.mount("/api", scope -> {
     scope.get("/health", (req, res) -> "ok");          // → GET /api/health
-    scope.register(new UserHandler());                  // @Route(path="/users") → GET /api/users
     scope.scan("dev.example.api");
 });
 ```
 
 ## Extensions
 
-Extensions are installed before route registration. Each extension receives the `FlashRegistrar`
-and `FlashContext` — it can register routes, expose services, and register annotation processors.
+Extensions have one declarative `configure` method. They declare services, processors and route
+callbacks; Flash resolves the complete graph, materialises routes, compiles both routers, then
+opens listeners. Extension install order never makes a service “not ready”.
 
 ```java
 FlashApp.create(8080)
     .install(new JacksonExtension())
     .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
     .install(new OidcExtension(oidcConfig))
-    .register(new MyHandler())
+    .scan("dev.example.handlers")
     .start();
 ```
 
@@ -142,6 +142,7 @@ See extension-specific READMEs for full details:
 - [`flash-ext-jackson`](flash-extensions/flash-ext-jackson/README.md)
 - [`flash-ext-openapi`](flash-extensions/flash-ext-openapi/README.md)
 - [`flash-ext-oidc`](flash-extensions/flash-ext-oidc/README.md)
+- [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.routing.Middleware;
 
@@ -12,7 +13,8 @@ import dev.relism.flash.routing.Middleware;
  *
  * <p>Exposes a {@link Json} utility instance in the {@link FlashContext} under
  * {@code Json.class}. Any handler or extension can retrieve it via {@code ctx.require(Json.class)}
- * inside {@code onInit()} (class-based) or inside {@link FlashExtension#routes} (extensions).
+ * inside {@code onInit()} (class-based) or from a {@link FlashContext#onReady(Runnable)}
+ * callback (extensions).
  *
  * <p>The raw {@link ObjectMapper} is also registered under {@code ObjectMapper.class}
  * for extensions that need direct mapper access (e.g. OpenAPI schema generation).
@@ -83,7 +85,7 @@ public class JacksonExtension implements FlashExtension {
     }
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         Json json = new Json(mapper);
         ctx.provide(Json.class,               json);
         ctx.provide(ObjectMapper.class,       mapper);

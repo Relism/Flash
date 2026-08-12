@@ -8,6 +8,7 @@ final class FrontendTypeResolver {
 
     FrontendTypeResolver() {
         register(new ViteFrontendStrategy());
+        register(new StaticFrontendStrategy());
     }
 
     void register(FrontendStrategy strategy) {

@@ -92,15 +92,17 @@ public final class WebBundlerConfig {
         Objects.requireNonNull(webRoot, "webRoot");
         Objects.requireNonNull(assetsSource, "assetsSource");
         Objects.requireNonNull(indexFile, "indexFile");
-        if (devPort <= 0 || devPort > 65535) {
-            throw new IllegalArgumentException("WebBundlerConfig: devPort must be in range 1..65535");
-        }
-        if (watchList.isEmpty()) {
-            throw new IllegalArgumentException("WebBundlerConfig: watchList must not be empty");
-        }
-        for (String path : watchList) {
-            if (path == null || path.isBlank()) {
-                throw new IllegalArgumentException("WebBundlerConfig: watchList contains blank entries");
+        if (frontendType.requiresOrchestration()) {
+            if (devPort <= 0 || devPort > 65535) {
+                throw new IllegalArgumentException("WebBundlerConfig: devPort must be in range 1..65535");
+            }
+            if (watchList.isEmpty()) {
+                throw new IllegalArgumentException("WebBundlerConfig: watchList must not be empty");
+            }
+            for (String path : watchList) {
+                if (path == null || path.isBlank()) {
+                    throw new IllegalArgumentException("WebBundlerConfig: watchList contains blank entries");
+                }
             }
         }
         if (!basePath.startsWith("/")) {
@@ -135,7 +137,7 @@ public final class WebBundlerConfig {
         private String basePath = "/";
         private String devHost = "127.0.0.1";
         private int devPort = 5173;
-        private AssetsSource assetsSource = FilesystemAssetsSource.of(Path.of("dist"));
+        private AssetsSource assetsSource = defaultAssetsSource(FrontendType.VITE);
         private String indexFile = "index.html";
         private List<String> watchList = defaultWatchList(PackageManager.NPM);
         private String devCommand;
@@ -146,7 +148,12 @@ public final class WebBundlerConfig {
 
         public Builder runtimeMode(RuntimeMode runtimeMode) { this.runtimeMode = runtimeMode; return this; }
         public Builder operationMode(OperationMode operationMode) { this.operationMode = operationMode; return this; }
-        public Builder frontendType(FrontendType frontendType) { this.frontendType = frontendType; return this; }
+        public Builder frontendType(FrontendType frontendType) {
+            this.frontendType = frontendType;
+            this.assetsSource = defaultAssetsSource(frontendType);
+            this.operationMode = frontendType.requiresOrchestration() ? OperationMode.ORCHESTRATE_ONLY : OperationMode.MANAGED;
+            return this;
+        }
         public Builder packageManager(PackageManager packageManager) {
             this.packageManager = packageManager;
             this.watchList = defaultWatchList(packageManager);
@@ -186,6 +193,12 @@ public final class WebBundlerConfig {
 
         public WebBundlerConfig build() {
             return new WebBundlerConfig(this);
+        }
+
+        private static AssetsSource defaultAssetsSource(FrontendType type) {
+            return type == FrontendType.STATIC
+                    ? FilesystemAssetsSource.of(Path.of("."))
+                    : FilesystemAssetsSource.of(Path.of("dist"));
         }
 
         private static List<String> defaultWatchList(PackageManager manager) {

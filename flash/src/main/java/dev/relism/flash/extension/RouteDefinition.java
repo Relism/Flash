@@ -2,7 +2,7 @@ package dev.relism.flash.extension;
 
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareNode;
 
 import java.util.List;
 
@@ -26,8 +26,8 @@ record RouteDefinition(
         HttpMethod method,
         String path,
         RequestHandler handler,
-        List<Middleware> scopeMiddlewares,
-        List<Middleware> explicitMiddlewares,
+        List<MiddlewareNode> scopeMiddlewares,
+        List<MiddlewareNode> explicitMiddlewares,
         boolean classBasedHandler,
         FlashContext ctx,
         String namespace

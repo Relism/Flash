@@ -56,6 +56,9 @@ public final class FastPathWsRouterImpl extends AbstractWsRouter {
         }
     }
 
+    @Override
+    public void compile() { ensureCompiled(); }
+
     private static final class Context {
         private static final ThreadLocal<MatchResult<WebSocketHandler>> RESULT =
                 ThreadLocal.withInitial(() -> new MatchResult<>(32, 128));

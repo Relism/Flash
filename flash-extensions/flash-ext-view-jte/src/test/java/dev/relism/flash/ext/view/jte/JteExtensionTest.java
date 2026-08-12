@@ -93,7 +93,9 @@ class JteExtensionTest {
     void routes_register_static_wildcard_when_enabled() {
         JteExtension ext = new JteExtension(cfg -> cfg.staticPrefix("/assets"));
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.flash.extension.FlashContext());
+        dev.relism.flash.extension.FlashContext ctx = new dev.relism.flash.extension.FlashContext();
+        ext.configure(app, ctx);
+        ctx.complete();
         assertTrue(app.routes.containsKey("GET /assets/**"));
         assertTrue(app.routes.containsKey("HEAD /assets/**"));
     }
@@ -102,7 +104,9 @@ class JteExtensionTest {
     void routes_do_not_register_static_when_disabled() {
         JteExtension ext = new JteExtension().serveStatics(false);
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.flash.extension.FlashContext());
+        dev.relism.flash.extension.FlashContext ctx = new dev.relism.flash.extension.FlashContext();
+        ext.configure(app, ctx);
+        ctx.complete();
         assertTrue(app.routes.isEmpty());
     }
 
@@ -112,7 +116,9 @@ class JteExtensionTest {
                 .staticPrefix("/assets")
                 .largeFileThresholdBytes(1));
         TestRegistrar app = new TestRegistrar();
-        ext.routes(app, new dev.relism.flash.extension.FlashContext());
+        dev.relism.flash.extension.FlashContext ctx = new dev.relism.flash.extension.FlashContext();
+        ext.configure(app, ctx);
+        ctx.complete();
 
         Request req = request("/assets/sample.css", null, null, null);
         Response res = new Response(200, dev.relism.flash.http.ContentType.TEXT_PLAIN);
@@ -161,7 +167,7 @@ class JteExtensionTest {
 
     private static final class TestRegistrar extends dev.relism.flash.extension.FlashRegistrar<TestRegistrar> {
         private final Map<String, RequestHandler> routes = new HashMap<>();
-        private final List<dev.relism.flash.routing.Middleware> mws = new ArrayList<>();
+        private final List<dev.relism.flash.routing.MiddlewareNode> mws = new ArrayList<>();
 
         @Override
         public dev.relism.flash.extension.FlashContext ctx() {
@@ -169,7 +175,7 @@ class JteExtensionTest {
         }
 
         @Override
-        protected void addRoute(dev.relism.flash.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.flash.routing.Middleware> mw) {
+        protected void addRoute(dev.relism.flash.http.HttpMethod method, String path, RequestHandler handler, List<dev.relism.flash.routing.MiddlewareNode> mw) {
             routes.put(method.name() + " " + path, handler);
         }
 
@@ -179,7 +185,7 @@ class JteExtensionTest {
         }
 
         @Override
-        protected void addMiddleware(dev.relism.flash.routing.Middleware mw) {
+        protected void addMiddleware(dev.relism.flash.routing.MiddlewareNode mw) {
             mws.add(mw);
         }
     }

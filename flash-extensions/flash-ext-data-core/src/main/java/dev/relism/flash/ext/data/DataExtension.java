@@ -4,9 +4,11 @@ import dev.relism.flash.ext.data.core.Tx;
 import dev.relism.flash.ext.data.core.TxDefinition;
 import dev.relism.flash.ext.data.core.TxManager;
 import dev.relism.flash.ext.data.core.TransactionPropagation;
-import dev.relism.flash.extension.ExtensionPhase;
+import dev.relism.flash.extension.FlashRegistrar;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.extension.FlashExtension;
+import dev.relism.flash.routing.MiddlewareKey;
+import dev.relism.flash.routing.MiddlewareNode;
 import dev.relism.flash.routing.Middleware;
 import jakarta.transaction.Transactional;
 
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DataExtension implements FlashExtension {
+    private static final MiddlewareKey TRANSACTION = MiddlewareKey.of("flash.data.transaction");
     private final TxManager txManager;
     private final Tx tx;
 
@@ -23,7 +26,7 @@ public final class DataExtension implements FlashExtension {
     }
 
     @Override
-    public void provide(FlashContext ctx) {
+    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         ctx.provide(Tx.class, tx);
         ctx.provide(TxManager.class, txManager);
         ctx.addAnnotationProcessor(handlerClass -> {
@@ -36,13 +39,8 @@ public final class DataExtension implements FlashExtension {
             Middleware middleware = next -> (req, res) -> {
                 return tx.call(definition, () -> next.handle(req, res));
             };
-            return List.of(middleware);
+            return List.of(MiddlewareNode.of(TRANSACTION, middleware));
         });
-    }
-
-    @Override
-    public int priority() {
-        return ExtensionPhase.EARLY.value;
     }
 
     private TransactionPropagation mapTxType(Transactional.TxType txType) {
