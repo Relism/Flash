@@ -40,6 +40,19 @@ jobs:
           mvn -B versions:set -DnewVersion="2.1.0-${SHORT_SHA}" -DprocessAllModules=true -DgenerateBackupPoms=false
           echo "Publishing as 2.1.0-${SHORT_SHA}"
 
+      # Diagnostic for the 401s seen so far: confirms GITEA_TOKEN actually reaches this step
+      # non-empty, and whether the token itself authenticates against the API at all —
+      # independent of whatever Maven/wagon-http does with it. Remove once deploy is green.
+      - name: Debug token
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          apt-get install -y --no-install-recommends curl >/dev/null
+          echo "token length: ${#GITEA_TOKEN}"
+          echo "whoami via token header:"
+          curl -s -o /dev/null -w "  token header -> %{http_code}\n" -H "Authorization: token ${GITEA_TOKEN}" https://git.pixel-services.com/api/v1/user
+          curl -s -o /dev/null -w "  basic auth   -> %{http_code}\n" -u "Relism:${GITEA_TOKEN}" https://git.pixel-services.com/api/v1/user
+
       - name: Deploy to the Gitea Maven registry
         env:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
