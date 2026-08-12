@@ -16,7 +16,7 @@ on:
 
 jobs:
   publish:
-    runs-on: org
+    runs-on: ubuntu-latest
     container:
       image: maven:3.9-eclipse-temurin-21
     steps:
