@@ -7,18 +7,18 @@
       already exports (Gitea Actions' built-in per-job token, scoped to this repo/org — see
       https://docs.gitea.com/usage/packages/maven#configuring-the-package-registry), never
       written to disk.
+
+      Basic auth (username/password), not the <httpHeaders> form Gitea's own docs show: that
+      form is honored by Maven's resolver (used for reading <repositories>) but not reliably
+      by the wagon-http provider maven-deploy-plugin actually uploads through, which silently
+      dropped it and deployed unauthenticated (401). Basic auth is wagon-http's oldest,
+      always-supported path.
     -->
     <servers>
         <server>
             <id>gitea</id>
-            <configuration>
-                <httpHeaders>
-                    <property>
-                        <name>Authorization</name>
-                        <value>token ${env.GITEA_TOKEN}</value>
-                    </property>
-                </httpHeaders>
-            </configuration>
+            <username>Relism</username>
+            <password>${env.GITEA_TOKEN}</password>
         </server>
     </servers>
 </settings>
