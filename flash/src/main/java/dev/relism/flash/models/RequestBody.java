@@ -87,6 +87,15 @@ public class RequestBody {
      */
     public long contentLength() { return contentLength; }
 
+    /** Whether the complete body has been consumed by the application. */
+    public boolean fullyRead() {
+        if (resolved != null || contentLength == 0) return true;
+        if (socket instanceof BodyCompletion completion) return completion.fullyRead();
+        if (contentLength < 0) return false;
+        if (boundedStream != null) return boundedStream.complete();
+        return preBufLen >= contentLength;
+    }
+
     /**
      * Materialises and caches the full body. Suitable for JSON, small form data, and any payload
      * that must be inspected in full. The result is cached — repeated calls return the same array.
@@ -176,6 +185,10 @@ public class RequestBody {
             this.preBufPos       = preBufOff;
             this.preBufRemaining = preBufLen;
             this.socketRemaining = socketRemaining;
+        }
+
+        boolean complete() {
+            return preBufRemaining == 0 && socketRemaining == 0;
         }
 
         @Override

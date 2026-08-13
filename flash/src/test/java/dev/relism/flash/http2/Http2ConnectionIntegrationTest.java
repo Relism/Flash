@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackDecoder;
@@ -14,6 +15,7 @@ import dev.relism.flash.tls.TlsConfig;
 import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.InputStream;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
@@ -136,6 +138,61 @@ class Http2ConnectionIntegrationTest {
     assertArrayEquals(download, fixed.body());
     assertArrayEquals(download, streamed.body());
     assertTrue(streamed.headers().firstValue("transfer-encoding").isEmpty());
+  }
+
+  @Test
+  void pushStreamingAppliesBackpressureAcrossMultipleWindows(@TempDir Path directory)
+      throws Exception {
+    int port = freePort();
+    int length = 2 * 1024 * 1024 + 31;
+    Path keystore =
+        TestKeystores.build(
+            directory,
+            "http2-push-stream.p12",
+            "changeit",
+            TestKeystores.Entry.of("server", "localhost", "localhost"));
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .tls(TlsConfig.keystore(keystore, "changeit"))
+                .http2Enabled(true)
+                .build());
+    app.get(
+        "/push",
+        (request, response) ->
+            response.type(ContentType.BINARY).streaming(stream -> {
+              byte[] block = new byte[8192];
+              int written = 0;
+              try {
+                while (written < length) {
+                  int count = Math.min(block.length, length - written);
+                  for (int i = 0; i < count; i++) block[i] = (byte) ((written + i) * 31);
+                  stream.write(block, 0, count);
+                  written += count;
+                }
+                stream.trailer("grpc-status", "0");
+              } catch (IOException failure) {
+                throw new RuntimeException(failure);
+              }
+            }));
+    app.start();
+
+    HttpClient client =
+        HttpClient.newBuilder()
+            .sslContext(TestKeystores.trustAllClientContext())
+            .version(HttpClient.Version.HTTP_2)
+            .build();
+    HttpResponse<InputStream> response =
+        client.send(
+            HttpRequest.newBuilder(URI.create("https://localhost:" + port + "/push")).GET().build(),
+            HttpResponse.BodyHandlers.ofInputStream());
+
+    assertEquals(HttpClient.Version.HTTP_2, response.version());
+    try (InputStream body = response.body()) {
+      assertEquals(length, verifyPattern(body));
+    }
   }
 
   @Test

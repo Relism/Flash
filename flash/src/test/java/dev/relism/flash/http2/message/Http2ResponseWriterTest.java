@@ -132,6 +132,23 @@ class Http2ResponseWriterTest {
     assertEquals(List.of(FrameType.HEADERS, FrameType.DATA), parsed.types);
   }
 
+  @Test
+  void finalDataDoesNotEndStreamWhenTrailingHeadersFollow() throws Exception {
+    Response response = new Response(200, "ok", ContentType.TEXT_PLAIN)
+        .trailer("grpc-status", "0");
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    writer.startFlowControlled(
+        response, 1, false, false, true, false, false, 16_384, 4096, 16_384);
+    Parsed parsed = parse(writer);
+
+    assertEquals(List.of(FrameType.HEADERS, FrameType.DATA, FrameType.HEADERS), parsed.types);
+    assertEquals(0, parsed.flags.get(1) & FrameFlags.END_STREAM);
+    assertTrue((parsed.flags.get(2) & FrameFlags.END_STREAM) != 0);
+    assertTrue(decode(parsed.headerBlock).contains("grpc-status=0"));
+    assertTrue(writer.trailerHeadersInBatch());
+  }
+
   private static Parsed parse(Http2ResponseWriter writer) {
     Parsed parsed = new Parsed();
     byte[] wire = writer.buffer();

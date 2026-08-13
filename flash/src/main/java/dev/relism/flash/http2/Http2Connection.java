@@ -59,6 +59,7 @@ public final class Http2Connection implements ConnectionProtocol {
   private int highestClientStreamId;
   private Http2Stream pendingHeaderStream;
   private boolean refusingHeaderStream;
+  private boolean pendingTrailers;
   private Http2StreamDispatcher streamDispatcher;
   private final Http2Stream[] dispatchQueue = new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
   private int dispatchCount;
@@ -218,8 +219,21 @@ public final class Http2Connection implements ConnectionProtocol {
   private void receiveHeaders(FrameHeader frame, Http2FrameWriter writer) throws IOException {
     int streamId = frame.streamId();
     if ((streamId & 1) == 0) throw Http2Exception.PROTOCOL_ERROR;
+    Http2Stream existing = streams.get(streamId);
+    if (existing != null) {
+      if (!FrameFlags.isEndStream(frame.flags())) {
+        throw new Http2StreamException(
+            streamId, Http2ErrorCode.PROTOCOL_ERROR, "trailers require END_STREAM");
+      }
+      pendingHeaderStream = existing;
+      pendingTrailers = true;
+      existing.trailerBlock().reset();
+      if (headerBlocks.accept(frame, existing.trailerBlock())) completeHeaders(writer, streamId);
+      return;
+    }
     if (streamId <= highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
     highestClientStreamId = streamId;
+    pendingTrailers = false;
 
     pendingHeaderStream = streams.acquire(streamId);
     refusingHeaderStream = pendingHeaderStream == null;
@@ -227,7 +241,12 @@ public final class Http2Connection implements ConnectionProtocol {
       flowController.initializeStreamSendWindow(
           pendingHeaderStream, peerSettings.initialWindowSize());
     }
-    HeaderSink sink = refusingHeaderStream ? DISCARD_HEADERS : pendingHeaderStream.headerBlock();
+    HeaderSink sink =
+        refusingHeaderStream
+            ? DISCARD_HEADERS
+            : (pendingTrailers
+                ? pendingHeaderStream.trailerBlock()
+                : pendingHeaderStream.headerBlock());
     if (headerBlocks.accept(frame, sink)) completeHeaders(writer, frame.streamId());
   }
 
@@ -235,33 +254,53 @@ public final class Http2Connection implements ConnectionProtocol {
     if (pendingHeaderStream == null && !refusingHeaderStream) {
       throw Http2Exception.PROTOCOL_ERROR;
     }
-    HeaderSink sink = refusingHeaderStream ? DISCARD_HEADERS : pendingHeaderStream.headerBlock();
+    HeaderSink sink =
+        refusingHeaderStream
+            ? DISCARD_HEADERS
+            : (pendingTrailers
+                ? pendingHeaderStream.trailerBlock()
+                : pendingHeaderStream.headerBlock());
     if (headerBlocks.accept(frame, sink)) completeHeaders(writer, frame.streamId());
   }
 
   private void completeHeaders(Http2FrameWriter writer, int streamId) throws IOException {
-    if (refusingHeaderStream) {
-      sendRstStream(writer, streamId, Http2ErrorCode.REFUSED_STREAM);
-    } else {
-      Http2Stream stream = pendingHeaderStream;
-      if (streamDispatcher != null) stream.validateHeaders();
-      boolean dispatch =
-          stream.prepareRequestBody(flowController, headerBlocks.endStream());
-      stream.transition(
-          headerBlocks.endStream()
-              ? Http2StreamState.Event.RECV_HEADERS_ES
-              : Http2StreamState.Event.RECV_HEADERS);
-      lastProcessedStreamId = Math.max(lastProcessedStreamId, streamId);
-      if (streamDispatcher == null) {
-        streams.remove(streamId);
-        streams.release(stream);
-        if (!gracefulStarted) startGracefulShutdown(writer);
-      } else if (dispatch) {
-        enqueueDispatch(stream);
+    try {
+      if (refusingHeaderStream) {
+        sendRstStream(writer, streamId, Http2ErrorCode.REFUSED_STREAM);
+      } else {
+        Http2Stream stream = pendingHeaderStream;
+        boolean dispatch;
+        if (pendingTrailers) {
+          stream.validateTrailers();
+          stream.finishRequestBody();
+          stream.transition(Http2StreamState.Event.RECV_HEADERS_ES);
+          dispatch = !stream.dispatched();
+        } else {
+          if (streamDispatcher != null) stream.validateHeaders();
+          dispatch = stream.prepareRequestBody(flowController, headerBlocks.endStream());
+          stream.transition(
+              headerBlocks.endStream()
+                  ? Http2StreamState.Event.RECV_HEADERS_ES
+                  : Http2StreamState.Event.RECV_HEADERS);
+          lastProcessedStreamId = Math.max(lastProcessedStreamId, streamId);
+        }
+        if (streamDispatcher == null && !pendingTrailers) {
+          streams.remove(streamId);
+          streams.release(stream);
+          if (!gracefulStarted) startGracefulShutdown(writer);
+        } else if (dispatch) {
+          enqueueDispatch(stream);
+        } else if (stream.responseStarted() && stream.responseWriter().finished()
+            && !stream.responseInFlight() && stream.state() == Http2StreamState.CLOSED) {
+          streams.remove(stream.id());
+          streams.release(stream);
+        }
       }
+    } finally {
+      pendingHeaderStream = null;
+      refusingHeaderStream = false;
+      pendingTrailers = false;
     }
-    pendingHeaderStream = null;
-    refusingHeaderStream = false;
   }
 
   private void receivePriority(FrameHeader frame) {
@@ -310,6 +349,12 @@ public final class Http2Connection implements ConnectionProtocol {
       if (FrameFlags.isEndStream(frame.flags())) {
         stream.finishRequestBody();
         if (streamDispatcher != null && !stream.dispatched()) enqueueDispatch(stream);
+        else if (stream.responseStarted() && stream.responseWriter().finished()
+            && !stream.responseInFlight()
+            && stream.state() == Http2StreamState.CLOSED) {
+          streams.remove(stream.id());
+          streams.release(stream);
+        }
       }
     } catch (RuntimeException failure) {
       if (!bodyAccepted) discardConnectionBytes(frame.length());

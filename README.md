@@ -172,7 +172,7 @@ app.onException((ex, req, res) -> {
 | `idleKeepAliveTimeoutMs` | `60000` | How long a keep-alive connection may sit idle waiting for its next request. |
 | `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
 | `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
-| `http2Enabled` | `false` | Whether this server will ever negotiate HTTP/2. Off by default until the HTTP/2 connection state machine lands (see `flash/docs/http2/IMPLEMENTATION-PLAN.md`). |
+| `http2Enabled` | `false` | Whether the server negotiates HTTP/2 through ALPN or accepts h2c prior knowledge. The conservative default keeps protocol rollout explicit. |
 
 ## TLS
 
@@ -315,6 +315,34 @@ app.get("/health", (req, res) -> res.header(NO_STORE).body("ok"));
 `Response.header(byte[])` accepts a complete CRLF-terminated HTTP/1 field line and is therefore
 HTTP/1-only; HPACK needs the name and value as separate fields. Prefer `PreEncodedHeader` for shared
 application and middleware code.
+
+### Trailers and push streaming
+
+Request trailers become available after the body reaches EOF:
+
+```java
+byte[] payload = req.body().bytes();
+String status = req.trailers().first("grpc-status");
+```
+
+For a producer-driven response, `Response.streaming` provides a blocking `ResponseStream`. Its
+bounded buffer and HTTP/2 flow-control windows apply backpressure directly to the producer's
+virtual thread:
+
+```java
+return res.streaming(stream -> {
+    try {
+        stream.write(payload, 0, payload.length);
+        stream.trailer("result", "complete");
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+});
+```
+
+The API renders as chunked data and trailers on HTTP/1.1, and DATA plus trailing HEADERS on
+HTTP/2. Flash core supplies these transport primitives; a higher-level gRPC codec belongs in a
+separate extension.
 
 ## Architecture
 

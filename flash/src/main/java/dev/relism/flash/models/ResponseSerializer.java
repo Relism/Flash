@@ -54,4 +54,9 @@ public final class ResponseSerializer {
   public static void forEachCustomField(Response response, FieldConsumer consumer) {
     response.forEachStructuredField(consumer);
   }
+
+  /** Enumerates response trailers in declaration order. */
+  public static void forEachTrailerField(Response response, FieldConsumer consumer) {
+    response.forEachTrailerField(consumer);
+  }
 }

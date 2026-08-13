@@ -64,6 +64,20 @@ public final class PseudoHeaders {
     }
   }
 
+  /** Validates a trailing field section, where pseudo-fields are never permitted. */
+  public static void validateTrailers(HpackHeaderBlock block, int streamId) {
+    PooledSlice name = new PooledSlice();
+    PooledSlice value = new PooledSlice();
+    for (int i = 0; i < block.count(); i++) {
+      block.get(i, name, value);
+      if (name.length() == 0 || name.byteAt(0) == ':') fail(streamId, "pseudo-header in trailers");
+      validateRegular(name, value, streamId);
+      if (equals(name, "content-length") || equals(name, "host") || equals(name, "te")) {
+        fail(streamId, "field is not permitted in trailers");
+      }
+    }
+  }
+
   public PooledSlice method() {
     return method;
   }

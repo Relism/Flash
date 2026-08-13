@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * HTTP response. All mutating methods return {@code this} for fluent chaining.
@@ -43,7 +45,9 @@ public class Response {
   private InputStream stream;
   private long streamLength; // meaningful only when isStreaming() && !chunked
   private boolean chunked;
+  private boolean pushStreaming;
   private byte[] contentType;
+  private final MutableHeaderMap trailers = new MutableHeaderMap();
 
   // of a List<byte[]> of fully-rendered "Name: Value\r\n" lines (which cost a StringBuilder +
   // char[] + String + getBytes() chain per header(String,String) call). Two backing stores,
@@ -112,9 +116,11 @@ public class Response {
     this.stream = null;
     this.streamLength = 0;
     this.chunked = false;
+    this.pushStreaming = false;
     this.contentType = contentType.getBytes();
     this.headerQuadCount = 0;
     this.headerCount = 0;
+    this.trailers.reset();
     if (rawHeaderLines != null) rawHeaderLines.clear();
     this.active = true;
     return this;
@@ -175,6 +181,7 @@ public class Response {
     checkActive();
     this.body = bytes;
     this.stream = null;
+    this.pushStreaming = false;
     return this;
   }
 
@@ -189,6 +196,7 @@ public class Response {
     this.streamLength = length;
     this.chunked = false;
     this.body = null;
+    this.pushStreaming = false;
     return this;
   }
 
@@ -198,7 +206,60 @@ public class Response {
     this.stream = is;
     this.chunked = true;
     this.body = null;
+    this.pushStreaming = false;
     return this;
+  }
+
+  /** Push-style streaming response with bounded blocking backpressure. */
+  public Response streaming(Consumer<ResponseStream> producer) {
+    checkActive();
+    this.stream = new ProducerInputStream(Objects.requireNonNull(producer), this);
+    this.streamLength = -1;
+    this.chunked = true;
+    this.pushStreaming = true;
+    this.body = null;
+    return this;
+  }
+
+  /** Adds a trailer rendered after the response body on both HTTP versions. */
+  public Response trailer(String name, String value) {
+    checkActive();
+    validateTrailer(name, value);
+    byte[] nameBytes = name.getBytes(StandardCharsets.US_ASCII);
+    byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
+    trailers.add(nameBytes, 0, nameBytes.length, valueBytes, 0, valueBytes.length);
+    return this;
+  }
+
+  /** Adds a pre-encoded structured trailer. */
+  public Response trailer(PreEncodedHeader trailer) {
+    checkActive();
+    byte[] name = trailer.nameBytes();
+    byte[] value = trailer.valueBytes();
+    validateTrailer(
+        new String(name, StandardCharsets.US_ASCII),
+        new String(value, StandardCharsets.US_ASCII));
+    trailers.add(name, 0, name.length, value, 0, value.length);
+    return this;
+  }
+
+  private static void validateTrailer(String name, String value) {
+    if (name.isEmpty() || name.charAt(0) == ':' || containsLineBreak(name)
+        || containsLineBreak(value)) {
+      throw new IllegalArgumentException("invalid response trailer");
+    }
+    if (name.equalsIgnoreCase("content-length")
+        || name.equalsIgnoreCase("transfer-encoding")
+        || name.equalsIgnoreCase("connection")
+        || name.equalsIgnoreCase("host")
+        || name.equalsIgnoreCase("te")
+        || name.equalsIgnoreCase("trailer")) {
+      throw new IllegalArgumentException("field is not permitted in response trailers: " + name);
+    }
+  }
+
+  private static boolean containsLineBreak(String value) {
+    return value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0;
   }
 
   /**
@@ -367,6 +428,12 @@ public class Response {
     return chunked;
   }
 
+  /** Internal distinction between producer-driven and InputStream-driven response bodies. */
+  public boolean isPushStreaming() {
+    checkActive();
+    return pushStreaming;
+  }
+
   public int getStatusCode() {
     checkActive();
     return statusCode;
@@ -395,6 +462,20 @@ public class Response {
   public long getStreamLength() {
     checkActive();
     return streamLength;
+  }
+
+  public boolean hasTrailers() {
+    checkActive();
+    return trailers.count() != 0;
+  }
+
+  public void writeTrailers(OutputStream output) throws IOException {
+    checkActive();
+    trailers.writeLines(output);
+  }
+
+  void forEachTrailerField(ResponseSerializer.FieldConsumer consumer) {
+    trailers.forEachStructured(consumer);
   }
 
   // -------------------------------------------------------------------------

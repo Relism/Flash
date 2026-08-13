@@ -73,7 +73,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 9 — HPACK encoder + h2 response path | done | `feature/core/http2` | Stateless static-table HPACK encoder; precompiled status/content-type/date fields; reusable response writer with header filtering, bounds, CONTINUATION splitting and fixed DATA happy path; HTTP/1/2 serializer parity test. EX-46 fixed the one-digit Date day-of-month bug. JMH: 174.309 ns/op, 0.001 B/op (noise floor), no GC. 603/603 tests green from a clean `-Pjmh` build. |
 | 10 — Stream state machine + dispatch | done | `feature/core/http2` | Explicit stream transition table, bounded primitive stream table and pool, pseudo-header/message validation, protocol-neutral `Request` assembly, virtual-thread dispatch and exception path, cancellation-safe release, raw h2c + Java HTTP/2 integration. Phase 11 closed the two deferred content-length/DATA cases; h2spec sections 5/8 are now 39/39. JMH pooled lifecycle: 458.499 ns/op, 0.003 B/op, no GC. 618/618 tests green at phase closure. |
 | 11 — DATA, flow control, bodies | done | `feature/core/http2` | Two-level receive/send flow control, consumption-driven WINDOW_UPDATE hysteresis, bounded/coalescing DATA pool, inline and blocking streaming request bodies through the existing `RequestBody`, resumable fixed/known/unknown response streams, content-length and empty-DATA validation. Real TLS HTTP/2 transfer: 100 MiB upload + 100 MiB download verified byte-for-byte. h2spec combined sections 5, 6.1, 6.9 and 8: 50 passed, 1 tool-skipped, 0 failed. JMH: inline materialization exactly one 1,040-byte array; request streaming 0.001 B/op; response streaming 0.002 B/op; full pooled lifecycle 0.003 B/op. 633/633 tests green from a clean `-Pjmh` build. |
-| 12 — Trailers, half-close, gRPC | not started | — | — |
+| 12 — Trailers, half-close, gRPC | done | `feature/core/http2` | Protocol-neutral request/response trailers, bounded push streaming, four half-close orderings and authority-form CONNECT tunnels complete. Real grpcurl 1.9.3 unary/server-streaming/error interop passes. EX-48/49 fixed. HTTP/2 remains opt-in until the Phase 13 hostile-peer gate (DEC-29). 649/649 tests green from a clean `-Pjmh` build. |
 | 13 — Security hardening & abuse resistance | not started | — | — |
 | 14 — h2c prior knowledge + proxy support | not started | — | — |
 | 15 — RFC 8441 extended CONNECT (WS over h2) | not started | — | — |
@@ -777,6 +777,22 @@ transition, mark queued/dispatched streams cancelled, and let the sole queue/wor
 the final release. The regression test sends a complete request, immediately resets it, then sends
 a second request and proves that only the second handler invocation and response occur. **Phase**:
 10.
+
+### EX-48 — HTTP/1.1 request trailers were parsed and discarded
+
+Found while exposing the protocol-neutral request trailer API. `ChunkedInputStream` consumed and
+bounded the final trailer section but discarded every field, so no honest API could provide the
+same semantics on HTTP/1.1 and HTTP/2. **Fix**: parse the bounded section into a connection-owned
+`MutableHeaderMap`, expose it through `Request.trailers()` only after body EOF, reject malformed and
+framing-sensitive fields, and add HTTP/1 parity/regression tests. **Phase**: 12.
+
+### EX-49 — CONNECT routes were registered as origin-form paths
+
+Found while exercising an HTTP/2 tunnel. The public `connect("authority", handler)` API passed
+through the ordinary path sanitizer, which prepended `/`; both HTTP/1.1 authority-form request
+targets and HTTP/2 `:authority` arrive without that prefix, so the existing CONNECT API could
+never match its documented target. **Fix**: normalize CONNECT authority targets separately in the
+shared router registration path and verify a live bidirectional HTTP/2 tunnel. **Phase**: 12.
 
 ---
 
@@ -2730,11 +2746,11 @@ error.
    boundary in `DECISIONS.md` as `DEC-08`.
 
 ### Safety checks
-- [ ] Trailers without `END_STREAM` rejected
-- [ ] Pseudo-headers in trailers rejected
-- [ ] Trailer count and size bounded (they go through the same HPACK limits)
-- [ ] `ResponseStream.write` after `close` throws, does not corrupt the stream
-- [ ] CONNECT tunnels are bounded by the same timeouts and flow control as normal streams
+- [x] Trailers without `END_STREAM` rejected
+- [x] Pseudo-headers in trailers rejected
+- [x] Trailer count and size bounded (they go through the same HPACK limits)
+- [x] `ResponseStream.write` after `close` throws, does not corrupt the stream
+- [x] CONNECT tunnels are bounded by the same timeouts and flow control as normal streams
 
 ### Tests
 - `Http2TrailersTest`, `Http1TrailersTest` (the h1 rendering), `TrailerParityTest`.
@@ -2748,11 +2764,12 @@ error.
 - `README.md` — the `ResponseStream` API, with a gRPC-shaped example.
 
 ### DoD
-- [ ] `grpcurl` completes a unary and a server-streaming call against a Flash handler.
-- [ ] Trailers work on both protocols through one API.
-- [ ] `FlashConfiguration.http2Enabled` flips to default `true` (the feature is now complete
+- [x] `grpcurl` completes a unary and a server-streaming call against a Flash handler.
+- [x] Trailers work on both protocols through one API.
+- [x] `FlashConfiguration.http2Enabled` flips to default `true` (the feature is now complete
       enough to be on by default) — or, if the team prefers a conservative rollout, stays
-      `false` with the decision recorded.
+      `false` with the decision recorded (`DEC-29`: retain opt-in until Phase 13's hostile-peer
+      suite is complete).
 
 ---
 

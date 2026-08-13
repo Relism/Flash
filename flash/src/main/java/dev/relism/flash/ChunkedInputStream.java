@@ -2,6 +2,8 @@ package dev.relism.flash;
 
 import dev.relism.flash.exceptions.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
+import dev.relism.flash.models.BodyCompletion;
+import dev.relism.flash.models.MutableHeaderMap;
 import dev.relism.flash.transport.BufferedByteSource;
 
 import java.io.IOException;
@@ -20,15 +22,28 @@ import java.io.InputStream;
  * {@link BufferedByteSource#prependOnce}, replacing the {@code SequenceInputStream}/
  * {@code ByteArrayInputStream} pair the previous implementation allocated per chunked request.
  */
-final class ChunkedInputStream extends InputStream {
+final class ChunkedInputStream extends InputStream implements BodyCompletion {
     private final BufferedByteSource src;
     private int     chunkRemaining = 0;
     private boolean done           = false;
     private int     chunksSeen     = 0;
+    private final MutableHeaderMap trailers;
+    private final byte[] trailerLine = new byte[Http1Limits.MAX_HEADER_VALUE_LENGTH];
+
+    ChunkedInputStream(BufferedByteSource src, byte[] preBuf, int preBufOff, int preBufLen,
+                       MutableHeaderMap trailers) {
+        this.src = src;
+        this.trailers = trailers;
+        if (preBufLen > 0) src.prependOnce(preBuf, preBufOff, preBufLen);
+    }
 
     ChunkedInputStream(BufferedByteSource src, byte[] preBuf, int preBufOff, int preBufLen) {
-        this.src = src;
-        if (preBufLen > 0) src.prependOnce(preBuf, preBufOff, preBufLen);
+        this(src, preBuf, preBufOff, preBufLen, new MutableHeaderMap());
+    }
+
+    @Override
+    public boolean fullyRead() {
+        return done;
     }
 
     @Override
@@ -129,7 +144,7 @@ final class ChunkedInputStream extends InputStream {
         int trailerCount = 0;
         while (true) {
             int b = src.read();
-            if (b == -1) return; // EOF mid-trailers — nothing left to bound.
+            if (b == -1) throw new MalformedRequestException(400, "Truncated trailer section");
             if (b == '\r') {
                 if (src.read() != '\n') {
                     throw new MalformedRequestException(400, "Malformed trailer section terminator");
@@ -139,12 +154,68 @@ final class ChunkedInputStream extends InputStream {
             if (++trailerCount > Http1Limits.MAX_TRAILER_COUNT) {
                 throw new MalformedRequestException(431, "Too many trailers");
             }
-            int lineLen = 1;
+            int lineLen = 0;
+            trailerLine[lineLen++] = (byte) b;
             while ((b = src.read()) != -1 && b != '\n') {
-                if (++lineLen > Http1Limits.MAX_HEADER_VALUE_LENGTH) {
+                if (lineLen == trailerLine.length) {
                     throw new MalformedRequestException(431, "Trailer line too long");
                 }
+                trailerLine[lineLen++] = (byte) b;
+            }
+            if (b != '\n' || lineLen == 0 || trailerLine[lineLen - 1] != '\r') {
+                throw new MalformedRequestException(400, "Malformed trailer line");
+            }
+            addTrailer(lineLen - 1);
+        }
+    }
+
+    private void addTrailer(int lineLength) throws MalformedRequestException {
+        int colon = -1;
+        for (int i = 0; i < lineLength; i++) {
+            if (trailerLine[i] == ':') { colon = i; break; }
+        }
+        if (colon <= 0) throw new MalformedRequestException(400, "Malformed trailer field");
+        for (int i = 0; i < colon; i++) {
+            int c = trailerLine[i] & 0xff;
+            if (!isToken(c)) {
+                throw new MalformedRequestException(400, "Invalid trailer field name");
             }
         }
+        int valueStart = colon + 1;
+        while (valueStart < lineLength
+            && (trailerLine[valueStart] == ' ' || trailerLine[valueStart] == '\t')) valueStart++;
+        int valueEnd = lineLength;
+        while (valueEnd > valueStart
+            && (trailerLine[valueEnd - 1] == ' ' || trailerLine[valueEnd - 1] == '\t')) valueEnd--;
+        if (forbidden(trailerLine, colon)) {
+            throw new MalformedRequestException(400, "Forbidden trailer field");
+        }
+        trailers.add(trailerLine, 0, colon, trailerLine, valueStart, valueEnd - valueStart);
+    }
+
+    private static boolean isToken(int c) {
+        return (c >= '0' && c <= '9')
+            || (c >= 'A' && c <= 'Z')
+            || (c >= 'a' && c <= 'z')
+            || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' || c == '\''
+            || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_'
+            || c == '`' || c == '|' || c == '~';
+    }
+
+    private static boolean forbidden(byte[] name, int length) {
+        return asciiEquals(name, length, "content-length")
+            || asciiEquals(name, length, "transfer-encoding")
+            || asciiEquals(name, length, "host")
+            || asciiEquals(name, length, "trailer");
+    }
+
+    private static boolean asciiEquals(byte[] bytes, int length, String expected) {
+        if (length != expected.length()) return false;
+        for (int i = 0; i < length; i++) {
+            int c = bytes[i] & 0xff;
+            if (c >= 'A' && c <= 'Z') c += 32;
+            if (c != expected.charAt(i)) return false;
+        }
+        return true;
     }
 }

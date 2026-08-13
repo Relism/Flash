@@ -52,6 +52,7 @@ import java.util.List;
 public class Request {
 
     private RequestBody body;
+    private HeaderView trailers = EmptyHeaderView.INSTANCE;
 
     /** Internal: the parsed request line (method, path, query, protocol, headers). */
     private RequestLine requestLine;
@@ -95,6 +96,7 @@ public class Request {
     void reset(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         this.requestLine   = requestLine;
         this.body          = body;
+        this.trailers      = EmptyHeaderView.INSTANCE;
         this.pathParams    = null;
         this.queryParams   = null;
         this.cachedPath    = null;
@@ -141,6 +143,11 @@ public class Request {
                                     InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         pooled.reset(requestLine, body, remoteAddress, sslSocket);
         return pooled;
+    }
+
+    /** Internal protocol hook that supplies the request's trailer collection. */
+    public void setTrailers(HeaderView trailers) {
+        this.trailers = trailers == null ? EmptyHeaderView.INSTANCE : trailers;
     }
 
     // ── Request line ──────────────────────────────────────────────────────────
@@ -252,6 +259,19 @@ public class Request {
      * The two modes are mutually exclusive per request.
      */
     public RequestBody body() { checkActive(); return body; }
+
+    /**
+     * Returns request trailers after the body has been consumed completely.
+     *
+     * @throws IllegalStateException when called before the body reaches EOF
+     */
+    public HeaderView trailers() {
+        checkActive();
+        if (!body.fullyRead()) {
+            throw new IllegalStateException("request trailers are available only after the body is fully read");
+        }
+        return trailers;
+    }
 
     /** Discards unread body bytes; called by the server after each request on keep-alive connections. */
     public void drain() { body.drain(); }

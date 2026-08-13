@@ -82,7 +82,9 @@ public final class Http1ResponseWriter {
 
         response.writeHeadersInto(head);
 
-        if (response.isStreaming()) {
+        if (response.hasTrailers()) {
+            writeTrailerBody(out, head, response, keepAlive, suppressBody, scratch);
+        } else if (response.isStreaming()) {
             writeStreamingBody(out, head, response, keepAlive, noContentAllowed, suppressBody, scratch);
         } else {
             byte[] body = response.getBody();
@@ -109,6 +111,28 @@ public final class Http1ResponseWriter {
         out.flush();
     }
 
+    private static void writeTrailerBody(OutputStream out, ByteWriter head, Response response,
+                                         boolean keepAlive, boolean suppressBody,
+                                         ConnectionScratch scratch) throws IOException {
+        head.writeBytes(TRANSFER_CHUNKED);
+        head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+        head.writeBytes(CRLF);
+        out.write(head.array(), 0, head.length());
+        if (suppressBody) return;
+        if (response.isStreaming()) {
+            writeChunked(out, response.getStream(), response, scratch);
+        } else {
+            byte[] body = response.getBody();
+            if (body != null && body.length != 0) {
+                writeHex(out, body.length);
+                out.write(CRLF);
+                out.write(body);
+                out.write(CRLF);
+            }
+            writeFinalChunk(out, response);
+        }
+    }
+
     private static void writeStreamingBody(OutputStream out, ByteWriter head, Response response, boolean keepAlive,
                                             boolean noContentAllowed, boolean suppressBody,
                                             ConnectionScratch scratch) throws IOException {
@@ -130,7 +154,7 @@ public final class Http1ResponseWriter {
             // A HEAD response still declares the Transfer-Encoding GET would have used (RFC
             // 9110 §9.3.2) but writes zero body bytes — not even the final-chunk marker, since
             // there is no chunk framing at all for a message with no body.
-            if (!suppressBody) writeChunked(out, response.getStream(), scratch);
+            if (!suppressBody) writeChunked(out, response.getStream(), response, scratch);
         }
     }
 
@@ -150,7 +174,8 @@ public final class Http1ResponseWriter {
         else { head.writeDecimal(statusCode); head.writeBytes(UNKNOWN_STATUS_SUFFIX); }
     }
 
-    private static void writeChunked(OutputStream out, InputStream stream, ConnectionScratch scratch) throws IOException {
+    private static void writeChunked(OutputStream out, InputStream stream, Response response,
+                                     ConnectionScratch scratch) throws IOException {
         byte[] buf = scratch.relayBuffer;
         int n;
         while ((n = stream.read(buf)) > 0) {
@@ -159,7 +184,15 @@ public final class Http1ResponseWriter {
             out.write(buf, 0, n);
             out.write(CRLF);
         }
-        out.write(FINAL_CHUNK);
+        if (response.hasTrailers()) writeFinalChunk(out, response);
+        else out.write(FINAL_CHUNK);
+    }
+
+    private static void writeFinalChunk(OutputStream out, Response response) throws IOException {
+        out.write('0');
+        out.write(CRLF);
+        response.writeTrailers(out);
+        out.write(CRLF);
     }
 
     private static void writeHex(OutputStream out, int value) throws IOException {

@@ -6,11 +6,12 @@ import dev.relism.flash.http2.Http2StreamException;
 import dev.relism.flash.http2.message.DataBufferPool.DataBuffer;
 import java.io.IOException;
 import java.io.InputStream;
+import dev.relism.flash.models.BodyCompletion;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /** Reusable request-body source fed by the connection demultiplexer. */
-public final class Http2RequestBody extends InputStream {
+public final class Http2RequestBody extends InputStream implements BodyCompletion {
   @FunctionalInterface
   public interface ConsumptionListener {
     void consumed(int flowControlledBytes) throws IOException;
@@ -30,6 +31,7 @@ public final class Http2RequestBody extends InputStream {
   private int inlineFlowControlledBytes;
   private boolean inlineMode;
   private boolean finished;
+  private boolean fullyRead;
 
   public Http2RequestBody(DataBufferPool pool) {
     this.pool = pool;
@@ -44,6 +46,7 @@ public final class Http2RequestBody extends InputStream {
     inlinePosition = 0;
     inlineFlowControlledBytes = 0;
     finished = false;
+    fullyRead = false;
     if (inlineMode && inline == null) inline = new byte[Http2Limits.INLINE_BODY_THRESHOLD];
   }
 
@@ -162,7 +165,10 @@ public final class Http2RequestBody extends InputStream {
           throw new IOException("interrupted while waiting for request DATA", interrupted);
         }
       }
-      if (head == null) return -1;
+      if (head == null) {
+        fullyRead = true;
+        return -1;
+      }
       DataBuffer buffer = head;
       copied = Math.min(length, buffer.length - buffer.position);
       System.arraycopy(buffer.bytes, buffer.position, target, offset, copied);
@@ -187,7 +193,10 @@ public final class Http2RequestBody extends InputStream {
     if (!finished) {
       throw new IOException("inline request body is not complete");
     }
-    if (inlinePosition == received) return -1;
+    if (inlinePosition == received) {
+      fullyRead = true;
+      return -1;
+    }
     int copied = (int) Math.min(length, received - inlinePosition);
     System.arraycopy(inline, inlinePosition, target, offset, copied);
     inlinePosition += copied;
@@ -197,6 +206,11 @@ public final class Http2RequestBody extends InputStream {
       notifyConsumed(flowControlled);
     }
     return copied;
+  }
+
+  @Override
+  public boolean fullyRead() {
+    return fullyRead || (finished && received == 0);
   }
 
   private void notifyConsumed(int bytes) {

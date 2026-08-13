@@ -84,7 +84,10 @@ public abstract class AbstractRouter {
      */
     public AbstractRouter doRegister(HttpMethod method, String path,
                                      RequestHandler handler, Middleware[] middlewares) {
-        return addRoute(method, PathUtils.sanitize(path), compile(handler, middlewares));
+        String target = method == HttpMethod.CONNECT
+                ? PathUtils.sanitizeAuthority(path)
+                : PathUtils.sanitize(path);
+        return addRoute(method, target, compile(handler, middlewares));
     }
 
     /**

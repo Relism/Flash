@@ -36,8 +36,10 @@ public final class Http2Stream
   private static final byte[] HTTP_2 = {'H', 'T', 'T', 'P', '/', '2'};
 
   private final HpackHeaderBlock headerBlock = new HpackHeaderBlock();
+  private final HpackHeaderBlock trailerBlock = new HpackHeaderBlock();
   private final PseudoHeaders pseudoHeaders = new PseudoHeaders();
   private final Http2HeaderMap headers = new Http2HeaderMap();
+  private final Http2HeaderMap trailers = new Http2HeaderMap();
   private final RequestLine requestLine = new RequestLine();
   private final RequestBody requestBody = new RequestBody();
   private final Http2RequestBody http2Body;
@@ -92,6 +94,8 @@ public final class Http2Stream
     resumeTask = false;
     responseSink = null;
     headerBlock.reset();
+    trailerBlock.reset();
+    trailers.reset(trailerBlock);
   }
 
   void clear() {
@@ -131,7 +135,9 @@ public final class Http2Stream
     }
     requestLine.reset(method, path, question < 0 ? null : query, protocol, headers);
     requestBody.reset(http2Body, http2Body.declaredLength(), null, 0, 0);
-    return Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+    Request assembled = Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+    assembled.setTrailers(trailers);
+    return assembled;
   }
 
   public void validateHeaders() {
@@ -156,6 +162,11 @@ public final class Http2Stream
 
   public void finishRequestBody() {
     http2Body.finish(id);
+  }
+
+  public void validateTrailers() {
+    PseudoHeaders.validateTrailers(trailerBlock, id);
+    trailers.reset(trailerBlock);
   }
 
   private long parseContentLength() {
@@ -215,6 +226,10 @@ public final class Http2Stream
 
   public HpackHeaderBlock headerBlock() {
     return headerBlock;
+  }
+
+  public HpackHeaderBlock trailerBlock() {
+    return trailerBlock;
   }
 
   public Http2ResponseWriter responseWriter() {

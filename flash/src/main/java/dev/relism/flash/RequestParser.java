@@ -5,6 +5,7 @@ import dev.relism.flash.exceptions.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.Http1HeaderMap;
+import dev.relism.flash.models.MutableHeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestBody;
 import dev.relism.flash.models.RequestLine;
@@ -57,6 +58,7 @@ public class RequestParser {
     private final InetSocketAddress remoteAddress;
     private final SSLSocket         sslSocket;
     private final Http1HeaderMap    headerMap   = new Http1HeaderMap();
+    private final MutableHeaderMap  trailerMap  = new MutableHeaderMap();
     // request — same idiom as headerMap above.
     private final RequestLine       requestLine = new RequestLine();
     private final Request           request     = new Request();
@@ -115,6 +117,7 @@ public class RequestParser {
      * @throws IOException on genuine I/O failure (socket reset, timeout).
      */
     public Request parse(BufferedByteSource in) throws IOException {
+        trailerMap.reset();
         // Snapshot leftover bytes from the previous request, then reset immediately.
         // Any exception thrown below leaves bufBase/bufLen at 0 — safe state.
         int base      = bufBase;
@@ -293,11 +296,15 @@ public class RequestParser {
         // is handled by the same call: preBufLen is already forced to 0 for it above) or the
         // chunked case, never reallocated.
         if (isChunked) {
-            requestBody.reset(new ChunkedInputStream(in, buffer, bodyStart, preBufLen), -1L, null, 0, 0);
+            requestBody.reset(
+                    new ChunkedInputStream(in, buffer, bodyStart, preBufLen, trailerMap),
+                    -1L, null, 0, 0);
         } else {
             requestBody.reset(in, contentLength, buffer, bodyStart, preBufLen);
         }
-        return Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+        Request parsed = Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+        parsed.setTrailers(trailerMap);
+        return parsed;
     }
 
     /**

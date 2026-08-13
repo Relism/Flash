@@ -68,7 +68,7 @@ class ChunkedInputStreamTest {
     @Test
     void trailers_consumed() throws IOException {
         // trailing headers after 0-chunk must be consumed
-        assertEquals("hi", readAll(wrap("2\r\nhi\r\n0\r\nTrailer: value\r\n\r\n")));
+        assertEquals("hi", readAll(wrap("2\r\nhi\r\n0\r\nX-Trailer: value\r\n\r\n")));
     }
 
     // --- byte-by-byte read ---

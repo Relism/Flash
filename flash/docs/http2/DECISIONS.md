@@ -981,3 +981,22 @@ the allocation noise floor.
 window and pool byte capacity together; never raise credit independently of bounded storage.
 
 ---
+
+## DEC-29 — Keep HTTP/2 opt-in until the adversarial phase is complete
+
+**Context.** Trailers and push streaming make the protocol feature-complete for ordinary and gRPC-
+shaped traffic, but the dedicated rate-based and composite abuse controls are deliberately owned
+by the following security phase.
+
+**Decision.** Keep `FlashConfiguration.http2Enabled` defaulting to `false` during this phase.
+Applications can enable the complete path explicitly; the default changes only after the hostile-
+peer suite and its limits are green.
+
+**Consequence.** Existing deployments do not silently expose a newly completed protocol before its
+adversarial gate. This is rollout sequencing, not an architectural separation: both protocols use
+the same public request/response, header, trailer and streaming APIs.
+
+**Revisit when.** At Phase 13 closure; either flip the default with evidence or record why it must
+remain opt-in.
+
+---

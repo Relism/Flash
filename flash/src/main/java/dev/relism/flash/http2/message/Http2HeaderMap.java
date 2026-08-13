@@ -35,6 +35,10 @@ public final class Http2HeaderMap implements HeaderView {
     }
   }
 
+  public void reset(HpackHeaderBlock block) {
+    reset(block, null);
+  }
+
   @Override
   public String first(String name) {
     ByteView value = find(name, scanValue);
@@ -54,7 +58,8 @@ public final class Http2HeaderMap implements HeaderView {
           new String(
               scanValue.array(), scanValue.offset(), scanValue.length(), StandardCharsets.UTF_8));
     }
-    if (result == null && isAuthorityAlias(name) && pseudoHeaders.authority().array() != null) {
+    if (result == null && pseudoHeaders != null
+        && isAuthorityAlias(name) && pseudoHeaders.authority().array() != null) {
       return List.of(string(pseudoHeaders.authority()));
     }
     return result == null ? List.of() : result;
@@ -108,7 +113,8 @@ public final class Http2HeaderMap implements HeaderView {
         return target;
       }
     }
-    if (isAuthorityAlias(requested) && pseudoHeaders.authority().array() != null) {
+    if (pseudoHeaders != null
+        && isAuthorityAlias(requested) && pseudoHeaders.authority().array() != null) {
       PooledSlice authority = pseudoHeaders.authority();
       target.reset(authority.array(), authority.offset(), authority.length());
       return target;

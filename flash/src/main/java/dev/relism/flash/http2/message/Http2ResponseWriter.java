@@ -46,10 +46,13 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
   private long bodyRemaining;
   private int fixedPosition;
   private boolean unknownLength;
+  private boolean pushBody;
   private boolean finished;
   private boolean headersInBatch;
   private boolean endStreamInBatch;
   private int dataBytesInBatch;
+  private boolean trailerHeadersInBatch;
+  private Response response;
 
   public Http2ResponseWriter() {
     this(1024, 2048);
@@ -104,6 +107,7 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     this.streamId = streamId;
     this.huffmanDynamicValues = huffmanDynamicValues;
     this.maxHeaderListSize = maxHeaderListSize;
+    this.response = response;
     headerListSize = 0;
     next = null;
 
@@ -121,12 +125,14 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     }
 
     ResponseSerializer.forEachCustomField(response, this);
-    writeHeaderFrames(maxFrameSize, suppressBody || bodyLength == 0);
+    boolean hasTrailers = response.hasTrailers() && !suppressBody;
+    writeHeaderFrames(maxFrameSize, suppressBody || (bodyLength == 0 && !hasTrailers));
     if (!suppressBody && bodyLength > 0) {
-      frames.beginFrame(FrameType.DATA, FrameFlags.END_STREAM, streamId);
+      frames.beginFrame(FrameType.DATA, hasTrailers ? 0 : FrameFlags.END_STREAM, streamId);
       output.writeBytes(body);
       frames.endFrame();
     }
+    if (hasTrailers) appendTrailers(maxFrameSize);
     return true;
   }
 
@@ -157,10 +163,13 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     headersInBatch = true;
     endStreamInBatch = false;
     dataBytesInBatch = 0;
+    trailerHeadersInBatch = false;
+    this.response = response;
     fixedPosition = 0;
     fixedBody = response.isStreaming() ? null : response.getBody();
     streamBody = response.isStreaming() ? response.getStream() : null;
     unknownLength = response.isStreaming() && response.isChunked();
+    pushBody = response.isPushStreaming();
     if (response.isStreaming() && !unknownLength && response.getStreamLength() < 0) {
       throw new IllegalArgumentException("known response stream length must not be negative");
     }
@@ -195,8 +204,14 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     ResponseSerializer.forEachCustomField(response, this);
 
     boolean hasBody = unknownLength || bodyRemaining > 0;
-    writeHeaderFrames(maxFrameSize, !hasBody);
-    finished = !hasBody;
+    boolean hasTrailers = !headRequest && !bodyForbidden && response.hasTrailers();
+    writeHeaderFrames(maxFrameSize, !hasBody && !hasTrailers);
+    finished = !hasBody && !hasTrailers;
+    if (!hasBody && hasTrailers) {
+      appendTrailers(maxFrameSize);
+      finished = true;
+      endStreamInBatch = true;
+    }
     if (hasBody && availableFlowWindow > 0) {
       appendData(maxFrameSize, availableFlowWindow);
     }
@@ -211,6 +226,7 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     headersInBatch = false;
     endStreamInBatch = false;
     dataBytesInBatch = 0;
+    trailerHeadersInBatch = false;
     appendData(maxFrameSize, availableFlowWindow);
     return dataBytesInBatch;
   }
@@ -221,8 +237,10 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     boolean end;
     if (fixedBody != null) {
       count = (int) Math.min(target, bodyRemaining);
+      boolean finalData = count == bodyRemaining;
+      boolean trailersFollow = finalData && response.hasTrailers();
       frames.beginFrame(
-          FrameType.DATA, count == bodyRemaining ? FrameFlags.END_STREAM : 0, streamId);
+          FrameType.DATA, finalData && !trailersFollow ? FrameFlags.END_STREAM : 0, streamId);
       output.writeBytes(fixedBody, fixedPosition, count);
       frames.endFrame();
       fixedPosition += count;
@@ -232,21 +250,27 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       int limit = unknownLength ? target : (int) Math.min(target, bodyRemaining);
       count = 0;
       boolean eof = false;
-      while (count < limit) {
-        int read = streamBody.read(relay, count, limit - count);
-        if (read < 0) {
-          eof = true;
-          break;
-        }
-        if (read == 0) {
-          int one = streamBody.read();
-          if (one < 0) {
+      if (pushBody) {
+        int read = streamBody.read(relay, 0, limit);
+        if (read < 0) eof = true;
+        else count = read;
+      } else {
+        while (count < limit) {
+          int read = streamBody.read(relay, count, limit - count);
+          if (read < 0) {
             eof = true;
             break;
           }
-          relay[count++] = (byte) one;
-        } else {
-          count += read;
+          if (read == 0) {
+            int one = streamBody.read();
+            if (one < 0) {
+              eof = true;
+              break;
+            }
+            relay[count++] = (byte) one;
+          } else {
+            count += read;
+          }
         }
       }
       if (!unknownLength) {
@@ -256,13 +280,29 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
         }
       }
       end = unknownLength ? eof : bodyRemaining == 0;
-      frames.beginFrame(FrameType.DATA, end ? FrameFlags.END_STREAM : 0, streamId);
-      output.writeBytes(relay, 0, count);
-      frames.endFrame();
+      boolean trailersFollow = end && response.hasTrailers();
+      if (count != 0 || !trailersFollow) {
+        frames.beginFrame(FrameType.DATA, end && !trailersFollow ? FrameFlags.END_STREAM : 0, streamId);
+        output.writeBytes(relay, 0, count);
+        frames.endFrame();
+      }
     }
     dataBytesInBatch = count;
-    endStreamInBatch = end;
+    if (end && response.hasTrailers()) {
+      appendTrailers(maxFrameSize);
+      endStreamInBatch = true;
+    } else {
+      endStreamInBatch = end;
+    }
     finished = end;
+  }
+
+  private void appendTrailers(int maxFrameSize) {
+    headerBlock.reset();
+    headerListSize = 0;
+    ResponseSerializer.forEachTrailerField(response, this);
+    writeHeaderFrames(maxFrameSize, true);
+    trailerHeadersInBatch = true;
   }
 
   public boolean finished() {
@@ -279,6 +319,10 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
 
   public int dataBytesInBatch() {
     return dataBytesInBatch;
+  }
+
+  public boolean trailerHeadersInBatch() {
+    return trailerHeadersInBatch;
   }
 
   @Override

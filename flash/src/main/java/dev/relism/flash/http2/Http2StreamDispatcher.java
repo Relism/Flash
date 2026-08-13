@@ -115,7 +115,8 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
         else if (result != null) response.setBody(result);
       }
 
-      request.drain();
+      boolean pushStreaming = response.isPushStreaming();
+      if (!pushStreaming) request.drain();
       Http2ResponseWriter responseWriter = stream.responseWriter();
       if (stream.cancelled()) {
         request.recycle();
@@ -148,8 +149,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
         }
         firstResponse = false;
       }
-      request.recycle();
-      if (response == pooled) pooled.recycle();
+      if (!pushStreaming) request.recycle();
       stream.markResponseStarted();
       applyBatchTransition(stream, responseWriter);
       if (!stream.beginResponseBatch()) {
@@ -170,8 +170,10 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     Http2ResponseWriter responseWriter = stream.responseWriter();
     if (responseWriter.finished()) {
       stream.endResponseBatch();
-      streams.remove(stream.id());
-      streams.release(stream);
+      if (stream.state() == Http2StreamState.CLOSED) {
+        streams.remove(stream.id());
+        streams.release(stream);
+      }
       return;
     }
     int reserved = flowController.reserveSend(stream, peerSettings.maxFrameSize());
@@ -202,17 +204,25 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   private static void applyBatchTransition(
       Http2Stream stream, Http2ResponseWriter responseWriter) {
     if (responseWriter.headersInBatch()) {
-      if (responseWriter.finished() && responseWriter.dataBytesInBatch() == 0) {
+      if (responseWriter.finished() && responseWriter.dataBytesInBatch() == 0
+          && !responseWriter.trailerHeadersInBatch()) {
         stream.transition(Http2StreamState.Event.SEND_HEADERS_ES);
         return;
       }
       stream.transition(Http2StreamState.Event.SEND_HEADERS);
     }
     if (responseWriter.dataBytesInBatch() != 0 || responseWriter.endStreamInBatch()) {
-      stream.transition(
-          responseWriter.endStreamInBatch()
-              ? Http2StreamState.Event.SEND_DATA_ES
-              : Http2StreamState.Event.SEND_DATA);
+      if (responseWriter.dataBytesInBatch() != 0) {
+        stream.transition(
+            responseWriter.endStreamInBatch() && !responseWriter.trailerHeadersInBatch()
+                ? Http2StreamState.Event.SEND_DATA_ES
+                : Http2StreamState.Event.SEND_DATA);
+      }
+      if (responseWriter.trailerHeadersInBatch()) {
+        stream.transition(Http2StreamState.Event.SEND_HEADERS_ES);
+      } else if (responseWriter.dataBytesInBatch() == 0 && responseWriter.endStreamInBatch()) {
+        stream.transition(Http2StreamState.Event.SEND_DATA_ES);
+      }
     }
   }
 
@@ -220,12 +230,19 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   public void responseBatchCompleted(Http2Stream stream) {
     stream.endResponseBatch();
     if (stream.id() == 0) return;
-    if (stream.cancelled() || stream.responseWriter().finished()) {
+    if (stream.cancelled()) {
       streams.remove(stream.id());
       streams.release(stream);
-    } else {
-      scheduleResume(stream);
+      return;
     }
+    if (stream.responseWriter().finished()) {
+      if (stream.state() == Http2StreamState.CLOSED) {
+        streams.remove(stream.id());
+        streams.release(stream);
+      }
+      return;
+    }
+    scheduleResume(stream);
   }
 
   private void failAndRelease(Http2Stream stream, Http2ErrorCode error, Exception cause) {
