@@ -106,7 +106,7 @@ public class RequestParser {
      * complete), so an idle-timeout wait on the underlying source would wait for bytes that
      * were never going to arrive there — they are already here.
      */
-    boolean hasBufferedBytes() {
+    public boolean hasBufferedBytes() {
         return bufLen > 0;
     }
 

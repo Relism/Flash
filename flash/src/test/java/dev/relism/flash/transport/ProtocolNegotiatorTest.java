@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * {@link ProtocolNegotiator#negotiate} is a pure, directly-testable detector (see its Javadoc
  * for why it does not itself consult {@code FlashConfiguration.http2Enabled}) — every case here
- * calls it directly rather than through {@code HttpServer}.
+ * calls it directly rather than through {@code Http1Connection}/{@code ConnectionRunner}.
  */
 class ProtocolNegotiatorTest {
 
@@ -84,7 +84,7 @@ class ProtocolNegotiatorTest {
 
     /**
      * Binds a real TLS listener offering {@code serverAlpn}, connects a client offering
-     * {@code clientAlpn}, forces the handshake on both sides (mirroring {@code HttpServer}'s
+     * {@code clientAlpn}, forces the handshake on both sides (mirroring {@code Http1Connection}/{@code ConnectionRunner}'s
      * EX-30 fix), and hands the accepted server-side socket to {@code assertion}.
      */
     private static void withNegotiatedAlpn(Path dir, String[] serverAlpn, String[] clientAlpn,

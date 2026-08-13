@@ -263,20 +263,25 @@ upgrading `Request` — no separate TLS state is tracked for WS.
 ## Architecture
 
 ```
-ServerSocket.accept()
-  → RequestParser.parse()       # zero-alloc header parsing, buffer reuse across keep-alive
-  → GlobalRouter.route()        # two-tier: mounted sub-routers (longest prefix) then FastPathRouterImpl
-  → RequestHandler.handle()     # user handler; return value sets body
-  → Request.drain()             # consume unread body for keep-alive
-  → HttpServer writes response  # status line, headers, then fixed or chunked body
-  → loop or close socket        # based on Connection header
+TransportFactory.create()           # binds every listener, wires the connection runner
+  → AcceptLoop                      # one per listener × accept thread; hands sockets off
+  → ConnectionRunner.accept()       # per-connection setup: TLS handshake, protocol negotiation
+      → ProtocolNegotiator          # ALPN / h2c-preface — decides the protocol once
+      → Http1Connection.run()       # the ConnectionProtocol seam; HTTP/2 plugs in here later
+          → RequestParser.parse()       # zero-alloc header parsing, buffer reuse across keep-alive
+          → GlobalRouter.route()        # two-tier: mounted sub-routers (longest prefix) then FastPathRouterImpl
+          → RequestHandler.handle()     # user handler; return value sets body
+          → Request.drain()             # consume unread body for keep-alive
+          → Http1ResponseWriter.write() # status line, headers, then fixed or chunked body
+          → loop or close socket        # based on Connection header, or ServerLifecycle draining
 ```
 
-- **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`). Java 21 required.
+- **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`, owned by `TransportFactory`). Java 21 required.
 - **Zero-allocation router** — `FastPathRouterImpl` uses `fpr-core`, a byte-level FSM that matches on `METHOD + path` bytes with no per-request allocation.
 - **Keep-alive** — `RequestParser` reuses its header buffer across requests on the same connection.
 - **Chunked transfer** — both chunked request bodies (decoded via `ChunkedInputStream`) and chunked response bodies are supported.
 - **TLS is transport-only** — see [TLS](#tls). Listeners bind either a plain `ServerSocket` or an `SSLServerSocket`; nothing downstream of `accept()` branches on which.
+- **`ConnectionProtocol` seam** — h1 and h2 (in progress, see `flash/docs/http2/`) are peers behind this interface, decided once per connection by `ProtocolNegotiator`, never by an `if` inside shared code. See `flash/docs/http2/TRANSPORT.md` for the full component breakdown.
 
 ## Build & test
 

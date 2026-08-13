@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * One test per rejection rule added in HTTP/2 plan Phase 1 (EX-02, EX-03, EX-08, EX-18, EX-35,
  * EX-36), each asserting the specific status code {@link MalformedRequestException} carries —
- * not merely that some exception was thrown. {@code HttpServer} always closes the connection
+ * not merely that some exception was thrown. {@code Http1Connection}/{@code ConnectionRunner} always closes the connection
  * after any of these (never keep-alive); that behaviour is exercised at the integration level
  * by {@code HttpServerTest}.
  */

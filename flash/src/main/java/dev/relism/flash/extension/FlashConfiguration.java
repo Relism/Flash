@@ -109,6 +109,14 @@ public class FlashConfiguration {
     @Builder.Default
     boolean http2Enabled = false;
 
+    /**
+     * Whether every response includes a {@code Date} header (RFC 9110 §6.6.1). Default
+     * {@code true}; set {@code false} if Flash sits behind a reverse proxy that already adds
+     * one, to skip the (already cheap — see {@code dev.relism.flash.http.DateHeader}) write.
+     */
+    @Builder.Default
+    boolean sendDate = true;
+
     /** One bind target: a TCP port, an optional bind host (default: all interfaces), and optional TLS. */
     public record Listener(int port, String host, TlsConfig tls) {
         public Listener(int port)               { this(port, null, null); }

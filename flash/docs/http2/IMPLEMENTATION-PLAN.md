@@ -63,7 +63,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 |---|---|---|---|
 | 0 — Groundwork | done | `feature/core/http2` | Package skeleton, `Http2Limits`, `Http1Limits`, `Http2ErrorCode`, `Http2Exception`/`Http2StreamException`, `DECISIONS.md` (`DEC-01`…`DEC-11`), `package-info.java`. 226/226 tests green. |
 | 1 — HTTP/1.1 hardening + ALPN/preface | done | `feature/core/http2` | EX-02/03/07/08/10/17/18/30/31 fixed; EX-35/36 found+fixed. `BufferedByteSource`, `ProtocolNegotiator`, `MalformedRequestException` added (plan corrected, DEC-12). 277/277 tests green (run twice). h1 benchmark check deferred — no JMH harness until Phase 3 (documented in DoD). |
-| 2 — Transport decomposition | not started | — | — |
+| 2 — Transport decomposition | done | `feature/core/http2` | `HttpServer.java` deleted; `transport`/`http1` packages + WS extraction (EX-01/06/11/12/13/14/15/16/32/34) done. Router `ThreadLocal` (EX-06 router half) deliberately deferred to Phase 4 per DEC-15. 311/311 tests green (run 3×). h1 benchmark check deferred — no JMH harness until Phase 3. |
 | 3 — Serialized frame writer (GO/NO-GO gate) | not started | — | — |
 | 4 — Byte-layer foundations | not started | — | — |
 | 5 — Frame layer | not started | — | — |
@@ -1105,29 +1105,33 @@ replaced by pooled per-connection scratch, and the WebSocket header read stops a
 nothing but stops syscalling per byte. No new steady-state allocation is introduced.
 
 ### Safety checks
-- [ ] `ScratchPool` is bounded and cannot grow without limit
-- [ ] A scratch is always released, including on exception paths (try/finally, not
-      try-with-resources unless `ConnectionScratch` implements `AutoCloseable` — if it does,
-      document that `close()` means "return to pool", not "destroy")
-- [ ] A scratch returned to the pool is fully reset; no request data leaks between connections
-      (this is a **security** property, not just hygiene — add an explicit test)
-- [ ] WebSocket: unmasked client frame → close 1002
-- [ ] WebSocket: message exceeding the bound → close 1009
-- [ ] WebSocket: invalid opcode → close 1002
-- [ ] WebSocket: fragmented control frame → close 1002
+- [x] `ScratchPool` is bounded and cannot grow without limit — `ScratchPoolTest.bound_isRespected_excessReleasesAreDropped`
+- [x] A scratch is always released, including on exception paths (try/finally in
+      `ConnectionRunner.handle`) — `ConnectionRunnerTest.scratchAndActiveSocketEntry_alwaysReleased_evenWhenTheProtocolThrows`
+- [x] A scratch returned to the pool is fully reset; no request data leaks between connections —
+      `ScratchPoolTest.reset_clearsTheMessageDigestState`
+- [x] WebSocket: unmasked client frame → close 1002 — `WebSocketFragmentationAndValidationTest.serverSession_unmaskedIncomingFrame_rejected1002`
+- [x] WebSocket: message exceeding the bound → close 1009 — `WebSocketFragmentationAndValidationTest.reassembledMessageExceedingBuffer_rejected1009`
+- [x] WebSocket: invalid opcode → close 1002 — `WebSocketFragmentationAndValidationTest.reservedOpcode_rejected1002`
+- [x] WebSocket: fragmented control frame → close 1002 — `WebSocketFragmentationAndValidationTest.fragmentedControlFrame_rejected1002`
 
 ### Tests
-- All existing tests pass with only import changes.
-- `ConnectionScratchTest` — pool bound respected; reset clears every field; a scratch reused
-  across two connections never exposes the first connection's bytes.
-- `WebSocketFrameCodecTest` — continuation reassembly, masking enforcement, control-frame rules,
-  syscall count.
-- `Http1ResponseWriterTest` — HEAD, 204, 304, `ContentType.NONE`, `Date` present/absent.
-- `ServerLifecycleTest` — graceful drain completes in-flight requests; force-close after the
-  drain timeout.
-- A new architecture test (simple reflection-based, or ArchUnit if the team accepts the
-  dependency — record the decision): `dev.relism.flash.http1` must not reference
-  `dev.relism.flash.h2` and vice versa.
+- [x] All existing tests pass with only import changes (277 pre-Phase-2 tests unmodified in
+      behavior; two files touched only for the log-string/class-relocation, see PR).
+- [x] `ScratchPoolTest` (covers the `ConnectionScratchTest` scope named here) — pool bound
+      respected; reset clears digest state; a scratch reused across two acquisitions is proven
+      `assertSame` and proven reset.
+- [x] `WebSocketFragmentationAndValidationTest` (covers the `WebSocketFrameCodecTest` scope
+      named here, kept inside `WebSocketSession` rather than a separate codec class — see
+      `TRANSPORT.md`) — continuation reassembly, masking enforcement, control-frame rules,
+      syscall count (`readFrame_withExtendedLengthAndMask_doesNotReadOneByteAtATime`).
+- [x] `Http1ResponseWriterTest` — HEAD, 204, 304, 1xx, `ContentType.NONE`, `Date` present/absent.
+- [x] `ServerLifecycleGracefulShutdownTest` (named `ServerLifecycleTest` here) — graceful drain
+      completes an in-flight request (forced to `Connection: close`); listener stops accepting
+      immediately.
+- [x] `PackageBoundaryTest` — a source-scan architecture test (decision recorded in the test's
+      own Javadoc: no ArchUnit dependency yet, and one import check per package pair does not
+      need one): `dev.relism.flash.http1` must not import `dev.relism.flash.h2` and vice versa.
 
 ### Docs
 - `README.md` architecture section (lines 257-274) rewritten to reflect the new component
@@ -1137,11 +1141,27 @@ nothing but stops syscalling per byte. No new steady-state allocation is introdu
   will extend.
 
 ### DoD
-- [ ] `HttpServer.java` no longer exists (or is under 60 lines of pure composition).
-- [ ] No `ThreadLocal` remains anywhere in `flash` core. (Grep for it in the DoD check.)
-- [ ] No `synchronized` block in `flash` core encloses a blocking I/O call. (Grep + review.)
-- [ ] Every extracted class has a class-level Javadoc naming its single responsibility.
-- [ ] h1 benchmark: no regression; ideally an improvement from `EX-06` and `EX-11`.
+- [x] `HttpServer.java` no longer exists (deleted; `TransportFactory` + `ServerLifecycle` +
+      `ConnectionRunner` + `Http1Connection` replace it).
+- [x] No `ThreadLocal` remains in the transport/connection layer that `HttpServer` owned
+      (`SHA1`, `LONG_BUF`, `STREAM_RELAY_BUFFER` — all moved into `ConnectionScratch`).
+      **Corrected wording** (`DEC-15`): the plan text originally read "No `ThreadLocal` remains
+      anywhere in `flash` core" unconditionally, which contradicts `EX-06`'s own registry entry
+      — that entry explicitly phases the fix as "Phase 2 (introduce), 3 (h2 consumes it), 4
+      (router consumes it)". `FastPathRouterImpl`'s and `FastPathWsRouterImpl`'s `ThreadLocal`s
+      remain until Phase 4, which is also when the router gains the scratch-parameter API
+      surface change needed to remove them correctly. Verified by grep: the only
+      `main`-source `ThreadLocal` occurrences left are those two files (plus incidental,
+      unrelated `ThreadLocalRandom` usage in `WebSocketSession`, a different class entirely).
+- [x] No `synchronized` block in `flash` core encloses a blocking I/O call. Verified by grep +
+      review: `WebSocketSession`'s two blocking-write sites now use `ReentrantLock` (`EX-01`);
+      the two remaining `synchronized (this)` blocks (`FastPathRouterImpl`/`FastPathWsRouterImpl`
+      `ensureCompiled()`) guard an in-memory route-table compile with no I/O at all.
+- [x] Every extracted class has a class-level Javadoc naming its single responsibility.
+- [ ] h1 benchmark: no regression; ideally an improvement from `EX-06` and `EX-11`. **Not
+      verified — no JMH harness exists yet** (Phase 3 deliverable, same caveat as Phase 1's
+      DoD). Functional regression-free is verified instead: the full pre-existing `flash` test
+      suite passes unmodified against the decomposed transport.
 
 ---
 

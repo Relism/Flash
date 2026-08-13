@@ -371,3 +371,66 @@ codebase's error-status convention, while the distinct type is what lets `HttpSe
 at the parse site specifically.
 
 **Revisit when.** Not expected to be revisited.
+
+---
+
+## DEC-15 — Phase 2 plan correction: the "no `ThreadLocal` anywhere" DoD line was inconsistent with `EX-06`'s own phasing
+
+**Context.** Phase 2's DoD stated flatly: "No `ThreadLocal` remains anywhere in `flash` core."
+`EX-06`'s registry entry — the fix this DoD line is checking — explicitly phases itself:
+"**Phase**: 2 (introduce), 3 (h2 consumes it), 4 (router consumes it)." `FastPathRouterImpl` and
+`FastPathWsRouterImpl`'s `ThreadLocal`s (`MatchResult`, `MethodPathByteView`) are the "router
+consumes it" part, assigned to Phase 4 — where the router also gains the scratch-parameter (or
+request-context) API surface change needed to remove them correctly, per `EX-06`'s own fix
+description ("the router now takes the scratch as a parameter or reads it from the request's
+context"). Taken literally, Phase 2's DoD line would have required either doing Phase 4's router
+work two phases early (undermining the reason `EX-06` was split across phases in the first
+place — the router-facing API change is more invasive and deserves its own phase) or leaving the
+DoD unresolvable.
+
+**Options.**
+1. Do the full router `ThreadLocal` removal now, in Phase 2, to satisfy the DoD line literally.
+2. Correct the DoD line to match `EX-06`'s already-considered phasing, and record why.
+
+**Decision.** Option 2.
+
+**Consequence.** Phase 2 removes every `ThreadLocal` `HttpServer` itself owned (`SHA1`,
+`LONG_BUF`, `STREAM_RELAY_BUFFER` — all now fields on `ConnectionScratch`). The router's two
+`ThreadLocal`s are explicitly left for Phase 4, tracked there, not silently dropped — this is
+still R10-compliant (the defect is registered and scheduled, not ignored) and keeps Phase 2
+scoped to what it already set out to do (kill the `HttpServer` god class), rather than absorbing
+an unrelated API-surface change under deadline pressure.
+
+**Revisit when.** N/A — resolved; Phase 4 closes the remaining `EX-06` scope.
+
+---
+
+## DEC-16 — No separate `WebSocketFrameCodec` class; the `EX-11`/`EX-12` fixes stay inside `WebSocketSession`
+
+**Context.** Phase 2's file list named `dev.relism.flash.websocket.WebSocketFrameCodec.java`,
+extracted from `WebSocketSession`, as a Phase 2 deliverable — motivated by R6 (no god classes)
+and by a forward reference in Phase 15 ("this requires abstracting its InputStream/OutputStream
+pair behind a small interface — which the Phase 2 WebSocketFrameCodec extraction should already
+have made possible").
+
+**Options.**
+1. Extract a `WebSocketFrameCodec` operating on byte arrays/scratch buffers, with
+   `WebSocketSession` calling into it for encode/decode and owning only the actual stream I/O.
+2. Keep frame encode/decode inside `WebSocketSession`, where it already lived.
+
+**Decision.** Option 2, for this phase.
+
+**Consequence.** `WebSocketSession` after the `EX-01`/`EX-11`/`EX-12` fixes is ~360 lines — over
+R6's soft ~250-line guidance, but R6 itself carves out exactly this case: "a 300-line class that
+is one cohesive state machine ... is fine; a 150-line class doing two things is not." Frame
+header decode, continuation reassembly, and masking are one state machine (RFC 6455 §5's frame
+grammar), not two unrelated responsibilities glued together, so the soft guidance's exception
+applies. Splitting it now, before any concrete second caller exists, risks the "artificial
+split that doesn't reduce complexity" R6 also warns against implicitly — there is no code today
+that would consume a standalone codec except `WebSocketSession` itself. Phase 15's forward
+reference is noted and re-evaluated then: if RFC 8441 (WebSocket over h2) genuinely needs frame
+encode/decode decoupled from a socket-backed `InputStream`/`OutputStream` pair (an h2 stream is
+not one), the extraction happens at that point, with a real second shape driving the interface
+instead of a speculative one.
+
+**Revisit when.** Phase 15, when RFC 8441's transport requirements are concrete.
