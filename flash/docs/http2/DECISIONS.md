@@ -884,3 +884,24 @@ floor (0.001 B/op).
 **Revisit when.** Profiling shows compaction is material under realistic dynamic-table churn.
 
 ---
+
+## DEC-25 — Keep response-dependent h2spec gates with the phases that own the response path
+
+**Context.** The Phase 8 checklist names whole h2spec sections 4 and 6.9, but several tests in
+those sections require a successful response HEADERS/DATA sequence or per-stream flow-control
+state. Those mechanisms are explicitly introduced in Phases 9–11. Making the whole sections green
+now would require a temporary response/stream implementation in the connection state machine and
+then deleting it immediately.
+
+**Decision.** Phase 8 closes on every connection-owned h2spec case plus the complete unit,
+integration, curl and allocation gates. Response- and stream-dependent cases remain visibly
+unchecked and move with their owning Phase 9–11 gates. No placeholder response path is added.
+
+**Consequence.** The connection layer stays cohesive: it validates frames and HPACK composition but
+does not acquire a second, short-lived implementation of response or stream semantics. The ledger
+records the partial external gate rather than claiming whole-section conformance prematurely.
+
+**Revisit when.** Close the remaining h2spec section 4 and 6.9 cases as Phases 9–11 land, then rerun
+the combined selection without skips.
+
+---
