@@ -1,19 +1,19 @@
-# Transport Architecture (Phase 2)
+# Transport architecture
 
-Audience: contributors. This is the document Phase 3 onward extends as HTTP/2 grows a real
-connection state machine behind the seam described here.
+Audience: contributors. This document describes the shared listener and connection layer behind
+the HTTP/1.1 and HTTP/2 implementations.
 
 ## Why this exists
 
-Before Phase 2, `HttpServer` (563 lines) did bind, accept, virtual-thread dispatch, WebSocket
+The original `HttpServer` (563 lines) did bind, accept, virtual-thread dispatch, WebSocket
 upgrade detection, WebSocket handshake, the WebSocket session loop, keep-alive detection, HTTP
 response serialization, chunked encoding, hex encoding, and decimal encoding — eleven reasons to
 change in one class (R6). It also held three `ThreadLocal`s that meant "one per connection" under
 virtual threads, not "one per core" (`EX-06`), and used `synchronized` around blocking socket
 writes in `WebSocketSession`, which pins a virtual thread's carrier on Java 21 (`EX-01`).
 
-Phase 2 replaces it with named, single-responsibility components and the `ConnectionProtocol`
-seam HTTP/2 will plug into starting Phase 8.
+The current design replaces it with named, single-responsibility components and a
+`ConnectionProtocol` seam implemented by both wire protocols.
 
 ## Package layout
 
@@ -51,7 +51,7 @@ dev.relism.flash.websocket (existing package, extended)
 ```
 TransportFactory.create(configuration, router, wsRouter)
     binds every configured listener (ListenerBinder)
-    builds one ConnectionRunner (shared virtual-thread executor, ScratchPool, Http1Connection)
+    builds one ConnectionRunner (shared virtual-thread executor, ScratchPool, both protocols)
     returns a ServerLifecycle (implements ServerHandle)
 
 ServerLifecycle.start()
@@ -71,8 +71,8 @@ ConnectionRunner.handle(socket, stopped)
         if SSLSocket: force startHandshake() under headerReadTimeoutMs (EX-30)
         wrap streams: BufferedByteSource in, buffered OutputStream out, raw OutputStream rawOut
         negotiated = negotiateProtocol(socket, in)   # ALPN or h2c preface
-        if negotiated == H2: return                  # no Http2Connection yet (Phase 8) -- close cleanly
-        build ConnectionContext, dispatch to http1Protocol.run(ctx)
+        build ConnectionContext
+        dispatch to http1Protocol.run(ctx) or http2Protocol.run(ctx)
     finally:
         activeSockets.remove(socket); scratchPool.release(scratch)
 ```
@@ -96,12 +96,8 @@ leak-free arena: above its bound (`min(availableProcessors * 64, 4096)` by defau
 scratch is simply dropped for the garbage collector rather than queued, so an unusually large
 burst of connections cannot grow it without limit.
 
-The router's own `ThreadLocal`s (`FastPathRouterImpl`, `FastPathWsRouterImpl`) are **not**
-removed in this phase — `EX-06`'s registry entry explicitly phases that part of the fix to
-Phase 4, where the router also gains the API surface change (a scratch parameter, or reading
-from the request's context) needed to remove them correctly. See `DECISIONS.md` (`DEC-15`) for
-why Phase 2's Definition of Done was corrected to say so explicitly rather than silently drift
-from the registry.
+The routers use an explicit per-connection scratch passed through `AbstractRouter.route`; neither
+`FastPathRouterImpl` nor `FastPathWsRouterImpl` retains connection state in a `ThreadLocal`.
 
 ## The `ConnectionProtocol` seam (R1 / `DEC-02`)
 
@@ -112,10 +108,9 @@ public interface ConnectionProtocol {
 ```
 
 `ConnectionRunner` decides h1 vs h2 exactly once, immediately after ALPN/preface detection, and
-dispatches. Today only `Http1Connection` exists; an `H2` negotiation result is closed cleanly
-(there is no `Http2Connection` to hand off to until Phase 8). Neither implementation is aware
-the other exists — `dev.relism.flash.http1` and `dev.relism.flash.http2` do not import each other,
-enforced by `PackageBoundaryTest`.
+dispatches to `Http1Connection` or `Http2Connection`. Neither implementation is aware the other
+exists — `dev.relism.flash.http1` and `dev.relism.flash.http2` do not import each other, enforced
+by `PackageBoundaryTest`.
 
 ## Graceful shutdown (`EX-32`)
 
@@ -130,7 +125,8 @@ Two stages, driven by `ServerLifecycle.stop()`:
    (the common case). `ServerLifecycle.stop()` polls `activeSockets` for up to
    `shutdownDrainTimeoutMs`, then force-closes whatever remains and shuts down the executor.
 
-HTTP/2's half of this fix (a `GOAWAY` frame, RFC 9113 §6.8) lands in Phase 8.
+HTTP/2 shutdown sends the two-stage `GOAWAY` sequence from RFC 9113 §6.8 before the lifecycle's
+drain deadline force-closes remaining sockets.
 
 ## What changed for WebSocket (`EX-01`, `EX-11`, `EX-12`, `EX-13`)
 

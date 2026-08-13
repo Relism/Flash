@@ -1,4 +1,4 @@
-# The Byte Layer (Phase 4)
+# The byte layer
 
 Audience: contributors. This is the design record for `dev.relism.flash.bytes` — the
 protocol-neutral byte primitives both HTTP/1.1 and HTTP/2 build on — and for the Phase 4
@@ -38,7 +38,7 @@ ByteView                              (fpr-core)
 │   ├── FastPathViews.StringByteView   a String's UTF-8 bytes
 │   └── PooledSlice                    the EX-05 reusable, pool-issued slice
 └── (bare ByteView, not array-backed)
-    ├── SegmentedByteView               K discontiguous segments (future HPACK CONTINUATION)
+    ├── SegmentedByteView               K discontiguous segments (general-purpose; HPACK stays contiguous)
     └── FastPathViews.MethodPathByteView  method bytes + another ByteView, composed
 ```
 
@@ -101,26 +101,25 @@ and every match position (including unaligned starts and matches at the very las
 and `ByteScanFuzzTest` throws 20 000 fully-random trials at each, per the plan's task 1. All
 green — see the class's own Javadoc for the full technique writeup.
 
-## `EX-09`: `HeaderMap`'s index
+## `Http1HeaderMap`'s index
 
-Before this phase, every `HeaderMap` lookup (`first`, `all`, `view`, `valueEqualsIgnoreCase`)
+Originally, every `Http1HeaderMap` lookup (`first`, `all`, `view`, `valueEqualsIgnoreCase`)
 rescanned the entire header section from scratch — O(n·m) for a realistic middleware chain
-performing 6–10 lookups per request. `HeaderMap.reset()` now scans the section exactly once,
-recording per-header `(nameOffset, nameLength, valueOffset, valueLength)` and a case-insensitive
+performing 6–10 lookups per request. `RequestParser` now populates the index while it validates
+each header line; direct `Http1HeaderMap.reset()` callers scan the section exactly once. It records
+per-header `(nameOffset, nameLength, valueOffset, valueLength)` and a case-insensitive
 32-bit FNV-1a hash of the name (`ByteScan.hashNameIgnoreCaseAscii`) into `int[]` arrays grown
 (never shrunk) to the connection's high-water mark, capped by `Http1Limits.MAX_HEADER_COUNT`
-(asserted, not silently truncated — Phase 1 already rejects any request that would exceed it).
+(asserted, not silently truncated — the parser rejects a request that would exceed it).
 Every lookup then compares the caller's own hash (`ByteScan.hashNameIgnoreCaseAscii(String)`,
 computed once) against the index's hashes before ever falling back to a full case-insensitive
-name comparison. Net effect: the header section is scanned once per request (at `reset()`) plus
-once at parse time (`RequestParser`'s own validation pass) — two scans total, replacing "one scan
-at parse time plus one rescan per lookup" — strictly less work even for a single lookup, and much
-less for the realistic multi-lookup case. `forEach` was unified onto the same index rather than
-keeping its own independent scan, removing a second, easily-diverging scanning implementation.
+name comparison. Production therefore performs one combined validation/index pass rather than
+one parse-time pass plus one rescan per lookup. `forEach` uses the same index rather than keeping
+an independent scanner.
 
 ## `EX-05`: pooled slices
 
-`HeaderMap.view`, `QueryParams.view`, and `PathParams.view` used to allocate a fresh anonymous
+`Http1HeaderMap.view`, `QueryParams.view`, and `PathParams.view` used to allocate a fresh anonymous
 `ByteView` (plus its capturing instance) on every call. Each now draws from a small
 (`VIEW_POOL_SIZE = 4`) `SlicePool` of reusable `PooledSlice` instances instead. The lifetime
 contract, restated on each method: **a returned view stays valid until either the request ends,
@@ -128,15 +127,15 @@ or the same `view()` method is called `VIEW_POOL_SIZE` more times on the same in
 whichever comes first** — at which point the ring silently repositions the same object over
 different bytes. This is a real, demonstrated hazard, not a hypothetical one:
 `SlicePoolTest#wraparoundAliasesThePreviouslyReturnedSlice` and the analogous tests in
-`HeaderMapIndexTest`, `QueryParamsFastPathTest`, and `PathParamsTest` all show a 5th call
+`Http1HeaderMapIndexTest`, `QueryParamsFastPathTest`, and `PathParamsTest` all show a 5th call
 returning the exact same object instance the 1st call did, now aliased to different content.
 
 `QueryParams` and `PathParams`'s pools are created **lazily**, on the first actual `view()` call
 — not eagerly in the constructor — because both classes are otherwise-cheap objects created per
 request (or, for `PathParams`'s `FastPathRouterImpl`-owned reusable instance, once per
 connection) regardless of whether `view()` is ever invoked; an eager pool would add
-`VIEW_POOL_SIZE` allocations to every such object whether or not it needed them; `HeaderMap`'s
-pool, by contrast, is unconditionally useful (every request's `HeaderMap` handles headers) and is
+`VIEW_POOL_SIZE` allocations to every such object whether or not it needed them; `Http1HeaderMap`'s
+pool, by contrast, is unconditionally useful (every request's map handles headers) and is
 constructed eagerly for simplicity.
 
 **Two documented, deliberately-kept exceptions to "no `new ByteView()` remains"**: `QueryParams.view`
@@ -145,7 +144,7 @@ backing source is *not* `ArrayBackedByteView` — structurally unreachable on th
 today (`RequestParser` only ever constructs array-backed views), kept because both constructors
 are `public` and could in principle be called with an arbitrary `ByteView`. A silent, correct,
 allocating fallback was judged preferable to either crashing on a technically-valid input or
-deleting a case that only test/future code could exercise. `HeaderMap.view` has no such fallback
+deleting a case that only test code could exercise. `Http1HeaderMap.view` has no such fallback
 — it is always buffer-backed by construction.
 
 ## `EX-19`/`EX-06` (router half): the `FastPathRouterImpl` scratch

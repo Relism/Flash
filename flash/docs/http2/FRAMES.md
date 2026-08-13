@@ -1,4 +1,4 @@
-# The Frame Layer (Phase 5)
+# The frame layer
 
 Audience: contributors. This is the design record for `dev.relism.flash.http2.frame`'s frame
 reading, validation, and writing — the 9-byte header and payload boundary, with no connection
@@ -40,9 +40,9 @@ dev.relism.flash.http2.frame
 ├── FrameValidator        table-driven per-type RFC validation, specific error code per rule
 ├── Padding               RFC 9113 §6.1/§6.2 pad-length byte + trailing padding, DATA/HEADERS
 ├── FrameWriteBuffer      beginFrame()/endFrame() length back-patching over a ByteWriter
-├── Http2FrameWriter      (Phase 3) the connection's single serialized writer — unchanged here
-├── WriteIntent           (Phase 3) unchanged
-└── IntrusiveMpscQueue    (Phase 3) unchanged
+├── Http2FrameWriter      the connection's single serialized writer
+├── WriteIntent           caller-owned serialized frame batch
+└── IntrusiveMpscQueue    allocation-free contended-write queue
 ```
 
 ## The validation table
@@ -55,7 +55,7 @@ min/max length bounds, the `MAX_FRAME_SIZE_LOCAL` ceiling, the stream-id rule, t
 | Type | Code | Length | Stream id | Notes / RFC |
 |---|---|---|---|---|
 | DATA | 0x0 | 0..MAX_FRAME_SIZE | required (≠0) | §6.1. Padding via `Padding.unpad`. |
-| HEADERS | 0x1 | 0..MAX_FRAME_SIZE | required (≠0) | §6.2. Padding + PRIORITY fields (Phase 7+ parses the latter). |
+| HEADERS | 0x1 | 0..MAX_FRAME_SIZE | required (≠0) | §6.2. Padding and optional PRIORITY fields are parsed before HPACK. |
 | PRIORITY | 0x2 | exactly 5 | required (≠0) | §6.3. Deprecated (§5.3.2) — parsed, discarded, never acted on. |
 | RST_STREAM | 0x3 | exactly 4 | required (≠0) | §6.4. The 4 bytes are the error code. |
 | SETTINGS | 0x4 | multiple of 6 | forbidden (=0) | §6.5. Modulus checked before the generic bounds. |
@@ -82,7 +82,7 @@ The one exception (§6.10): if an unrecognised-type frame arrives **between** a 
 PUSH_PROMISE frame that lacked `END_HEADERS` and the CONTINUATION that eventually sets it, the
 HPACK decoder's state has nowhere to put that frame's bytes without desynchronizing — so this one
 case *is* a `PROTOCOL_ERROR`, tracked by `FrameValidator.validate`'s `insideHeaderBlock`
-parameter (owned and threaded through by the Phase 8 connection loop, which is the only caller
+parameter (owned and threaded through by the connection loop, which is the only caller
 that knows whether a header block is currently open).
 
 `PRIORITY` frames are a different kind of "ignore": they are a recognised, well-formed type that
@@ -112,8 +112,8 @@ pad-length, then data, then that many padding bytes (whose contents carry no mea
 only to obscure payload size from network observers). A pad length greater than or equal to the
 whole payload length is `PROTOCOL_ERROR` (RFC 9113 §6.1), checked before any arithmetic that
 could otherwise underflow. Flow-control accounting for padded DATA frames (RFC 9113 §6.9.1: the
-*whole* payload counts against the window, not just the data) is Phase 11 scope — `Padding` only
-locates the data range, it performs no window bookkeeping itself.
+*whole* payload counts against the window, not just the data) is applied by
+`Http2FlowController`; `Padding` only locates the data range.
 
 ## Writing: `FrameWriteBuffer`'s back-patching
 
@@ -121,12 +121,12 @@ A frame's length is rarely known before its payload is serialized (an HPACK-enco
 in particular, has no cheap way to be measured in advance). `FrameWriteBuffer.beginFrame` writes
 a 9-byte header with a placeholder length; the caller writes the payload directly through the
 same `ByteWriter`; `endFrame` computes the actual length from how far the writer has advanced and
-rewrites the three length bytes in place. This is *why* `Http2FrameWriter` (Phase 3) serializes a
+rewrites the three length bytes in place. This is *why* `Http2FrameWriter` serializes a
 complete buffer before ever taking the connection lock, rather than streaming bytes as they are
 produced — streaming would need the length upfront, which back-patching deliberately avoids
 needing.
 
-## `EX-37`, found while building this phase's tests
+## Buffered-source deadline regression
 
 `BufferedByteSource`'s deadline mechanism (`EX-07`'s actual fix) turned out to have zero dedicated
 unit tests and an unconditional `socket.setSoTimeout(...)` call that NPE'd against the `null`

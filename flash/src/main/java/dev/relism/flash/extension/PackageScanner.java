@@ -2,8 +2,9 @@ package dev.relism.flash.extension;
 
 import dev.relism.flash.exceptions.InitializationException;
 import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.routing.Ws;
+import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.Routes;
+import dev.relism.flash.routing.Ws;
 import dev.relism.flash.websocket.WebSocketEndpoint;
 
 import java.io.File;

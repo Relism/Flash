@@ -1,4 +1,4 @@
-# HTTP/1.1 Hardening (Phase 1)
+# HTTP/1.1 hardening
 
 Audience: operators. This is the document to read when a `400`/`413`/`414`/`431`/`501` shows up
 in the logs and it isn't obvious why. Every rejection rule Flash's HTTP/1.1 parser enforces is
@@ -62,9 +62,8 @@ as `1`) instead of rejecting them — this is the fix.
 | `MAX_TRAILER_COUNT` | 50 | `431` |
 | A chunk's data not followed by `\r\n`, or a malformed chunk-size/trailer terminator | — | `400` |
 
-Trailers are consumed (safely, within the bounds above) but discarded, not exposed to the
-handler, on HTTP/1.1 today — exposing them via `Request.trailers()` on both protocols is Phase
-12 scope.
+Trailers are consumed within the bounds above and exposed through `Request.trailers()` on both
+HTTP/1.1 and HTTP/2.
 
 ## Timeouts (`FlashConfiguration`)
 
@@ -73,7 +72,7 @@ handler, on HTTP/1.1 today — exposing them via `Request.trailers()` on both pr
 | `idleKeepAliveTimeoutMs` | 60 000 | How long a keep-alive connection may sit idle waiting for its next request. |
 | `headerReadTimeoutMs` | 10 000 | Once the first byte of a request arrives, how long the full header block may take. |
 | `bodyReadTimeoutMs` | 30 000 | How long reading the body (by the handler, or the automatic post-response drain) may take. |
-| `shutdownDrainTimeoutMs` | 15 000 | How long graceful shutdown waits for in-flight requests before force-closing (wired up starting Phase 2). |
+| `shutdownDrainTimeoutMs` | 15 000 | How long graceful shutdown waits for in-flight requests before force-closing. |
 
 These are enforced by an **absolute deadline**, not merely `Socket.setSoTimeout`. A per-read
 socket timeout alone never trips against a peer that sends one byte just often enough to keep
@@ -89,6 +88,5 @@ implemented on top of the JDK's per-read-only timeout API.
   suite list is filtered against the RFC 9113 Appendix A blocklist
   (`TlsConfig.TLS12_H2_BLOCKED_CIPHERS`, ~280 entries). TLS 1.3 is never affected — none of its
   cipher suites are on that list.
-- HTTP/2 itself is not yet served in this phase (lands in Phase 8): a connection that negotiates
-  `h2` via ALPN, or that opens with the h2c prior-knowledge preface while
-  `FlashConfiguration.http2Enabled` is set, is currently closed cleanly rather than served.
+- `FlashConfiguration.http2Enabled` advertises `h2` on TLS listeners. The independent
+  `http2CleartextEnabled` switch accepts the h2c prior-knowledge preface on plaintext listeners.

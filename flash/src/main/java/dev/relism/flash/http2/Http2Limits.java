@@ -200,7 +200,7 @@ public final class Http2Limits {
 
   /**
    * Maximum time, in milliseconds, {@code Http2FrameReader} may wait for a single frame's
-   * header and payload to fully arrive. Bounds the same slowloris-shaped hazard {@code
+   * header and payload to fully arrive. Bounds the same slowloris-shaped hazard:
    * without it, a peer that sends 9 header bytes and then never sends the declared payload
    * would hold this connection's frame reader waiting forever.
    */

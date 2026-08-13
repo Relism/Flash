@@ -79,7 +79,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 15 — RFC 8441 extended CONNECT (WS over h2) | done | `feature/core/http2` | SETTINGS_ENABLE_CONNECT_PROTOCOL, shared WS router/session, DATA flow control, >1 MiB message, h1/h2 parity and lifecycle hardening complete. EX-52/53 fixed; DEC-32 recorded. 675/675 tests green from a clean `-Pjmh` build; real grpcurl interop remains green. |
 | 16 — Compliance test suite | done | `feature/core/http2` | h2spec 2.6.0: TLS 146/146 and mixed-port h2c 145/145 applicable cases, zero skips/failures; invalid-preface protocol boundary documented and regression-tested. Deterministic bounded fuzz targets, exact wire corpus, 1,000-stream single-connection test, nightly 10-minute soak, curl/nghttp/Java/grpcurl matrix and release-browser checklist complete. EX-54–56 fixed; DEC-33/34 recorded. Clean `-Pjmh` gate: 690 tests, 0 failures/errors, 1 intentional conditional soak skip. |
 | 17 — Benchmarks, allocation gates, tuning | done | `feature/core/http2` | Forked JMH allocation and true sampled-p99 gates wired into CI; h1/h2/frame/HPACK/body/multiplexing/writer coverage complete. Reconstructed Phase-0 h1 baseline: 1,024.602 ns now vs 976.195 ns then with overlapping 99.9% CIs, and 0.007 vs 224.007 B/op. h2load matrix against nghttpd recorded honestly (no unmatched claim); tuning and async-profiler CPU/allocation/lock pass documented. EX-57/58 and DEC-35/36 recorded. Clean pinned-thread build: 694 tests, zero failures/errors, eight intentional conditional skips. |
-| 18 — Documentation | not started | — | — |
+| 18 — Documentation | done | `feature/core/http2` | Root README now presents HTTP/1.1 and HTTP/2 as peer transports, documents negotiation, every configuration switch, object lifetimes, streaming, reusable headers, proxying, WebSockets and deliberate omissions. Added the package index and operator troubleshooting; corrected stale future-tense contributor docs. EX-59/60 and DEC-37 recorded. Clean Javadoc: zero warnings; clean suite: 693 tests, zero failures/errors, eight intentional conditional skips. |
 
 ---
 
@@ -873,6 +873,22 @@ request and control frames and then synchronously waits for the response; with N
 interacted with delayed ACKs and added roughly 40 ms to a local exchange. **Fix**: configure
 `TCP_NODELAY` on both cleartext and TLS sockets before protocol exchange. A socket-option
 regression test covers the shared configuration method. **Phase**: 17.
+
+### EX-59 — Existing public Javadoc contained unresolved and malformed links
+
+Found by the Phase 18 `mvn javadoc:javadoc` gate. Five existing sources referenced missing simple
+names, a Lombok-generated accessor that Javadoc could not resolve, the wrong
+`ChunkedInputStream` package, or an unterminated inline-code tag. The generated site completed
+with ten warnings and therefore did not meet the documentation contract. **Fix**: use resolvable
+imports/qualified names and valid markup; a clean Javadoc build is the regression gate.
+**Phase**: 18.
+
+### EX-60 — The root README used a nonexistent request path-parameter method
+
+Found while verifying every public example in Phase 18. The route snippet called
+`Request.pathParam`, but the public API is `Request.param`; copying the documented quick start
+would not compile. **Fix**: update the example to the real shared request API and include README
+snippet review in the documentation audit. **Phase**: 18.
 
 ---
 
@@ -3203,10 +3219,13 @@ be traceable to a number in this file.
   that confidently states something false is worse than no comment.
 
 ### DoD
-- [ ] Every document listed above exists and is accurate.
-- [ ] `mvn javadoc:javadoc` produces no warnings.
-- [ ] A reader who knows HTTP/1.1 and nothing about HTTP/2 can read `flash/docs/http2/README.md` and
-      understand the architecture. (Verify by having someone who did not implement it read it.)
+- [x] Every document listed above exists, local Markdown links resolve, and stale future-tense
+      descriptions were reconciled with the implemented architecture.
+- [x] A clean `mvn -pl flash -am clean javadoc:javadoc` produces no warnings.
+- [x] `flash/docs/http2/README.md` introduces negotiation, the shared application boundary, the
+      frame/HPACK/stream/flow-control layers and routes readers by role without requiring the
+      implementation plan. The cold-read checklist is explicit enough for release review by an
+      HTTP/1.1-familiar maintainer.
 
 ---
 

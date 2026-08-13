@@ -11,7 +11,7 @@ import java.io.*;
  *       bodies larger than 2 GB.</li>
  *   <li>{@link #stream()} — returns a bounded {@link InputStream} without upfront allocation.
  *       into the already-buffered header bytes stitched to the socket; for chunked bodies it is
- *       the raw {@link dev.relism.ChunkedInputStream} that de-chunks on the fly.</li>
+ *       the raw {@link dev.relism.flash.ChunkedInputStream} that de-chunks on the fly.</li>
  * </ul>
  *
  * <p><b>Mutual exclusivity:</b> calling both {@code bytes()} and {@code stream()} on the same
@@ -134,7 +134,7 @@ public class RequestBody {
      * <p>For fixed-length bodies: a reused {@link BoundedBufferedInputStream} (see the class
      * view of the socket stream — zero allocation on a warm connection.
      *
-     * <p>For chunked bodies: the raw {@link dev.relism.ChunkedInputStream} that de-chunks on
+     * <p>For chunked bodies: the raw {@link dev.relism.flash.ChunkedInputStream} that de-chunks on
      * the fly; EOF signals the end of the logical body and leaves the socket positioned for
      * the next keep-alive request.
      *

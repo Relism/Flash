@@ -7,7 +7,7 @@ import java.util.Arrays;
 import lombok.Getter;
 
 /**
- * Pre-compiled byte representations of common HTTP {@code Content-Type} values. {@link #getBytes()}
+ * Pre-compiled byte representations of common HTTP {@code Content-Type} values. {@code getBytes()}
  * returns the pre-computed array directly, never allocates.
  */
 @Getter

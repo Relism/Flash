@@ -1,13 +1,10 @@
-# The Serialized Frame Writer (Phase 3 — GO/NO-GO gate)
+# The serialized frame writer
 
 Audience: contributors. This is the design record and benchmark evidence for
 `dev.relism.flash.http2.frame.Http2FrameWriter`, the one component every HTTP/2 write in this
-codebase passes through. Phase 3 of `IMPLEMENTATION-PLAN.md` treats this component as the
-single genuinely novel architectural risk in the whole project — everything downstream (frames,
-HPACK, flow control) is table-driven work with known cost, but nothing in Flash today
-coordinates concurrent writers onto one socket. If this component could not deliver, the plan
-says to stop here having spent one phase, not ten. It delivered: **GO**, see the gate table at
-the end of this document.
+codebase passes through. It was the central architectural risk: frames, HPACK and flow control are
+table-driven, but multiplexed streams require concurrent producers to share one socket without
+interleaving bytes or pinning carrier threads. The measured gate is recorded below.
 
 ## The problem, precisely
 
@@ -27,7 +24,7 @@ has already built its complete frame — header, HPACK block, payload — into a
 writer never serializes anything; it holds the lock only for the duration of one bulk
 `sink.write(buffer, offset, length)` call, never for a sequence of small writes. This is why
 `EX-27` (collapsing `HttpServer.writeResponse`'s ~10 small writes into one) is a prerequisite for
-h1 too, landing in Phase 6.
+HTTP/1.1 too; `Http1ResponseWriter` now follows the same bulk-write discipline.
 
 **Layer 2 — `ReentrantLock`, never `synchronized`.** On Java 21, a virtual thread that blocks
 inside a `synchronized` block pins its carrier platform thread (JEP 491, which removes this,
@@ -260,9 +257,8 @@ design's exclusive use of `ReentrantLock` (never `synchronized`) on every path t
 | 3 | No carrier pinning under `-Djdk.tracePinnedThreads=full` | none observed | **PASS** |
 | 4 | Stress test green at every N, 1000 iterations, incl. parallelism=1 | 10 000/10 000 | **PASS** |
 
-**All four gate criteria are met. Verdict: GO.** `Http2FrameWriter` ships as designed —
-`tryLock()` fast path, intrusive MPSC fallback — and Phase 4 may proceed. See `DECISIONS.md`,
-`DEC-09`, for the decision-log entry recording this outcome alongside the plan's other decisions.
+**All four gate criteria are met.** `Http2FrameWriter` ships as designed: a `tryLock()` fast path
+with an intrusive MPSC fallback. See `DECISIONS.md` for the retained alternatives and evidence.
 
 ## What this design costs vs. what it saves
 

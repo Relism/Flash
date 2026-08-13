@@ -1,10 +1,8 @@
-# The Message Model (Phase 6)
+# The message model
 
-Audience: contributors. This is the design record for `dev.relism.flash.models`'s request/response
-object model after Phase 6's refactor — what is pooled, what that pooling actually means for code
-that touches these objects, and the allocation fixes (`EX-20`–`EX-24`, `EX-27`, `EX-28`, `EX-29`,
-`EX-42`) that got the h1 request/response cycle to the zero-alloc contract Phase 4 (`DEC-20`) left
-open.
+Audience: contributors. This is the design record for `dev.relism.flash.models`'s shared
+request/response model: what is pooled, what that pooling means for callers, and how HTTP/1.1 and
+HTTP/2 retain the same public contract.
 
 ## Why this exists
 
@@ -103,15 +101,14 @@ sequence (`headerTags`/`headerRefs`) interleaves the two stores back into declar
 serialized, so mixing `header(String,String)` and `header(byte[])` calls on the same response still
 produces headers in the order they were added.
 
-`PreEncodedHeader` precomputes a header's name+value ASCII bytes once (e.g. for a constant response
-header set at boot) — deliberately does **not** yet expose HPACK-encoded bytes, since HPACK does
-not exist until Phase 9; that scope boundary is recorded in the class's own Javadoc rather than
-building untested, speculative API surface now.
+`PreEncodedHeader` precomputes a header's name and value ASCII bytes once (for example, a constant
+response header set at boot). Preserving the boundary lets HTTP/1.1 render a field line and HTTP/2
+encode the same pair through HPACK without a second public header type.
 
 `ResponseSerializer.forEachField(Response, FieldConsumer)` is the **one source of truth for what
 headers a response has** — it enumerates `Content-Type` (if set) plus every structured custom
 header, in order, and is the only place that knowledge lives. `Http1ResponseWriter` renders that
-sequence as `Name: Value\r\n` lines; the Phase 9 h2 encoder will render the same sequence as HPACK.
+sequence as `Name: Value\r\n` lines; `Http2ResponseWriter` renders the same sequence as HPACK.
 Deliberately excluded: `Content-Length`/`Connection`/`Date` (connection framing, not response
 object properties — and HTTP/2 has no `Connection` header at all, RFC 9113 §8.2.2) and raw
 `header(byte[])` entries (no recoverable name/value structure to hand the h2 encoder).
@@ -141,8 +138,8 @@ byte-buffer-backed implementation, kept in `dev.relism.flash.models` rather than
 `dev.relism.flash.http1` — see `DECISIONS.md`, `DEC-22`, for why: `RequestParser` (root package)
 owns and constructs it, and `http1`→root already exists via `Http1Connection`, so moving it to
 `http1` would create a `models`↔`http1` package cycle). `RequestLine.headers` is typed as the
-interface, so a future `Http2HeaderMap` (Phase 10, HPACK-backed) is a drop-in second
-implementation, not a `Request`/`RequestLine` API change.
+interface; `Http2HeaderMap` is the HPACK-backed second implementation without requiring a
+`Request` or `RequestLine` API split.
 
 ## `ByteTemplate` (`EX-28`)
 

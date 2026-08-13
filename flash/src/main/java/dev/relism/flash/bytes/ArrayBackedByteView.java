@@ -24,7 +24,7 @@ import dev.relism.fpr.core.ByteView;
  *       to be copied.</li>
  * </ul>
  * Code that only has a bare {@link ByteView} (e.g. because it received one across the
- * {@link SegmentedByteView} boundary, from a future HPACK CONTINUATION-spanning block) keeps the
+ * {@link SegmentedByteView} boundary) keeps the
  * byte-at-a-time fallback — this interface is an opportunistic fast path, never a requirement.
  */
 public interface ArrayBackedByteView extends ByteView {

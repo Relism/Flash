@@ -1,12 +1,13 @@
 # Flash
 
-A high-performance HTTP/1.1 server library for Java 21, built around virtual threads and a zero-allocation FSM router.
+A high-performance HTTP/1.1 and HTTP/2 server library for Java 21, built around virtual threads,
+a zero-allocation FSM router, bounded protocol state, and one shared request/response API.
 
 ## Modules
 
 | Module | Description |
 |---|---|
-| `flash` | Core server library — router, request parser, HTTP I/O transport |
+| `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
@@ -58,7 +59,7 @@ app.post("/echo", (req, res) -> {
 });
 
 app.get("/users/{id}", (req, res) -> {
-    String id = req.pathParam("id");
+    String id = req.param("id");
     return "user:" + id;
 });
 ```
@@ -174,6 +175,7 @@ app.onException((ex, req, res) -> {
 | `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
 | `http2Enabled` | `false` | Whether TLS listeners advertise HTTP/2 through ALPN. |
 | `http2CleartextEnabled` | `false` | Whether plaintext listeners accept HTTP/2 prior knowledge (h2c). Independent from TLS HTTP/2. |
+| `h2HuffmanDynamicValues` | `false` | HPACK-Huffman encode runtime response values. Constants remain pre-encoded; the measured default avoids an extra encode pass. |
 | `h2MaxResetStreamsPerInterval` | `200` | Rapid Reset budget per rolling interval. |
 | `h2MaxStreamsCreatedPerInterval` | `400` | New-stream budget per rolling interval. |
 | `h2AbuseRateIntervalMs` | `10000` | Rolling interval for the two operator-tunable rate limits above. |
@@ -181,6 +183,27 @@ app.onException((ex, req, res) -> {
 | `h2MaxBytesPerConnection` | `0` | Optional total wire-byte budget; `0` disables it. |
 | `h2MaxConnectionLifetimeMs` | `0` | Optional connection lifetime; `0` disables it. |
 | `h2StreamIdleTimeoutMs` | `60000` | Inactive open-stream deadline. |
+| `sendDate` | `true` | Add an RFC 9110 `Date` field to responses; disable when an upstream proxy supplies it. |
+
+## Protocols
+
+Routes, middleware, `Request`, `Response`, bodies, trailers, streaming and WebSockets use the same
+API on HTTP/1.1 and HTTP/2. Protocol selection happens once per connection:
+
+- On TLS listeners, enable `http2Enabled`; Flash advertises `h2` and `http/1.1` through ALPN and
+  uses the protocol selected by the client. Existing HTTP/1.1 clients continue to work.
+- On plaintext listeners, enable `http2CleartextEnabled` to accept the HTTP/2 prior-knowledge
+  preface on the same port as HTTP/1.1. Clients that do not send that exact preface are parsed as
+  HTTP/1.1.
+- With both switches left at their default `false`, Flash behaves as an HTTP/1.1 server.
+
+After enabling the appropriate switch, application routes need no protocol-specific code. TLS
+still requires the normal certificate configuration shown below.
+
+Flash deliberately does not implement HTTP/2 server push, RFC 7540 dependency-tree priority
+scheduling, or the obsolete HTTP/1.1 `Upgrade: h2c` transition. Server push has no application API,
+RFC 9113 deprecated the old priority scheme, and cleartext HTTP/2 uses prior knowledge instead.
+See the [HTTP/2 compliance record](flash/docs/http2/COMPLIANCE.md) for exact coverage.
 
 ## WebSockets over HTTP/2
 

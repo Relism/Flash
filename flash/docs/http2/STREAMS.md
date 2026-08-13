@@ -40,9 +40,9 @@ while dispatch is pending.
 
 ## Verification
 
-- Phase 11 clean Maven build with JMH sources: 633 tests, no failures.
-- h2spec sections 5 and 8: 39/39 after request DATA byte accounting landed.
+- The complete clean Maven/JMH suite is recorded in `COMPLIANCE.md` and `PERFORMANCE.md`.
+- h2spec sections 5 and 8 pass after request DATA byte accounting landed.
 - Java `HttpClient` negotiates HTTP/2 over TLS and runs an existing parameterized route unchanged.
 - curl prior-knowledge h2c receives a valid `200` response and body.
-- Current JMH pooled lifecycle (HPACK decode, request assembly, response write and release):
-  483.571 ns/op, 0.003 B/op, no GC.
+- The pooled lifecycle (HPACK decode, request assembly, response write and release) remains a
+  zero-GC CI gate; current percentile and allocation baselines live in `BASELINES.md`.

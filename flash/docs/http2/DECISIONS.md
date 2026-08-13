@@ -1142,3 +1142,24 @@ makes no "unmatched" claim.
 noise floor if a profiler can distinguish harness allocation from benchmark allocation exactly.
 
 ---
+
+## DEC-37 — Keep production frame payloads out of application logs
+
+**Context.** Per-frame logging is tempting when diagnosing HTTP/2, but it adds work to the demux
+hot path and exposes header, timing and traffic metadata. Payload logging can disclose credentials
+and application data. Operators still need a repeatable way to inspect SETTINGS, stream state,
+flow control, RST_STREAM and GOAWAY ordering.
+
+**Decision.** Do not add a built-in frame-log switch. Use protocol-aware clients such as
+`nghttp -nv` or `curl --http2 -v` for reproducible traces, and controlled packet capture only when
+the failure cannot be observed client-side. Document redaction requirements in
+`TROUBLESHOOTING.md`.
+
+**Consequence.** Normal and debug logging cannot accidentally turn the connection loop into a
+metadata sink, and the zero-allocation frame path does not gain a logging branch. Diagnosis uses
+standard wire tools whose output already names frame types, flags, stream ids and error codes.
+
+**Revisit when.** A production-only failure cannot be diagnosed through metrics, existing error
+logs or controlled wire capture; any future trace hook must be bounded, payload-free and measured.
+
+---
