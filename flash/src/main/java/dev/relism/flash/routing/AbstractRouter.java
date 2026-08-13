@@ -6,7 +6,6 @@ import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
 import dev.relism.flash.Flash;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.fpr.core.ByteView;
 import dev.relism.flash.template.ErrorPages;
 
 import java.nio.charset.StandardCharsets;
@@ -101,13 +100,32 @@ public abstract class AbstractRouter {
 
     // ── Routing ──────────────────────────────────────────────────────────────
 
-    public abstract RequestHandler route(Request request);
+    /**
+     * Creates a fresh per-connection scratch object for {@link #route}, or {@code null} if this
+     * router implementation keeps no reusable per-connection state. Called once per connection
+     * by the connection driver (e.g. {@code Http1Connection}), which holds the opaque result and
+     * passes it back into every {@link #route} call for that connection's whole lifetime — the
+     * same "create once per connection, reuse across requests" shape already used there for
+     * {@code RequestParser}.
+     *
+     * <p>{@code EX-06}'s router-half fix: a {@code ThreadLocal} here would mean "one per virtual
+     * thread", which under this codebase's one-virtual-thread-per-connection model is "one per
+     * connection with no upper bound and no pooling" — exactly the failure mode
+     * {@code ConnectionScratch} already exists to avoid for every other per-connection buffer.
+     * An explicit, caller-owned scratch object achieves the same per-connection reuse without
+     * that unbounded-growth risk, and without requiring {@code routing} to depend on
+     * {@code transport}'s {@code ConnectionScratch} type (this package has no such dependency
+     * today — see {@code DECISIONS.md}, {@code DEC-19}, for why that boundary was kept rather
+     * than extending {@code ConnectionScratch} itself, which is what an earlier draft of this
+     * fix assumed).
+     */
+    public Object newScratch() {
+        return null;
+    }
+
+    public abstract RequestHandler route(Request request, Object scratch);
 
     protected abstract AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler);
-
-    protected static void setPathParams(Request request, String[] names, ByteView source, int[] starts, int[] lens) {
-        PathParams.inject(request, new PathParams(source, names, starts, lens));
-    }
 
     @FunctionalInterface
     public interface ExceptionHandler {

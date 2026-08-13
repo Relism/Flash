@@ -1,10 +1,14 @@
 package dev.relism.flash.models;
 
+import dev.relism.flash.bytes.ByteScan;
+import dev.relism.flash.bytes.SlicePool;
+import dev.relism.flash.http.Http1Limits;
 import dev.relism.fpr.core.ByteView;
 import lombok.NoArgsConstructor;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -23,31 +27,99 @@ import java.util.List;
  *       values retrieved via {@link #first}/{@link #all} are safe (they are independent
  *       heap copies); the {@code HeaderMap} object itself is not.</li>
  *   <li><b>{@link #view} returns a zero-copy {@link dev.relism.fpr.core.ByteView} slice
- *       into the live buffer.</b> Storing this view and reading it after the handler
- *       returns (e.g. in an async callback, a {@link java.util.concurrent.CompletableFuture}
+ *       into the live buffer, drawn from a small {@link SlicePool} (see {@link #view}'s own
+ *       Javadoc for the exact reuse window).</b> Storing this view and reading it after the
+ *       handler returns (e.g. in an async callback, a {@link java.util.concurrent.CompletableFuture}
  *       continuation, or a virtual-thread handoff) is a <em>data race</em> — the bytes
  *       may have been overwritten by the next request. Copy to a {@code String} or
  *       {@code byte[]} before leaving the synchronous handler scope.</li>
  * </ol>
+ *
+ * <h3>{@code EX-09}: an index built once per {@link #reset}, not rescanned per lookup</h3>
+ * {@link #reset} scans the header section exactly once and records, per header, its name/value
+ * byte offsets and a case-insensitive 32-bit hash of the name — into {@code int[]} arrays grown
+ * (never shrunk) to this connection's high-water mark. Every lookup method
+ * ({@link #first}, {@link #all}, {@link #view}, {@link #valueEqualsIgnoreCase}) then walks that
+ * small index instead of rescanning raw bytes: a hash compare (cheap) before ever falling back to
+ * a full case-insensitive name comparison. A realistic middleware chain performs 6–10 lookups per
+ * request (OIDC reads {@code Authorization}/{@code Cookie}, the limiter reads
+ * {@code X-Forwarded-For}, CORS reads {@code Origin}, keep-alive reads {@code Connection}); before
+ * this, each of those rescanned the entire header block from scratch — O(n·m). Now the header
+ * section is scanned once regardless of how many lookups follow — strictly less total work even
+ * for a single lookup, and asymptotically better for the realistic multi-lookup case.
  */
 @NoArgsConstructor
 public class HeaderMap {
+    private static final int INITIAL_INDEX_CAPACITY = 16;
+    private static final int VIEW_POOL_SIZE = 4;
+
     private byte[] buffer;
     private int sectionStart;
     private int sectionEnd;
 
-    // Lazily created, then reused for the life of this HeaderMap (i.e. the connection —
-    // see the class javadoc) across every #forEach call and every header within a call.
-    // Same idiom as #view's per-call anonymous ByteView, just amortized to zero allocations
-    // instead of two per header: the slices are repositioned in place, not reallocated.
+    // EX-09 index — grown (never shrunk) to this connection's high-water mark, rebuilt in place
+    // by every reset() call. Entry i's name is buffer[nameOffsets[i], nameOffsets[i]+nameLengths[i]),
+    // its value is buffer[valueOffsets[i], valueOffsets[i]+valueLengths[i]).
+    private int   headerCount;
+    private int[] nameOffsets  = new int[INITIAL_INDEX_CAPACITY];
+    private int[] nameLengths  = new int[INITIAL_INDEX_CAPACITY];
+    private int[] valueOffsets = new int[INITIAL_INDEX_CAPACITY];
+    private int[] valueLengths = new int[INITIAL_INDEX_CAPACITY];
+    private int[] nameHashes   = new int[INITIAL_INDEX_CAPACITY];
+
+    // EX-05: pooled, reused slices for view() — see its own Javadoc for the reuse window.
+    private final SlicePool viewPool = new SlicePool(VIEW_POOL_SIZE);
+
+    // forEach's own pair, reused across every header of every call — same idiom as viewPool,
+    // just a fixed pair rather than a ring, since forEach's contract only needs one name/value
+    // pair valid at a time (see forEach's Javadoc).
     private Slice nameSlice;
     private Slice valueSlice;
 
-    /** Resets this map to the header section {@code buffer[sectionStart, sectionEnd)}. */
+    /** Resets this map to the header section {@code buffer[sectionStart, sectionEnd)}, rebuilding the {@code EX-09} index. */
     public void reset(byte[] buffer, int sectionStart, int sectionEnd) {
         this.buffer       = buffer;
         this.sectionStart = sectionStart;
         this.sectionEnd   = sectionEnd;
+        buildIndex();
+    }
+
+    private void buildIndex() {
+        headerCount = 0;
+        if (buffer == null) return;
+        int i = sectionStart;
+        while (i < sectionEnd) {
+            int lineEnd = findCR(i);
+            int colon   = findColon(i, lineEnd);
+            if (colon != -1) {
+                int vs = skipSpaces(colon + 1, lineEnd);
+                ensureIndexCapacity(headerCount + 1);
+                nameOffsets[headerCount]  = i;
+                nameLengths[headerCount]  = colon - i;
+                valueOffsets[headerCount] = vs;
+                valueLengths[headerCount] = lineEnd - vs;
+                nameHashes[headerCount]   = ByteScan.hashNameIgnoreCaseAscii(buffer, i, colon - i);
+                headerCount++;
+            }
+            i = lineEnd + 2;
+        }
+    }
+
+    private void ensureIndexCapacity(int needed) {
+        if (needed <= nameOffsets.length) return;
+        // EX-08 (Http1Limits.MAX_HEADER_COUNT) already rejects any request with more headers
+        // than this before it ever reaches reset() — this can only fire while growing toward
+        // that ceiling, never past it. Asserted, not silently truncated: an index that silently
+        // dropped headers past this point would be a correctness bug, not a capacity one.
+        assert needed <= Http1Limits.MAX_HEADER_COUNT
+                : "header count " + needed + " exceeds Http1Limits.MAX_HEADER_COUNT — RequestParser should have rejected this already";
+        int grown = nameOffsets.length;
+        while (grown < needed) grown *= 2;
+        nameOffsets  = Arrays.copyOf(nameOffsets, grown);
+        nameLengths  = Arrays.copyOf(nameLengths, grown);
+        valueOffsets = Arrays.copyOf(valueOffsets, grown);
+        valueLengths = Arrays.copyOf(valueLengths, grown);
+        nameHashes   = Arrays.copyOf(nameHashes, grown);
     }
 
     /**
@@ -69,19 +141,12 @@ public class HeaderMap {
             nameSlice  = new Slice();
             valueSlice = new Slice();
         }
-        int i = sectionStart;
-        while (i < sectionEnd) {
-            int lineEnd = findCR(i);
-            int colon   = findColon(i, lineEnd);
-            if (colon != -1) {
-                int vs = skipSpaces(colon + 1, lineEnd);
-                nameSlice.start  = i;
-                nameSlice.len    = colon - i;
-                valueSlice.start = vs;
-                valueSlice.len   = lineEnd - vs;
-                consumer.accept(nameSlice, valueSlice);
-            }
-            i = lineEnd + 2;
+        for (int i = 0; i < headerCount; i++) {
+            nameSlice.start  = nameOffsets[i];
+            nameSlice.len    = nameLengths[i];
+            valueSlice.start = valueOffsets[i];
+            valueSlice.len   = valueLengths[i];
+            consumer.accept(nameSlice, valueSlice);
         }
     }
 
@@ -108,26 +173,21 @@ public class HeaderMap {
 
     /** Returns the first value of header {@code name} (case-insensitive), or {@code null}. */
     public String first(String name) {
-        long r = findFirst(name);
-        if (r < 0) return null;
-        int s = (int) (r >> 32), l = (int) (r & 0xFFFFFFFFL);
-        return new String(buffer, s, l, StandardCharsets.UTF_8);
+        int i = indexOfHeader(name);
+        if (i < 0) return null;
+        return new String(buffer, valueOffsets[i], valueLengths[i], StandardCharsets.UTF_8);
     }
 
     /** Returns all values of header {@code name} in declaration order, or an empty list. */
     public List<String> all(String name) {
         if (buffer == null) return List.of();
         List<String> result = null;
-        int i = sectionStart;
-        while (i < sectionEnd) {
-            int lineEnd = findCR(i);
-            int colon   = findColon(i, lineEnd);
-            if (colon != -1 && keyMatches(i, colon - i, name)) {
-                int vs = skipSpaces(colon + 1, lineEnd);
+        int hash = ByteScan.hashNameIgnoreCaseAscii(name);
+        for (int i = 0; i < headerCount; i++) {
+            if (nameHashes[i] == hash && ByteScan.equalsIgnoreCaseAscii(buffer, nameOffsets[i], nameOffsets[i] + nameLengths[i], name)) {
                 if (result == null) result = new ArrayList<>();
-                result.add(new String(buffer, vs, lineEnd - vs, StandardCharsets.UTF_8));
+                result.add(new String(buffer, valueOffsets[i], valueLengths[i], StandardCharsets.UTF_8));
             }
-            i = lineEnd + 2;
         }
         return result != null ? result : List.of();
     }
@@ -135,61 +195,47 @@ public class HeaderMap {
     /** Returns all header values in declaration order. */
     public List<String> all() {
         if (buffer == null) return List.of();
-        List<String> result = new ArrayList<>();
-        int i = sectionStart;
-        while (i < sectionEnd) {
-            int lineEnd = findCR(i);
-            int colon   = findColon(i, lineEnd);
-            if (colon != -1) {
-                int vs = skipSpaces(colon + 1, lineEnd);
-                result.add(new String(buffer, vs, lineEnd - vs, StandardCharsets.UTF_8));
-            }
-            i = lineEnd + 2;
+        List<String> result = new ArrayList<>(headerCount);
+        for (int i = 0; i < headerCount; i++) {
+            result.add(new String(buffer, valueOffsets[i], valueLengths[i], StandardCharsets.UTF_8));
         }
         return result;
     }
 
     /** Case-insensitive comparison of the first value of {@code name} against {@code value}. */
     public boolean valueEqualsIgnoreCase(String name, String value) {
-        long r = findFirst(name);
-        if (r < 0) return false;
-        int vs = (int) (r >> 32), vl = (int) (r & 0xFFFFFFFFL);
-        if (vl != value.length()) return false;
-        for (int i = 0; i < vl; i++) {
-            byte b = buffer[vs + i];
-            if (b >= 'A' && b <= 'Z') b += 32;
-            char c = value.charAt(i);
-            if (c >= 'A' && c <= 'Z') c += 32;
-            if (b != (byte) c) return false;
-        }
-        return true;
+        int i = indexOfHeader(name);
+        if (i < 0) return false;
+        return ByteScan.equalsIgnoreCaseAscii(buffer, valueOffsets[i], valueOffsets[i] + valueLengths[i], value);
     }
 
-    /** Returns a zero-copy {@link ByteView} over the first value of {@code name}, or {@code null}. */
+    /**
+     * Returns a zero-copy {@link ByteView} over the first value of {@code name}, or {@code null}.
+     *
+     * <h3>{@code EX-05}: pooled, not allocated per call</h3>
+     * The returned view is drawn from a small internal {@link SlicePool} rather than allocated
+     * fresh. It stays valid until either the request ends, or {@link #view} is called
+     * {@value #VIEW_POOL_SIZE} more times on this same {@code HeaderMap} — whichever comes
+     * first — at which point the ring wraps around and silently repositions the same instance
+     * over different bytes. A handler that needs more than {@value #VIEW_POOL_SIZE} views alive
+     * at once should copy the earlier ones to {@code String}/{@code byte[]} before requesting more.
+     */
     public ByteView view(String name) {
-        long r = findFirst(name);
-        if (r < 0) return null;
-        final int s = (int) (r >> 32), l = (int) (r & 0xFFFFFFFFL);
-        return new ByteView() {
-            public int length()       { return l; }
-            public byte byteAt(int i) { return buffer[s + i]; }
-        };
+        int i = indexOfHeader(name);
+        if (i < 0) return null;
+        return viewPool.acquire(buffer, valueOffsets[i], valueLengths[i]);
     }
 
-    /** Returns {@code (valStart << 32) | valLen}, or {@code -1} if not found. */
-    private long findFirst(String name) {
-        if (buffer == null) return -1L;
-        int i = sectionStart;
-        while (i < sectionEnd) {
-            int lineEnd = findCR(i);
-            int colon   = findColon(i, lineEnd);
-            if (colon != -1 && keyMatches(i, colon - i, name)) {
-                int vs = skipSpaces(colon + 1, lineEnd);
-                return ((long) vs << 32) | (lineEnd - vs);
+    /** Index into the {@code EX-09} arrays of the first header named {@code name}, or {@code -1}. */
+    private int indexOfHeader(String name) {
+        if (buffer == null) return -1;
+        int hash = ByteScan.hashNameIgnoreCaseAscii(name);
+        for (int i = 0; i < headerCount; i++) {
+            if (nameHashes[i] == hash && ByteScan.equalsIgnoreCaseAscii(buffer, nameOffsets[i], nameOffsets[i] + nameLengths[i], name)) {
+                return i;
             }
-            i = lineEnd + 2;
         }
-        return -1L;
+        return -1;
     }
 
     private int findCR(int from) {
@@ -205,17 +251,5 @@ public class HeaderMap {
     private int skipSpaces(int from, int end) {
         while (from < end && buffer[from] == ' ') from++;
         return from;
-    }
-
-    private boolean keyMatches(int start, int len, String name) {
-        if (len != name.length()) return false;
-        for (int i = 0; i < len; i++) {
-            byte b = buffer[start + i];
-            if (b >= 'A' && b <= 'Z') b += 32;
-            char c = name.charAt(i);
-            if (c >= 'A' && c <= 'Z') c += 32;
-            if (b != (byte) c) return false;
-        }
-        return true;
     }
 }

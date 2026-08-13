@@ -584,3 +584,152 @@ concrete work with its own scenario list, harness design, and output format, rat
 recorded intention.
 
 ---
+
+## DEC-19 — `EX-06`'s router half is fixed with an opaque, caller-owned per-connection scratch object, not by extending `ConnectionScratch`
+
+**Context.** `EX-06`'s registry entry phases itself: "Phase 2 (introduce), Phase 3 (h2 consumes
+it), Phase 4 (router consumes it)" — Phase 4 is where `FastPathRouterImpl`'s and
+`FastPathWsRouterImpl`'s `ThreadLocal<MatchResult>`/`ThreadLocal<MethodPathByteView>` (unbounded
+under virtual threads, one per connection with no upper bound and no pooling — exactly the
+failure mode `ConnectionScratch` exists to avoid for every other per-connection buffer) get
+removed. `ConnectionScratch`'s own class Javadoc (written in Phase 2, in anticipation) already
+commits to a specific mechanism: "Extended in Phase 4 with the router's reusable
+{@code MatchResult}/path-view fields."
+
+Attempting that literally surfaced a real problem: `ConnectionScratch` lives in
+`dev.relism.flash.transport`; the router lives in `dev.relism.flash.routing` (and
+`dev.relism.flash.routing.routers.fastpathrouter`). Today `transport` depends on `routing`
+(`ConnectionContext` holds `AbstractRouter`/`AbstractWsRouter`) but **`routing` has zero imports
+of `transport`** anywhere in this codebase (verified by grep, not assumed) — a clean one-way
+dependency. Adding the router's scratch fields to `ConnectionScratch` and passing it into
+`route()` would require `routing`'s classes to import `transport.ConnectionScratch`, creating the
+first reverse edge and a genuine package cycle where none exists today.
+
+**Options.**
+1. Extend `ConnectionScratch` as its own Javadoc already describes, accepting the new
+   `routing → transport` edge (and the resulting cycle with the existing `transport → routing`
+   edge).
+2. `AbstractRouter`/`AbstractWsRouter` gain a `newScratch()` method (default `null`) that each
+   router implementation overrides to return an opaque, implementation-specific object (kept as a
+   package-private nested class — `FastPathRouterImpl.RouteScratch`,
+   `FastPathWsRouterImpl.RouteScratch` — never a new public type). The connection driver
+   (`Http1Connection.run`) calls `newScratch()` **once per connection**, exactly the same
+   "created once, held by the loop, reused across every request" shape already used there for
+   `RequestParser`, and passes the opaque result into every `route(request, scratch)` call for
+   that connection's lifetime. No package outside `routing`/`routing.routers.fastpathrouter` ever
+   sees the concrete scratch type.
+
+**Decision.** Option 2.
+
+**Consequence.** Practically identical outcome to option 1 — one object per connection, created
+once, reused across every request on that connection, replacing the `ThreadLocal`s — but without
+introducing `routing`'s only dependency on `transport`. `ConnectionScratch`'s own Javadoc (which
+predated this decision) is corrected in the same change to describe what was actually built
+rather than the mechanism it originally assumed; `AbstractRouter.route`'s and
+`AbstractWsRouter.route`'s signatures gain an `Object scratch` parameter, which is the one
+API-surface cost of this approach (every router implementation, and every direct caller —
+`Http1Connection` and the handful of tests that call `route()` directly — must now pass one).
+`EX-19` (reusable `PathParams`/path-param arrays) piggybacks on the same `RouteScratch` object
+for `FastPathRouterImpl`, since it needed an identical "created once per connection, grown to the
+connection's high-water mark" lifetime — implemented together with `EX-06`'s router half rather
+than as a separate pass over the same class.
+
+**Revisit when.** Not expected to be revisited — the untyped `Object scratch` parameter is a
+minor wart, but the alternative (a generic `AbstractRouter<S>` type parameter propagated through
+`ConnectionContext`, `ServerHandle`, and every public router-registration API) is a far larger
+API-surface change for one internal implementation detail, and is not justified unless a second
+router implementation actually needs a differently-shaped scratch object — none exists today.
+
+---
+
+## DEC-20 — Phase 4 performance measurements: `EX-04`, `EX-33`, the router's own allocation profile, and the h1 zero-alloc contract's actual current number
+
+**Context.** Phase 4's plan carries two explicit "measure, keep only if it earns its keep"
+instructions (`EX-04`: revert if the win is negative or noise; `EX-33`: keep scalar if the SWAR
+win is under 3%), plus a zero-alloc contract ("an h1 `GET /users/{id}` request that reads three
+headers and one path param must be 0 B/op end to end except for the user-facing `String`s the
+handler explicitly asks for. Add this as a JMH allocation test now"). All three measured together
+(JDK 21.0.11, JMH 1.37, `avgt` mode, `-prof gc`, `flash/src/jmh/java`) rather than as separate
+passes, since they share the same request/route fixtures.
+
+**Measurements.**
+
+*`EX-33` — SWAR vs. scalar `\r\n\r\n` scan, realistic ~330-byte request (`ByteScanBenchmark`):*
+
+| | ns/op |
+|---|---|
+| `headerEndScan_scalar` | 134.921 ± 5.558 |
+| `headerEndScan_swar` | 87.116 ± 1.411 |
+
+SWAR is **35.4 % faster** (47.8 ns absolute) — far above the 3 % keep-threshold. **Kept.**
+
+*`EX-04` — the `longAt`/`ByteCompare` mechanism in isolation, and the real router
+(`FastPathRouterBenchmark`):*
+
+| | ns/op | B/op |
+|---|---|---|
+| `byteCompare_byteAtATime` (useLong=false) | 22.281 ± 1.021 | ≈0 |
+| `byteCompare_longPath` (useLong=true) | 15.146 ± 1.090 | ≈0 |
+| `router_staticRoute` (real `FastPathRouterImpl.route`) | 143.409 ± 14.992 | 0.001 |
+| `router_parametricRoute` (real `FastPathRouterImpl.route`, 1 param extracted) | 284.433 ± 31.510 | 0.002 |
+
+The long path is **32.1 % faster** (7.1 ns) than the byte-at-a-time comparison it replaces, at
+the mechanism level — a clear, real win, confirming `EX-04` is worth keeping. **Honest caveat**,
+not a failure of the measurement but a finding in its own right: `router_staticRoute`/
+`router_parametricRoute` do **not** exercise this win today, because the actual value
+`FastPathRouterImpl.route` passes to `router.match()` is always a
+`FastPathViews.MethodPathByteView` — a deliberate composite of method bytes + path view, which
+(per `EX-04`'s own registry text) correctly keeps `supportsLong() == false`, since a word-at-a-
+time read across two independent sources is unsound, not merely unoptimized. `EX-04`'s win will
+apply once a future phase (`HPACK` static-table matching, frame validation — Phase 5+) compares
+two genuinely-contiguous array-backed ranges directly, which is exactly the shape
+`byteCompare_longPath` measures. **Kept** — implemented correctly, verified correct
+(`FastPathViewsLongAtTest`), and measured worthwhile for its actual future consumers; it was
+never going to show up in today's router-benchmark numbers, and the plan's own text already
+predicted this by excluding `MethodPathByteView` from the fix.
+
+Separately: both router benchmarks show **≈0 B/op** — confirms `EX-06`/`EX-19`'s scratch reuse
+(the `RouteScratch` object, its reused `MatchResult`, `MethodPathByteView`, and path-param
+arrays/`PathParams` instance) is genuinely zero-allocation in practice, including on a
+parametric route that extracts a param.
+
+*The h1 zero-alloc contract, end to end (`RequestPipelineBenchmark`):*
+
+| | ns/op | B/op |
+|---|---|---|
+| `parseAndRoute` (parse + route only, no header/param access) | 1135.125 ± 68.888 | 120.008 |
+| `parseRouteAndExtractThreeFields` (+ 1 path param, 2 headers read) | 1335.965 ± 57.378 | 304.009 |
+
+**Not literally 0 B/op** — and this is expected, not a Phase 4 regression: the 120.008 B/op in
+`parseAndRoute` (which touches no header or path-param API at all) is entirely attributable to
+`Request`/`RequestBody`/`RequestLine` construction, still allocated fresh per request. That is
+`EX-21`/`EX-22`'s scope, explicitly assigned to **Phase 6** ("Request/Response model refactor"),
+not Phase 4's. The delta to `parseRouteAndExtractThreeFields` — 304.009 − 120.008 = **184.001
+B/op for exactly three explicit `String` reads** (one path param, two headers) — is precisely the
+"user-facing `String`s the handler explicitly asks for" the contract's own text carves out as
+acceptable, and confirms that *reading* those three fields (the header index lookup, the pooled
+slice, the path-param array read) itself adds no allocation beyond the unavoidable `String`
+objects themselves.
+
+**Decision.** `EX-33`: keep the SWAR scan. `EX-04`: keep the `longAt`/`supportsLong`
+implementation as built — correct, tested, and measured worthwhile for the array-backed
+comparisons it was designed for, independent of whether today's single call site
+(`MethodPathByteView`) happens to use it. The h1 zero-alloc DoD item is recorded as: **Phase 4's
+own scope (`EX-05`/`EX-09`/`EX-19`/`EX-25`/`EX-26`/`EX-33`) is verified zero-allocation**
+(`router_staticRoute`/`router_parametricRoute`'s ≈0 B/op, `HeaderMapIndexTest`'s identity-based
+allocation check); the remaining 120.008 B/op is `Request`/`RequestBody`/`RequestLine`
+construction, out of scope until Phase 6, and is not silently hidden — this benchmark now exists
+specifically so Phase 6 has a "before" number to compare against and a regression gate once
+Phase 17 wires `-prof gc` into CI.
+
+**Consequence.** No code changes from this entry — it is a measurement record. Three new
+benchmark classes ship under `src/jmh/java`: `ByteScan`Benchmark, `FastPathRouterBenchmark`,
+`RequestPipelineBenchmark` — all component-level and gate-relevant (unlike the `DEC-18` showcase
+category, these exist to answer the plan's own explicit measurement instructions, not for
+literature/demo purposes).
+
+**Revisit when.** `RequestPipelineBenchmark`'s `parseAndRoute` number should drop close to 0 B/op
+once Phase 6 lands `Request`/`RequestBody` pooling — re-run this exact benchmark then and update
+this entry (or add a new one) with the "after" number, closing the loop Phase 4 opened.
+
+---

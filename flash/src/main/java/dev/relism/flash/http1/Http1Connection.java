@@ -39,6 +39,11 @@ public final class Http1Connection implements ConnectionProtocol {
         OutputStream        out = ctx.out();
         byte[] idleProbe = new byte[1];
 
+        // EX-06 (router half): created once per connection, exactly like `parser` above, and
+        // reused across every request on this connection — see AbstractRouter#newScratch.
+        Object routeScratch   = ctx.router().newScratch();
+        Object wsRouteScratch = ctx.wsRouter().newScratch();
+
         while (!ctx.stopped().getAsBoolean()) {
             // EX-07: wait for the next request to begin, bounded by the generous
             // idle-keep-alive timeout — sitting idle between keep-alive requests is normal, not
@@ -77,7 +82,7 @@ public final class Http1Connection implements ConnectionProtocol {
 
             if (request.method() == HttpMethod.GET && WebSocketUpgrade.isWebSocketUpgrade(request)) {
                 in.clearDeadline(); // the WS session loop is long-lived; it paces itself
-                WebSocketHandler wsHandler = ctx.wsRouter().route(request);
+                WebSocketHandler wsHandler = ctx.wsRouter().route(request, wsRouteScratch);
                 if (wsHandler == null) {
                     out.write(WebSocketUpgrade.REJECT_400);
                     out.flush();
@@ -103,7 +108,7 @@ public final class Http1Connection implements ConnectionProtocol {
             boolean keepAlive = Http1KeepAlive.isKeepAlive(request);
             Response response = new Response(200, ContentType.TEXT_PLAIN);
 
-            RequestHandler handler = ctx.router().route(request);
+            RequestHandler handler = ctx.router().route(request, routeScratch);
             if (handler == null) handler = ctx.router().getNotFoundHandler();
 
             try {

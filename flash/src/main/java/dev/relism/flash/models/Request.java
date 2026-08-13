@@ -1,6 +1,7 @@
 package dev.relism.flash.models;
 
 import dev.relism.flash.RequestParser;
+import dev.relism.flash.bytes.ArrayBackedByteView;
 import dev.relism.fpr.core.ByteView;
 import dev.relism.flash.http.HttpMethod;
 import lombok.EqualsAndHashCode;
@@ -123,6 +124,12 @@ public class Request {
     public String path() {
         if (cachedPath != null) return cachedPath;
         ByteView v = requestLine.getPath();
+        // EX-25: one allocation via a direct String(array, offset, length) construction when the
+        // view is a contiguous array slice (always true for h1 today), instead of a byte-at-a-time
+        // copy into a scratch array followed by a second allocation for the String itself.
+        if (v instanceof ArrayBackedByteView abv) {
+            return cachedPath = new String(abv.array(), abv.offset(), v.length(), StandardCharsets.UTF_8);
+        }
         byte[] buf = new byte[v.length()];
         for (int i = 0; i < v.length(); i++) buf[i] = v.byteAt(i);
         return cachedPath = new String(buf, StandardCharsets.UTF_8);

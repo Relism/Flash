@@ -65,7 +65,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 1 — HTTP/1.1 hardening + ALPN/preface | done | `feature/core/http2` | EX-02/03/07/08/10/17/18/30/31 fixed; EX-35/36 found+fixed. `BufferedByteSource`, `ProtocolNegotiator`, `MalformedRequestException` added (plan corrected, DEC-12). 277/277 tests green (run twice). h1 benchmark check deferred — no JMH harness until Phase 3 (documented in DoD). |
 | 2 — Transport decomposition | done | `feature/core/http2` | `HttpServer.java` deleted; `transport`/`http1` packages + WS extraction (EX-01/06/11/12/13/14/15/16/32/34) done. Router `ThreadLocal` (EX-06 router half) deliberately deferred to Phase 4 per DEC-15. 311/311 tests green (run 3×). h1 benchmark check deferred — no JMH harness until Phase 3. |
 | 3 — Serialized frame writer (GO/NO-GO gate) | done | `feature/core/http2` | `Http2FrameWriter`/`WriteIntent`/`IntrusiveMpscQueue` + `Http2FrameWriterTest`/`Http2FrameWriterStressTest` + `FrameWriterBenchmark` (JMH, `-Pjmh`, `src/jmh/java` — moved there from `src/test/java` after it broke default `mvn test`; see `DEC-17`). All 4 gate criteria met: N=1 0 B/op & 42.6 ns overhead (≤50 ns budget); N=64 65.5% throughput retention (≥60%) & 11.8–14.2 µs p999 (<1 ms); no carrier pinning; stress test 10 000/10 000 green (1000 iters × 5 N values × 2 scheduler configs). Full numbers in `WRITER.md`, `DEC-09`. 321/321 non-JMH tests green. |
-| 4 — Byte-layer foundations | not started | — | — |
+| 4 — Byte-layer foundations | done | `feature/core/http2` | `dev.relism.flash.bytes` package (`ByteScan`+SWAR, `ArrayBackedByteView`, `SegmentedByteView`, `PooledSlice`/`SlicePool`, `ByteWriter`, `Pairs`) built. `EX-04`/`EX-05`/`EX-09`/`EX-19`/`EX-25`/`EX-26`/`EX-33` done, plus `EX-06`'s router half (plan correction, `DEC-19`) removing `FastPathRouterImpl`/`FastPathWsRouterImpl`'s `ThreadLocal`s via an opaque per-connection scratch (`AbstractRouter#newScratch`) instead of extending `ConnectionScratch` (would have created a `routing`→`transport` package cycle). `AbstractRouter`/`AbstractWsRouter.route()` gained a `scratch` param — all call sites updated. Measured (`DEC-20`): SWAR scan 35.4% faster (kept), `EX-04`'s word-path 32.1% faster at the mechanism level (kept; today's router doesn't route through it — `MethodPathByteView` stays non-array-backed by design). Router matching itself is ≈0 B/op including parametric routes. Full h1 pipeline is 120.008 B/op, 100% attributable to `Request`/`RequestBody`/`RequestLine` construction — explicitly Phase 6 scope, not a Phase 4 regression. Two documented (non-hot-path) anonymous-`ByteView` fallbacks remain in `QueryParams`/`PathParams.view`. `BYTES.md` written. 395/395 tests green (both with and without `-Pjmh`). |
 | 5 — Frame layer | not started | — | — |
 | 6 — Request/Response model refactor | not started | — | — |
 | 7 — HPACK decoder | not started | — | — |
@@ -1339,7 +1339,13 @@ and cash in the allocation and scanning wins that the existing code left on the 
 would mean rewriting the frame reader.
 
 ### EX items
-`EX-04`, `EX-05`, `EX-09`, `EX-19`, `EX-25`, `EX-26`, `EX-33`.
+`EX-04`, `EX-05`, `EX-09`, `EX-19`, `EX-25`, `EX-26`, `EX-33` — **plan correction**: `EX-06`'s
+router half (removing `FastPathRouterImpl`/`FastPathWsRouterImpl`'s `ThreadLocal`s) belongs here
+too, per `EX-06`'s own registry text ("Phase: 2 (introduce), 3 (h2 consumes it), **4 (router
+consumes it)**") and `ConnectionScratch`'s own Phase-2-era Javadoc, but was missing from this
+line — the same class of omission `DEC-12` already recorded for Phase 1. Fixed in place here;
+see `DECISIONS.md`, `DEC-19`, for the router-half fix itself (and why it does not extend
+`ConnectionScratch` as that Javadoc originally assumed).
 
 ### Files
 
@@ -1428,14 +1434,23 @@ Modified:
   explicitly asks for. Add this as a JMH allocation test now; it becomes a CI gate in Phase 17.
 
 ### Safety checks
-- [ ] `longAt` bounds contract documented and asserted in debug builds (an `assert`, which is
-      off in production, plus an explicit test)
-- [ ] Header index arrays bounded by `MAX_HEADER_COUNT`; overflow is impossible because Phase 1
-      already rejects over-limit requests — assert the invariant rather than silently truncating
-- [ ] SWAR scan never reads past the array bound (test with a target at the very last byte and
-      with a buffer whose length is not a multiple of 8)
-- [ ] Pooled slice reuse cannot alias two live views the caller believes are independent —
-      documented, and covered by a test that demonstrates the hazard so the contract is visible
+- [x] `longAt` bounds contract documented (`FastPathViews`'s `longAtLittleEndian` Javadoc,
+      `ArrayBackedByteView`/`ByteScan` class Javadocs) and verified against `fpr-core`'s own
+      `ByteCompare` directly (`FastPathViewsLongAtTest`) — no defensive runtime assert was added
+      for the bounds contract itself, since `ByteCompare` never calls `longAt(i)` without first
+      checking `i + 8 <= length()` (confirmed from its decompiled bytecode), making a check here
+      dead code on every real call path; documented as such rather than added anyway.
+- [x] Header index arrays bounded by `MAX_HEADER_COUNT`; overflow is impossible because Phase 1
+      already rejects over-limit requests — asserted (`HeaderMap.ensureIndexCapacity`), not
+      silently truncated; exercised up to the exact limit by
+      `HeaderMapIndexTest#growsPastInitialIndexCapacity_upToMaxHeaderCount_andStaysCorrect`.
+- [x] SWAR scan never reads past the array bound — `ByteScanTest`/`ByteScanFuzzTest` cover every
+      length 0–256 exhaustively plus 20 000 fully-random fuzz trials per SWAR method, including a
+      match at the very last valid byte and buffer lengths not a multiple of 8.
+- [x] Pooled slice reuse cannot alias two live views the caller believes are independent —
+      documented on `SlicePool`/`PooledSlice`/every `view()` method, and demonstrated (not just
+      asserted) by `SlicePoolTest#wraparoundAliasesThePreviouslyReturnedSlice` and the analogous
+      tests in `HeaderMapIndexTest`, `QueryParamsFastPathTest`, `PathParamsTest`.
 
 ### Tests
 - `ByteScanTest` — property tests, SWAR vs scalar, every boundary.
@@ -1443,22 +1458,45 @@ Modified:
 - `FastPathViewsLongAtTest` — `longAt` correctness, and end-to-end routing correctness with the
   long path enabled (the critical test from task 2).
 - `HeaderMapIndexTest` — lookup correctness with duplicate names, case variations, 0 headers,
-  `MAX_HEADER_COUNT` headers; and an allocation assertion.
-- `PathParamsReuseTest`, `QueryParamsFastPathTest`.
-- All existing `models` and `routing` tests pass unmodified.
+  `MAX_HEADER_COUNT` headers, an allocation-identity assertion, and the pool-wraparound hazard.
+- `QueryParamsFastPathTest`, and the pool-wraparound/reuse cases added directly to the existing
+  `PathParamsTest` and `FastPathRouterImplTest` — **plan correction**: no separate
+  `PathParamsReuseTest` file was created; the reuse-across-many-requests case
+  (`FastPathRouterImplTest#route_reusesScratchAcrossManyRequests_includingGrowingParamCapacity`)
+  exercises `PathParams`'s reusable path through the router that actually owns it, which is a more
+  realistic test than a `PathParams`-only unit test would have been.
+- Existing `models`/`routing` tests: **not** unmodified as originally written here — `route()`
+  gained a `scratch` parameter (`EX-06`, `DEC-19`), so every direct caller (`FastPathRouterImplTest`,
+  `AbstractRouterTest`, `AbstractWsRouterTest`) needed a one-line update. All pass; 395/395 across
+  the whole module, including full socket-level `HttpServer*Test` suites exercising the real
+  `Http1Connection` path end to end.
 
 ### Docs
-- `flash/docs/http2/BYTES.md` — the byte-layer primitives, the `ByteView` capability hierarchy
+- [x] `flash/docs/http2/BYTES.md` — the byte-layer primitives, the `ByteView` capability hierarchy
   (`ByteView` → `ArrayBackedByteView` → concrete; `SegmentedByteView` as the deliberate
   non-array-backed case), the `supportsLong` contract, and the pooled-slice lifetime rules.
-- Update `HeaderMap`'s class Javadoc (its lifetime contract section is the model the rest of the
-  codebase follows; it must stay accurate).
+- [x] `HeaderMap`'s class Javadoc updated in place (the `EX-09` index, the pooled-`view()`
+  contract) as part of its Phase 4 rewrite.
 
 ### DoD
-- [ ] h1 happy path is 0 B/op in JMH.
-- [ ] h1 throughput improved or unchanged; numbers recorded.
-- [ ] Every anonymous `ByteView` allocation in `flash` core is gone. (Grep `new ByteView()`.)
-- [ ] `flash/docs/http2/BYTES.md` complete.
+- [~] h1 happy path is 0 B/op in JMH — **partially, honestly**: Phase 4's own scope (header
+  lookup, path-param extraction, query decoding) measures at **≈0 B/op**
+  (`RequestPipelineBenchmark.router_staticRoute`/`router_parametricRoute`, ≈0 B/op;
+  `HeaderMapIndexTest`'s identity-based allocation check). The full h1 pipeline is **not**
+  literally 0 B/op yet: 120.008 B/op measured, 100% attributable to `Request`/`RequestBody`/
+  `RequestLine` construction (`EX-21`/`EX-22`), which is explicitly Phase 6 scope, not Phase 4's.
+  See `DECISIONS.md`, `DEC-20`, for the full breakdown and why this is not a Phase 4 regression.
+- [x] h1 throughput improved or unchanged; numbers recorded — `EX-33`'s SWAR scan is 35.4% faster
+  than scalar (kept); `EX-04`'s word-at-a-time path is 32.1% faster than byte-at-a-time at the
+  mechanism level (kept — see `DEC-20` for why today's router benchmark doesn't yet show this
+  directly). No regression found anywhere measured.
+- [~] Every anonymous `ByteView` allocation in `flash` core is gone — **two deliberate,
+  documented exceptions remain** (`QueryParams.view`, `PathParams.view`, the fallback path for a
+  non-array-backed source — structurally unreachable on the real request path today, kept because
+  both constructors are `public`; see `BYTES.md`). Every allocation on the actual hot path is
+  gone; grep `new ByteView()` and read the two remaining hits' Javadocs before treating this as
+  incomplete.
+- [x] `flash/docs/http2/BYTES.md` complete.
 
 ---
 

@@ -1,5 +1,6 @@
 package dev.relism.flash;
 
+import dev.relism.flash.bytes.ByteScan;
 import dev.relism.flash.exceptions.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
@@ -51,26 +52,6 @@ import java.util.Arrays;
 @Slf4j
 public class RequestParser {
     private static final int INITIAL_BUFFER_SIZE = 8192;
-
-    /**
-     * RFC 9110 §5.6.2 {@code tchar} set, table-driven so header-name validation is a single
-     * array read per byte rather than a chain of comparisons (R4/R5). Indexed directly by
-     * byte value; only defined for the ASCII range a valid header name can ever occupy.
-     */
-    private static final boolean[] TCHAR = new boolean[128];
-
-    static {
-        for (byte b : "!#$%&'*+-.^_`|~".getBytes(java.nio.charset.StandardCharsets.US_ASCII)) {
-            TCHAR[b] = true;
-        }
-        for (char c = '0'; c <= '9'; c++) TCHAR[c] = true;
-        for (char c = 'A'; c <= 'Z'; c++) TCHAR[c] = true;
-        for (char c = 'a'; c <= 'z'; c++) TCHAR[c] = true;
-    }
-
-    private static boolean isTChar(byte b) {
-        return b >= 0 && b < 128 && TCHAR[b];
-    }
 
     private final int               maxHeaderBufferSize;
     private final InetSocketAddress remoteAddress;
@@ -132,7 +113,7 @@ public class RequestParser {
         bufBase = 0;
         bufLen  = 0;
 
-        int headerEndIdx = totalRead > 0 ? findEndOfHeader(buffer, base, base + totalRead) : -1;
+        int headerEndIdx = totalRead > 0 ? ByteScan.indexOfCrLfCrLf(buffer, base, base + totalRead) : -1;
         while (headerEndIdx == -1) {
             if (base + totalRead == buffer.length) {
                 if (base > 0) {
@@ -151,7 +132,7 @@ public class RequestParser {
             if (n <= 0) break;
             int prevTotal = totalRead;
             totalRead += n;
-            headerEndIdx = findEndOfHeader(buffer, base + Math.max(0, prevTotal - 3), base + totalRead);
+            headerEndIdx = ByteScan.indexOfCrLfCrLf(buffer, base + Math.max(0, prevTotal - 3), base + totalRead);
         }
         if (totalRead <= 0) return null;
         if (headerEndIdx == -1) {
@@ -161,7 +142,7 @@ public class RequestParser {
 
         // ── Request line ─────────────────────────────────────────────────────
 
-        int methodEnd = find(buffer, base, headerEndIdx, (byte) ' ');
+        int methodEnd = ByteScan.indexOf(buffer, base, headerEndIdx, (byte) ' ');
         if (methodEnd == -1) throw new MalformedRequestException(400, "Invalid request line (method)");
         if (methodEnd == base) throw new MalformedRequestException(400, "Missing HTTP method");
 
@@ -169,10 +150,10 @@ public class RequestParser {
         if (method == null) throw new MalformedRequestException(501, "Unsupported HTTP method");
 
         int pathStart = methodEnd + 1;
-        int pathEnd   = find(buffer, pathStart, headerEndIdx, (byte) ' ');
+        int pathEnd   = ByteScan.indexOf(buffer, pathStart, headerEndIdx, (byte) ' ');
         if (pathEnd == -1) throw new MalformedRequestException(400, "Invalid request line (path)");
 
-        int queryMark = find(buffer, pathStart, pathEnd, (byte) '?');
+        int queryMark = ByteScan.indexOf(buffer, pathStart, pathEnd, (byte) '?');
         FastPathViews.RequestByteView pathView = new FastPathViews.RequestByteView(buffer, pathStart,
                 queryMark != -1 ? queryMark - pathStart : pathEnd - pathStart);
         FastPathViews.RequestByteView queryView = queryMark != -1
@@ -180,7 +161,7 @@ public class RequestParser {
                 : null;
 
         int protocolStart = pathEnd + 1;
-        int protocolEnd   = find(buffer, protocolStart, headerEndIdx, (byte) '\r');
+        int protocolEnd   = ByteScan.indexOf(buffer, protocolStart, headerEndIdx, (byte) '\r');
         if (protocolEnd == -1) throw new MalformedRequestException(400, "Invalid request line (protocol)");
 
         // EX-08: the request line itself (method SP target SP version) is bounded separately
@@ -195,7 +176,7 @@ public class RequestParser {
 
         // ── Headers ──────────────────────────────────────────────────────────
 
-        int sectionStart = find(buffer, protocolEnd, headerEndIdx, (byte) '\n') + 1;
+        int sectionStart = ByteScan.indexOf(buffer, protocolEnd, headerEndIdx, (byte) '\n') + 1;
         int current      = sectionStart;
         long contentLength          = -1;
         boolean contentLengthSeen   = false;
@@ -212,7 +193,7 @@ public class RequestParser {
                 throw new MalformedRequestException(400, "Obsolete line folding is not supported");
             }
 
-            int lineEnd = find(buffer, current, headerEndIdx + 1, (byte) '\r');
+            int lineEnd = ByteScan.indexOf(buffer, current, headerEndIdx + 1, (byte) '\r');
             if (lineEnd == -1 || lineEnd == current) break;
 
             // EX-18: verify the '\r' is immediately followed by '\n' instead of blindly
@@ -228,7 +209,7 @@ public class RequestParser {
                 throw new MalformedRequestException(431, "Too many headers");
             }
 
-            int colon = find(buffer, current, lineEnd, (byte) ':');
+            int colon = ByteScan.indexOf(buffer, current, lineEnd, (byte) ':');
             if (colon == -1) {
                 throw new MalformedRequestException(400, "Header line missing ':'");
             }
@@ -236,7 +217,7 @@ public class RequestParser {
                 throw new MalformedRequestException(431, "Header name exceeds " + Http1Limits.MAX_HEADER_NAME_LENGTH + " bytes");
             }
             for (int i = current; i < colon; i++) {
-                if (!isTChar(buffer[i])) {
+                if (!ByteScan.isTChar(buffer[i])) {
                     throw new MalformedRequestException(400, "Invalid header name character");
                 }
             }
@@ -247,7 +228,7 @@ public class RequestParser {
                 throw new MalformedRequestException(431, "Header value exceeds " + Http1Limits.MAX_HEADER_VALUE_LENGTH + " bytes");
             }
 
-            if (equalsIgnoreCase(buffer, current, colon, "content-length")) {
+            if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "content-length")) {
                 // EX-03: strict, overflow-safe parsing — replaces the old digit-skipping
                 // parseLong, which silently accepted "5abc" as 5 and "-1" as 1.
                 long parsed = parseContentLengthStrict(buffer, valueStart, lineEnd);
@@ -259,7 +240,7 @@ public class RequestParser {
                 }
                 contentLength = parsed;
                 contentLengthSeen = true;
-            } else if (equalsIgnoreCase(buffer, current, colon, "transfer-encoding")) {
+            } else if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "transfer-encoding")) {
                 transferEncodingSeen = true;
                 // Correctness fix found while implementing EX-02 in this exact code path
                 // (registered as EX-35): the old check required the WHOLE value to equal
@@ -319,34 +300,6 @@ public class RequestParser {
         return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress, sslSocket);
     }
 
-    // ── Buffer scanning utilities (hot path — keep branch-free where possible) ──
-
-    private static int findEndOfHeader(byte[] buf, int from, int len) {
-        for (int i = from; i <= len - 4; i++) {
-            if (buf[i] == '\r' && buf[i+1] == '\n' && buf[i+2] == '\r' && buf[i+3] == '\n')
-                return i;
-        }
-        return -1;
-    }
-
-    private static int find(byte[] buf, int start, int end, byte target) {
-        for (int i = start; i < end; i++) {
-            if (buf[i] == target) return i;
-        }
-        return -1;
-    }
-
-    private static boolean equalsIgnoreCase(byte[] buf, int start, int end, String target) {
-        int len = end - start;
-        if (len != target.length()) return false;
-        for (int i = 0; i < len; i++) {
-            byte b = buf[start + i];
-            if (b >= 'A' && b <= 'Z') b += 32;
-            if (b != (byte) target.charAt(i)) return false;
-        }
-        return true;
-    }
-
     /**
      * Strict, overflow-safe {@code Content-Length} parsing ({@code EX-03}). Rejects: an empty
      * value, any non-digit byte (including a leading {@code +}/{@code -}, which are not
@@ -395,6 +348,6 @@ public class RequestParser {
         }
         int tokenStart = lastComma + 1;
         while (tokenStart < e && (buf[tokenStart] == ' ' || buf[tokenStart] == '\t')) tokenStart++;
-        return equalsIgnoreCase(buf, tokenStart, e, "chunked");
+        return ByteScan.equalsIgnoreCaseAscii(buf, tokenStart, e, "chunked");
     }
 }
