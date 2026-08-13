@@ -1,5 +1,7 @@
 package dev.relism.flash.http2.stream;
 
+import dev.relism.flash.http2.Http2Limits;
+import dev.relism.flash.http2.message.DataBufferPool;
 import java.util.Arrays;
 
 /** Fixed-capacity primitive stream-id table using linear-probed open addressing. */
@@ -17,8 +19,15 @@ public final class Http2StreamTable {
   private int size;
   private Http2Stream free;
   private int created;
+  private final DataBufferPool dataBuffers;
 
   public Http2StreamTable(int maxEntries) {
+    this(
+        maxEntries,
+        new DataBufferPool(Http2Limits.MAX_FRAME_SIZE_LOCAL, Http2Limits.DATA_BUFFER_POOL_SIZE));
+  }
+
+  public Http2StreamTable(int maxEntries, DataBufferPool dataBuffers) {
     if (maxEntries < 1) throw new IllegalArgumentException("maxEntries must be positive");
     int capacity = 1;
     while (capacity < maxEntries * 2) capacity <<= 1;
@@ -26,6 +35,7 @@ public final class Http2StreamTable {
     values = new Http2Stream[capacity];
     mask = capacity - 1;
     this.maxEntries = maxEntries;
+    this.dataBuffers = dataBuffers;
   }
 
   public synchronized Http2Stream get(int streamId) {
@@ -51,7 +61,7 @@ public final class Http2StreamTable {
       stream.poolNext = null;
     } else {
       if (created == maxEntries) return null;
-      stream = new Http2Stream();
+      stream = new Http2Stream(dataBuffers);
       created++;
     }
     stream.reset(streamId, this);
@@ -60,6 +70,7 @@ public final class Http2StreamTable {
   }
 
   public synchronized void release(Http2Stream stream) {
+    if (!stream.claimRelease()) return;
     stream.clear();
     stream.poolNext = free;
     free = stream;
@@ -90,6 +101,14 @@ public final class Http2StreamTable {
     for (int i = 0; i < keys.length; i++) {
       if (keys[i] != 0) consumer.accept(values[i]);
     }
+  }
+
+  public synchronized int copyValues(Http2Stream[] target) {
+    int count = 0;
+    for (int i = 0; i < keys.length && count < target.length; i++) {
+      if (keys[i] != 0) target[count++] = values[i];
+    }
+    return count;
   }
 
   public synchronized void adjustAllSendWindows(int delta) {

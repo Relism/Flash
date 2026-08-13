@@ -111,6 +111,15 @@ public final class Http2Limits {
    */
   public static final int MAX_EMPTY_DATA_FRAMES_PER_STREAM = 1_000;
 
+  /** Largest request body retained contiguously before dispatching its handler. */
+  public static final int INLINE_BODY_THRESHOLD = 64 * 1024;
+
+  /** Hard limit for request body bytes accepted on one stream. */
+  public static final int MAX_REQUEST_BODY_SIZE = 100 * 1024 * 1024;
+
+  /** Number of frame-sized buffers available to streaming request bodies on one connection. */
+  public static final int DATA_BUFFER_POOL_SIZE = 64;
+
   /**
    * The value of {@code SETTINGS_INITIAL_WINDOW_SIZE} Flash advertises for every new stream:
    * deliberately large (1 MiB, versus the RFC default of 65535) so that a normal-sized
@@ -125,7 +134,7 @@ public final class Http2Limits {
    * windows, and sizing for that worst case would commit 100 MiB of receive window to every
    * connection regardless of load.
    */
-  public static final int CONNECTION_WINDOW_SIZE_LOCAL = 16 * 1_048_576;
+  public static final int CONNECTION_WINDOW_SIZE_LOCAL = 1_048_576;
 
   /**
    * The HPACK dynamic table size Flash's decoder honours, in bytes of RFC 7541 §4.1 accounting. RFC

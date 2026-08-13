@@ -71,8 +71,8 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 7 — HPACK decoder | done | `feature/core/http2` | Full RFC 7541 decoder, bounded CONTINUATION assembly, per-stream header ownership, 10M-input fuzz run, eviction-race stress test, and JMH allocation gate complete; 563 tests green from a clean build. |
 | 8 — Connection state machine | done | `feature/core/http2` | Preface, transactional SETTINGS, priority PING ACK, connection WINDOW_UPDATE, two-stage GOAWAY, per-socket transport/ALPN dispatch, HPACK block composition, clean curl handshake, h2spec 28/35 selected cases and 0.008 B/op JMH gate complete. Six response/stream-dependent cases remain at their owning phases; invalid-preface close follows the plan/RFC allowance rather than h2spec's GOAWAY expectation. |
 | 9 — HPACK encoder + h2 response path | done | `feature/core/http2` | Stateless static-table HPACK encoder; precompiled status/content-type/date fields; reusable response writer with header filtering, bounds, CONTINUATION splitting and fixed DATA happy path; HTTP/1/2 serializer parity test. EX-46 fixed the one-digit Date day-of-month bug. JMH: 174.309 ns/op, 0.001 B/op (noise floor), no GC. 603/603 tests green from a clean `-Pjmh` build. |
-| 10 — Stream state machine + dispatch | done | `feature/core/http2` | Explicit stream transition table, bounded primitive stream table and pool, pseudo-header/message validation, protocol-neutral `Request` assembly, virtual-thread dispatch and exception path, cancellation-safe release, raw h2c + Java HTTP/2 integration. h2spec sections 5/8: 37/39; the two content-length/DATA accounting cases are owned by Phase 11. JMH pooled lifecycle: 458.499 ns/op, 0.003 B/op, no GC. 618/618 tests green from a clean `-Pjmh` build. |
-| 11 — DATA, flow control, bodies | not started | — | — |
+| 10 — Stream state machine + dispatch | done | `feature/core/http2` | Explicit stream transition table, bounded primitive stream table and pool, pseudo-header/message validation, protocol-neutral `Request` assembly, virtual-thread dispatch and exception path, cancellation-safe release, raw h2c + Java HTTP/2 integration. Phase 11 closed the two deferred content-length/DATA cases; h2spec sections 5/8 are now 39/39. JMH pooled lifecycle: 458.499 ns/op, 0.003 B/op, no GC. 618/618 tests green at phase closure. |
+| 11 — DATA, flow control, bodies | done | `feature/core/http2` | Two-level receive/send flow control, consumption-driven WINDOW_UPDATE hysteresis, bounded/coalescing DATA pool, inline and blocking streaming request bodies through the existing `RequestBody`, resumable fixed/known/unknown response streams, content-length and empty-DATA validation. Real TLS HTTP/2 transfer: 100 MiB upload + 100 MiB download verified byte-for-byte. h2spec combined sections 5, 6.1, 6.9 and 8: 50 passed, 1 tool-skipped, 0 failed. JMH: inline materialization exactly one 1,040-byte array; request streaming 0.001 B/op; response streaming 0.002 B/op; full pooled lifecycle 0.003 B/op. 633/633 tests green from a clean `-Pjmh` build. |
 | 12 — Trailers, half-close, gRPC | not started | — | — |
 | 13 — Security hardening & abuse resistance | not started | — | — |
 | 14 — h2c prior knowledge + proxy support | not started | — | — |
@@ -2558,8 +2558,7 @@ rules, the dispatch model, and the resource-release contract.
       existing `HttpServerTest` suite against an h2 client.
 - [x] `FastPathRouterImpl` unchanged.
 - [x] 0 B/op for the pooled protocol-side h2 GET lifecycle (0.003 B/op JMH noise floor).
-- [~] `h2spec` sections 5 and 8: 37/39 green. Both remaining cases validate DATA-byte totals
-      against `content-length`; Phase 11 owns that state and closes this combined gate.
+- [x] `h2spec` sections 5 and 8: 39/39 green after DATA-byte accounting landed.
 
 ---
 
@@ -2571,13 +2570,13 @@ backpressure.
 ### Files
 
 Created:
-- `h2/stream/Http2FlowController.java` — connection and stream windows, both directions.
-- `h2/message/Http2RequestBody.java` — DATA frames → the `RequestBody` contract.
-- `h2/message/DataBufferPool.java` — the fixed-size buffer free list.
+- `http2/stream/Http2FlowController.java` — connection and stream windows, both directions.
+- `http2/message/Http2RequestBody.java` — DATA frames → the `RequestBody` contract.
+- `http2/message/DataBufferPool.java` — the fixed-size buffer free list.
 
 Modified:
-- `h2/Http2Connection.java` — DATA dispatch.
-- `h2/message/Http2ResponseWriter.java` — multi-frame and streaming bodies.
+- `http2/Http2Connection.java` — DATA dispatch.
+- `http2/message/Http2ResponseWriter.java` — multi-frame and streaming bodies.
 - `models/RequestBody.java` — accept an h2 backing (the Phase 6 refactor made this possible).
 
 ### Tasks
@@ -2635,16 +2634,16 @@ Modified:
 - Streaming path: 0 B/op at steady state; all buffers come from `DataBufferPool`.
 
 ### Safety checks
-- [ ] Connection-level **and** stream-level WINDOW_UPDATE both sent
-- [ ] Window overflow (> 2^31-1) rejected
-- [ ] Window underflow (peer exceeds its window) rejected with the correct scope
-- [ ] Padding counted toward flow control
-- [ ] Flow control accounted for RST streams until settled
-- [ ] `content-length` verified against actual DATA
-- [ ] Empty DATA frame flood bounded
-- [ ] `DataBufferPool` bounded; exhaustion applies backpressure rather than allocating without
+- [x] Connection-level **and** stream-level WINDOW_UPDATE both sent
+- [x] Window overflow (> 2^31-1) rejected
+- [x] Window underflow (peer exceeds its window) rejected with the correct scope
+- [x] Padding counted toward flow control
+- [x] Flow control accounted for RST streams until settled
+- [x] `content-length` verified against actual DATA
+- [x] Empty DATA frame flood bounded
+- [x] `DataBufferPool` bounded; exhaustion applies backpressure rather than allocating without
       limit
-- [ ] Body size bounded by `Http2Limits.MAX_REQUEST_BODY_SIZE` when no handler consumes it
+- [x] Body size bounded by `Http2Limits.MAX_REQUEST_BODY_SIZE` when no handler consumes it
 
 ### Tests
 - `Http2FlowControlTest` — the classic scenarios: a 10 MB upload with a 64 KB window; a
@@ -2663,9 +2662,9 @@ Modified:
 and the dispatch-on-END_STREAM optimization with its rationale.
 
 ### DoD
-- [ ] 100 MB upload and 100 MB download both correct, both bounded memory.
-- [ ] `h2spec` DATA and WINDOW_UPDATE sections green.
-- [ ] Small-body path allocates exactly one `byte[]` (the user's body).
+- [x] 100 MB upload and 100 MB download both correct, both bounded memory.
+- [x] `h2spec` DATA and WINDOW_UPDATE sections green (13 passed, one tool-skipped, zero failed).
+- [x] Small-body path allocates exactly one `byte[]` (1,040 B/op for a 1,024-byte body).
 
 ---
 

@@ -951,3 +951,33 @@ the lifecycle benchmark remains at the allocation noise floor.
 advertised limit or reader size from measurements; do not add a sleep-based dispatch delay.
 
 ---
+
+## DEC-28 — Align the receive window with a coalescing bounded DATA pool
+
+**Context.** The demultiplexer cannot block waiting for an application handler, but delaying
+WINDOW_UPDATE only provides backpressure after the peer has spent the window it already owns. A
+pool smaller than that outstanding credit can be exhausted legitimately. Allocating one buffer per
+DATA frame is also unsafe because many tiny or heavily padded frames can consume little payload
+storage while exhausting an object-per-frame pool.
+
+**Decision.** Advertise 1 MiB at both the connection and stream receive levels and back the
+connection with exactly 64 reusable 16 KiB buffers (also 1 MiB). Adjacent DATA payloads coalesce
+into available tail space; padding contributes to flow credit but not storage. WINDOW_UPDATE is
+sent at half-window consumption, never merely on receipt. Bodies at or below 64 KiB with a known
+length use one reusable contiguous stream buffer and dispatch at END_STREAM; all other bodies
+dispatch immediately onto the same protocol-neutral `RequestBody` over a blocking pooled source.
+
+Response DATA uses the same serialized writer with a progress cursor. A stream object itself is
+the executor task for initial handling and resumptions, so no per-resume closure is created.
+WINDOW_UPDATE only schedules work; it never reads an application `InputStream` on the demux thread.
+
+**Consequence.** Outstanding peer credit and worst-case pooled payload storage match exactly,
+small frames do not multiply objects, slow consumers withhold credit naturally, and streaming
+responses resume without recursive writer completion or demux blocking. The 100 MiB bidirectional
+integration test remains bounded, while JMH measures the streaming request and response paths at
+the allocation noise floor.
+
+**Revisit when.** Production memory/throughput measurements justify a different window. Change the
+window and pool byte capacity together; never raise credit independently of bounded storage.
+
+---

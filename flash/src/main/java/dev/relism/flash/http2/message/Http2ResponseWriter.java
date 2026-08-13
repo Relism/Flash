@@ -5,6 +5,7 @@ import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.DateHeader;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http2.Http2ErrorCode;
+import dev.relism.flash.http2.Http2Limits;
 import dev.relism.flash.http2.Http2StreamException;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
@@ -13,6 +14,8 @@ import dev.relism.flash.http2.frame.WriteIntent;
 import dev.relism.flash.http2.hpack.HpackEncoder;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.models.ResponseSerializer;
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Reusable per-stream HTTP/2 response serializer. It prepares a complete small response outside the
@@ -30,13 +33,23 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
   private final ByteWriter headerBlock;
   private final ByteWriter output;
   private final FrameWriteBuffer frames;
-  private final byte[] decimalScratch = new byte[10];
+  private final byte[] decimalScratch = new byte[20];
+  private final byte[] relay = new byte[Http2Limits.MAX_FRAME_SIZE_LOCAL];
   private WriteIntent next;
   private boolean huffmanDynamicValues;
   private int streamId;
   private long headerListSize;
   private long maxHeaderListSize;
   private Completion completion;
+  private byte[] fixedBody;
+  private InputStream streamBody;
+  private long bodyRemaining;
+  private int fixedPosition;
+  private boolean unknownLength;
+  private boolean finished;
+  private boolean headersInBatch;
+  private boolean endStreamInBatch;
+  private int dataBytesInBatch;
 
   public Http2ResponseWriter() {
     this(1024, 2048);
@@ -117,6 +130,157 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     return true;
   }
 
+  /** Starts a response whose DATA may span multiple flow-control windows. */
+  public int startFlowControlled(
+      Response response,
+      int streamId,
+      boolean headRequest,
+      boolean sendDate,
+      boolean sendContentLength,
+      boolean huffmanDynamicValues,
+      boolean emitTableSizeUpdate,
+      int maxFrameSize,
+      long maxHeaderListSize,
+      int availableFlowWindow)
+      throws IOException {
+    if (streamId <= 0) throw new IllegalArgumentException("streamId must be positive");
+    if (maxFrameSize <= 0 || availableFlowWindow < 0) {
+      throw new IllegalArgumentException("frame size must be positive and flow window non-negative");
+    }
+    headerBlock.reset();
+    output.reset();
+    this.streamId = streamId;
+    this.huffmanDynamicValues = huffmanDynamicValues;
+    this.maxHeaderListSize = maxHeaderListSize;
+    headerListSize = 0;
+    next = null;
+    headersInBatch = true;
+    endStreamInBatch = false;
+    dataBytesInBatch = 0;
+    fixedPosition = 0;
+    fixedBody = response.isStreaming() ? null : response.getBody();
+    streamBody = response.isStreaming() ? response.getStream() : null;
+    unknownLength = response.isStreaming() && response.isChunked();
+    if (response.isStreaming() && !unknownLength && response.getStreamLength() < 0) {
+      throw new IllegalArgumentException("known response stream length must not be negative");
+    }
+    bodyRemaining =
+        response.isStreaming()
+            ? (unknownLength ? -1 : response.getStreamLength())
+            : (fixedBody == null ? 0 : fixedBody.length);
+    long representationLength = bodyRemaining;
+    boolean representationUnknownLength = unknownLength;
+
+    int statusCode = response.getStatusCode();
+    boolean bodyForbidden =
+        statusCode == 204 || statusCode == 304 || (statusCode >= 100 && statusCode < 200);
+    if (headRequest || bodyForbidden) {
+      fixedBody = null;
+      streamBody = null;
+      unknownLength = false;
+      bodyRemaining = 0;
+    }
+
+    if (emitTableSizeUpdate) HpackEncoder.writeDynamicTableSizeUpdateZero(headerBlock);
+    writeStatus(statusCode);
+    writeContentType(response.getContentType());
+    if (sendDate) {
+      addHeaderListSize(4, 29);
+      headerBlock.writeBytes(DateHeader.hpackBytes());
+    }
+    if (sendContentLength && !bodyForbidden && !representationUnknownLength) {
+      addHeaderListSize(CONTENT_LENGTH_NAME_LENGTH, decimalLength(representationLength));
+      writeDecimalLiteral(28, representationLength);
+    }
+    ResponseSerializer.forEachCustomField(response, this);
+
+    boolean hasBody = unknownLength || bodyRemaining > 0;
+    writeHeaderFrames(maxFrameSize, !hasBody);
+    finished = !hasBody;
+    if (hasBody && availableFlowWindow > 0) {
+      appendData(maxFrameSize, availableFlowWindow);
+    }
+    return dataBytesInBatch;
+  }
+
+  /** Serializes the next DATA batch after a WINDOW_UPDATE or previous write completion. */
+  public int resume(int maxFrameSize, int availableFlowWindow) throws IOException {
+    if (finished || availableFlowWindow <= 0) return 0;
+    output.reset();
+    next = null;
+    headersInBatch = false;
+    endStreamInBatch = false;
+    dataBytesInBatch = 0;
+    appendData(maxFrameSize, availableFlowWindow);
+    return dataBytesInBatch;
+  }
+
+  private void appendData(int maxFrameSize, int availableFlowWindow) throws IOException {
+    int target = Math.min(relay.length, Math.min(maxFrameSize, availableFlowWindow));
+    int count;
+    boolean end;
+    if (fixedBody != null) {
+      count = (int) Math.min(target, bodyRemaining);
+      frames.beginFrame(
+          FrameType.DATA, count == bodyRemaining ? FrameFlags.END_STREAM : 0, streamId);
+      output.writeBytes(fixedBody, fixedPosition, count);
+      frames.endFrame();
+      fixedPosition += count;
+      bodyRemaining -= count;
+      end = bodyRemaining == 0;
+    } else {
+      int limit = unknownLength ? target : (int) Math.min(target, bodyRemaining);
+      count = 0;
+      boolean eof = false;
+      while (count < limit) {
+        int read = streamBody.read(relay, count, limit - count);
+        if (read < 0) {
+          eof = true;
+          break;
+        }
+        if (read == 0) {
+          int one = streamBody.read();
+          if (one < 0) {
+            eof = true;
+            break;
+          }
+          relay[count++] = (byte) one;
+        } else {
+          count += read;
+        }
+      }
+      if (!unknownLength) {
+        bodyRemaining -= count;
+        if (eof && bodyRemaining != 0) {
+          throw new IOException("streaming response ended before its declared length");
+        }
+      }
+      end = unknownLength ? eof : bodyRemaining == 0;
+      frames.beginFrame(FrameType.DATA, end ? FrameFlags.END_STREAM : 0, streamId);
+      output.writeBytes(relay, 0, count);
+      frames.endFrame();
+    }
+    dataBytesInBatch = count;
+    endStreamInBatch = end;
+    finished = end;
+  }
+
+  public boolean finished() {
+    return finished;
+  }
+
+  public boolean headersInBatch() {
+    return headersInBatch;
+  }
+
+  public boolean endStreamInBatch() {
+    return endStreamInBatch;
+  }
+
+  public int dataBytesInBatch() {
+    return dataBytesInBatch;
+  }
+
   @Override
   public void accept(
       byte[] name, int nameOff, int nameLen, byte[] value, int valueOff, int valueLen) {
@@ -151,10 +315,10 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     }
   }
 
-  private void writeDecimalLiteral(int nameIndex, int value) {
+  private void writeDecimalLiteral(int nameIndex, long value) {
     int length = decimalLength(value);
     int offset = decimalScratch.length - length;
-    int current = value;
+    long current = value;
     for (int i = decimalScratch.length - 1; i >= offset; i--) {
       decimalScratch[i] = (byte) ('0' + current % 10);
       current /= 10;
@@ -209,17 +373,13 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     return true;
   }
 
-  private static int decimalLength(int value) {
-    if (value < 10) return 1;
-    if (value < 100) return 2;
-    if (value < 1000) return 3;
-    if (value < 10000) return 4;
-    if (value < 100000) return 5;
-    if (value < 1000000) return 6;
-    if (value < 10000000) return 7;
-    if (value < 100000000) return 8;
-    if (value < 1000000000) return 9;
-    return 10;
+  private static int decimalLength(long value) {
+    int length = 1;
+    while (value >= 10) {
+      value /= 10;
+      length++;
+    }
+    return length;
   }
 
   @Override

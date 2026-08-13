@@ -12,6 +12,7 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackDecoder;
 import dev.relism.flash.models.Response;
 import dev.relism.fpr.core.ByteView;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -97,6 +98,38 @@ class Http2ResponseWriterTest {
     assertThrows(
         Http2StreamException.class,
         () -> writer.prepare(response, 5, false, false, true, false, false, 16_384, 41, 65_535));
+  }
+
+  @Test
+  void flowControlledHeadPreservesKnownRepresentationLength() throws Exception {
+    Response response =
+        new Response(200, ContentType.BINARY)
+            .stream(new ByteArrayInputStream(new byte[] {1, 2, 3, 4}), 4);
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    writer.startFlowControlled(
+        response, 1, true, false, true, false, false, 16_384, 4096, 16_384);
+    Parsed parsed = parse(writer);
+
+    assertEquals(List.of(FrameType.HEADERS), parsed.types);
+    assertTrue(decode(parsed.headerBlock).contains("content-length=4"));
+  }
+
+  @Test
+  void unknownLengthStreamUsesNativeDataWithoutTransferEncoding() throws Exception {
+    Response response =
+        new Response(200, ContentType.BINARY)
+            .chunked(new ByteArrayInputStream(new byte[] {1, 2, 3, 4}));
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    writer.startFlowControlled(
+        response, 1, false, false, true, false, false, 16_384, 4096, 16_384);
+    Parsed parsed = parse(writer);
+    List<String> fields = decode(parsed.headerBlock);
+
+    assertFalse(fields.stream().anyMatch(field -> field.startsWith("content-length=")));
+    assertFalse(fields.stream().anyMatch(field -> field.startsWith("transfer-encoding=")));
+    assertEquals(List.of(FrameType.HEADERS, FrameType.DATA), parsed.types);
   }
 
   private static Parsed parse(Http2ResponseWriter writer) {

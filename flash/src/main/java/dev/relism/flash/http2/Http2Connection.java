@@ -1,5 +1,6 @@
 package dev.relism.flash.http2;
 
+import dev.relism.flash.bytes.Pairs;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlIntent;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlKind;
 import dev.relism.flash.http2.frame.FrameFlags;
@@ -8,7 +9,10 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.frame.FrameValidator;
 import dev.relism.flash.http2.frame.Http2FrameReader;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
+import dev.relism.flash.http2.frame.Padding;
 import dev.relism.flash.http2.hpack.HeaderSink;
+import dev.relism.flash.http2.message.DataBufferPool;
+import dev.relism.flash.http2.stream.Http2FlowController;
 import dev.relism.flash.http2.stream.Http2Stream;
 import dev.relism.flash.http2.stream.Http2StreamState;
 import dev.relism.flash.http2.stream.Http2StreamTable;
@@ -37,10 +41,13 @@ public final class Http2Connection implements ConnectionProtocol {
   private final Http2Settings.StreamWindowUpdater streamWindows;
   private final long settingsAckTimeoutMs;
   private final Http2HeaderBlockDecoder headerBlocks = new Http2HeaderBlockDecoder();
-  private final Http2StreamTable streams = new Http2StreamTable(Http2Limits.MAX_CONCURRENT_STREAMS);
+  private final DataBufferPool dataBuffers =
+      new DataBufferPool(Http2Limits.MAX_FRAME_SIZE_LOCAL, Http2Limits.DATA_BUFFER_POOL_SIZE);
+  private final Http2StreamTable streams =
+      new Http2StreamTable(Http2Limits.MAX_CONCURRENT_STREAMS, dataBuffers);
   private static final HeaderSink DISCARD_HEADERS = (name, value, never) -> {};
 
-  private long connectionSendWindow = 65_535;
+  private Http2FlowController flowController;
   private int outstandingLocalSettings;
   private long oldestSettingsSentNanos;
   private int lastProcessedStreamId;
@@ -68,7 +75,8 @@ public final class Http2Connection implements ConnectionProtocol {
     this.streamWindows =
         delta -> {
           try {
-            streams.adjustAllSendWindows(delta);
+            if (flowController == null) streams.adjustAllSendWindows(delta);
+            else flowController.applyInitialWindowDelta(streams, delta);
           } catch (IllegalStateException overflow) {
             throw Http2Exception.FLOW_CONTROL_ERROR;
           }
@@ -80,12 +88,16 @@ public final class Http2Connection implements ConnectionProtocol {
   @Override
   public void run(ConnectionContext ctx) throws IOException {
     Http2FrameWriter writer = new Http2FrameWriter(ctx.rawOut()::write);
+    flowController =
+        new Http2FlowController(
+            (streamId, increment) -> sendWindowUpdate(writer, streamId, increment));
     streamDispatcher =
         new Http2StreamDispatcher(
             ctx,
             writer,
             peerSettings,
             streams,
+            flowController,
             (streamId, error) -> sendRstStream(writer, streamId, error));
     try {
       run(ctx.in(), writer, ctx.stopped());
@@ -96,6 +108,11 @@ public final class Http2Connection implements ConnectionProtocol {
 
   void run(BufferedByteSource input, Http2FrameWriter writer, BooleanSupplier stopped)
       throws IOException {
+    if (flowController == null) {
+      flowController =
+          new Http2FlowController(
+              (streamId, increment) -> sendWindowUpdate(writer, streamId, increment));
+    }
     Http2FrameReader reader = new Http2FrameReader(input);
     runPrepared(input, reader, writer, stopped);
   }
@@ -206,6 +223,10 @@ public final class Http2Connection implements ConnectionProtocol {
 
     pendingHeaderStream = streams.acquire(streamId);
     refusingHeaderStream = pendingHeaderStream == null;
+    if (pendingHeaderStream != null) {
+      flowController.initializeStreamSendWindow(
+          pendingHeaderStream, peerSettings.initialWindowSize());
+    }
     HeaderSink sink = refusingHeaderStream ? DISCARD_HEADERS : pendingHeaderStream.headerBlock();
     if (headerBlocks.accept(frame, sink)) completeHeaders(writer, frame.streamId());
   }
@@ -224,6 +245,8 @@ public final class Http2Connection implements ConnectionProtocol {
     } else {
       Http2Stream stream = pendingHeaderStream;
       if (streamDispatcher != null) stream.validateHeaders();
+      boolean dispatch =
+          stream.prepareRequestBody(flowController, headerBlocks.endStream());
       stream.transition(
           headerBlocks.endStream()
               ? Http2StreamState.Event.RECV_HEADERS_ES
@@ -233,7 +256,7 @@ public final class Http2Connection implements ConnectionProtocol {
         streams.remove(streamId);
         streams.release(stream);
         if (!gracefulStarted) startGracefulShutdown(writer);
-      } else if (headerBlocks.endStream()) {
+      } else if (dispatch) {
         enqueueDispatch(stream);
       }
     }
@@ -250,17 +273,47 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   private void receiveData(FrameHeader frame) {
-    Http2Stream stream = streamForFrame(frame.streamId());
-    stream.transition(
-        FrameFlags.isEndStream(frame.flags())
-            ? Http2StreamState.Event.RECV_DATA_ES
-            : Http2StreamState.Event.RECV_DATA);
-    if (frame.length() != 0) {
+    flowController.receiveConnectionBytes(frame.length());
+    Http2Stream stream = streams.get(frame.streamId());
+    if (stream == null) {
+      discardConnectionBytes(frame.length());
+      if (frame.streamId() > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
       throw new Http2StreamException(
-          frame.streamId(), Http2ErrorCode.INTERNAL_ERROR, "request DATA support is not active");
+          frame.streamId(), Http2ErrorCode.STREAM_CLOSED, "stream is closed");
     }
-    if (FrameFlags.isEndStream(frame.flags()) && streamDispatcher != null) {
-      enqueueDispatch(stream);
+    boolean bodyAccepted = false;
+    try {
+      stream.transition(
+          FrameFlags.isEndStream(frame.flags())
+              ? Http2StreamState.Event.RECV_DATA_ES
+              : Http2StreamState.Event.RECV_DATA);
+      flowController.receiveStreamBytes(stream, frame.length());
+      long unpadded =
+          Padding.unpad(
+              frame.buffer(),
+              frame.payloadOffset(),
+              frame.length(),
+              FrameFlags.isPadded(frame.flags()));
+      int dataOffset = Pairs.hi(unpadded);
+      int dataLength = Pairs.lo(unpadded);
+      if (frame.length() == 0) {
+        if (stream.incrementEmptyDataFrames()
+            > Http2Limits.MAX_EMPTY_DATA_FRAMES_PER_STREAM) {
+          throw new Http2StreamException(
+              frame.streamId(), Http2ErrorCode.ENHANCE_YOUR_CALM, "empty DATA frame limit exceeded");
+        }
+      } else {
+        stream.resetEmptyDataFrames();
+      }
+      stream.receiveData(frame.buffer(), dataOffset, dataLength, frame.length());
+      bodyAccepted = true;
+      if (FrameFlags.isEndStream(frame.flags())) {
+        stream.finishRequestBody();
+        if (streamDispatcher != null && !stream.dispatched()) enqueueDispatch(stream);
+      }
+    } catch (RuntimeException failure) {
+      if (!bodyAccepted) discardConnectionBytes(frame.length());
+      throw failure;
     }
   }
 
@@ -276,6 +329,7 @@ public final class Http2Connection implements ConnectionProtocol {
     streams.remove(stream.id());
     if (releaseDeferred) {
       stream.cancel();
+      if (stream.responseStarted() && !stream.responseInFlight()) streams.release(stream);
     } else {
       streams.release(stream);
     }
@@ -286,6 +340,7 @@ public final class Http2Connection implements ConnectionProtocol {
       throw new Http2StreamException(
           stream.id(), Http2ErrorCode.REFUSED_STREAM, "dispatch queue is full");
     }
+    stream.markDispatched();
     dispatchQueue[dispatchCount++] = stream;
   }
 
@@ -297,13 +352,6 @@ public final class Http2Connection implements ConnectionProtocol {
       dispatchQueue[i] = null;
       streamDispatcher.dispatch(stream);
     }
-  }
-
-  private Http2Stream streamForFrame(int streamId) {
-    Http2Stream stream = streams.get(streamId);
-    if (stream != null) return stream;
-    if (streamId > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
-    throw new Http2StreamException(streamId, Http2ErrorCode.STREAM_CLOSED, "stream is closed");
   }
 
   private void receiveSettings(FrameHeader frame, Http2FrameWriter writer) throws IOException {
@@ -346,16 +394,16 @@ public final class Http2Connection implements ConnectionProtocol {
         return;
       }
       try {
-        stream.adjustSendWindow(increment);
+        flowController.increaseStreamSendWindow(stream, increment);
       } catch (IllegalStateException overflow) {
         throw new Http2StreamException(
             frame.streamId(), Http2ErrorCode.FLOW_CONTROL_ERROR, "stream window overflow");
       }
+      if (streamDispatcher != null) streamDispatcher.streamWindowUpdated(stream);
       return;
     }
-    long next = connectionSendWindow + increment;
-    if (next > Integer.MAX_VALUE) throw Http2Exception.FLOW_CONTROL_ERROR;
-    connectionSendWindow = next;
+    flowController.increaseConnectionSendWindow(increment);
+    if (streamDispatcher != null) streamDispatcher.connectionWindowUpdated();
   }
 
   private void receiveGoAway(FrameHeader frame) {
@@ -384,6 +432,21 @@ public final class Http2Connection implements ConnectionProtocol {
     ControlIntent rst = scratch.acquire(ControlKind.SETTINGS_OR_OTHER);
     rst.frame(FrameType.RST_STREAM, 0, streamId, error.bytes(), 0, 4);
     writer.writePriority(rst);
+  }
+
+  private void sendWindowUpdate(Http2FrameWriter writer, int streamId, int increment)
+      throws IOException {
+    ControlIntent update = scratch.acquire(ControlKind.SETTINGS_OR_OTHER);
+    update.windowUpdate(streamId, increment);
+    writer.writePriority(update);
+  }
+
+  private void discardConnectionBytes(int bytes) {
+    try {
+      flowController.discarded(bytes);
+    } catch (IOException failure) {
+      throw new IllegalStateException("failed to restore connection flow-control window", failure);
+    }
   }
 
   private void closeStreamAfterError(int streamId) {
@@ -446,7 +509,7 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   public long connectionSendWindow() {
-    return connectionSendWindow;
+    return flowController == null ? 65_535 : flowController.connectionSendWindow();
   }
 
   public int peerLastStreamId() {
@@ -459,7 +522,7 @@ public final class Http2Connection implements ConnectionProtocol {
 
   void reset() {
     peerSettings.reset();
-    connectionSendWindow = 65_535;
+    flowController = null;
     outstandingLocalSettings = 0;
     oldestSettingsSentNanos = 0;
     lastProcessedStreamId = 0;

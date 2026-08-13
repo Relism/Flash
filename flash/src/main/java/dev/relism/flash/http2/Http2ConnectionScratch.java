@@ -119,6 +119,17 @@ final class Http2ConnectionScratch {
       length = 17 + debugLength;
     }
 
+    void windowUpdate(int streamId, int increment) {
+      buffer[0] = 0;
+      buffer[1] = 0;
+      buffer[2] = 4;
+      buffer[3] = (byte) FrameType.WINDOW_UPDATE.code();
+      buffer[4] = 0;
+      writeUInt31(buffer, 5, streamId);
+      writeUInt31(buffer, 9, increment);
+      length = 13;
+    }
+
     private static void writeUInt31(byte[] target, int off, int value) {
       writeUInt32(target, off, value & 0x7FFF_FFFF);
     }

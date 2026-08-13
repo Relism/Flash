@@ -3,6 +3,7 @@ package dev.relism.flash.http2;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
 import dev.relism.flash.http2.message.Http2ResponseWriter;
+import dev.relism.flash.http2.stream.Http2FlowController;
 import dev.relism.flash.http2.stream.Http2Stream;
 import dev.relism.flash.http2.stream.Http2StreamState;
 import dev.relism.flash.http2.stream.Http2StreamTable;
@@ -16,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /** Dispatches completed request streams without blocking the connection demultiplexer. */
 @Slf4j
-final class Http2StreamDispatcher {
+final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   @FunctionalInterface
   interface FailureSink {
     void fail(int streamId, Http2ErrorCode errorCode) throws IOException;
@@ -26,7 +27,10 @@ final class Http2StreamDispatcher {
   private final Http2FrameWriter frameWriter;
   private final Http2Settings peerSettings;
   private final Http2StreamTable streams;
+  private final Http2FlowController flowController;
   private final FailureSink failures;
+  private final Http2Stream[] resumeScratch =
+      new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
   private volatile boolean firstResponse = true;
 
   Http2StreamDispatcher(
@@ -34,12 +38,39 @@ final class Http2StreamDispatcher {
       Http2FrameWriter frameWriter,
       Http2Settings peerSettings,
       Http2StreamTable streams,
+      Http2FlowController flowController,
       FailureSink failures) {
     this.context = context;
     this.frameWriter = frameWriter;
     this.peerSettings = peerSettings;
     this.streams = streams;
+    this.flowController = flowController;
     this.failures = failures;
+  }
+
+  void streamWindowUpdated(Http2Stream stream) {
+    scheduleResume(stream);
+  }
+
+  void connectionWindowUpdated() {
+    int count = streams.copyValues(resumeScratch);
+    for (int i = 0; i < count; i++) {
+      Http2Stream stream = resumeScratch[i];
+      resumeScratch[i] = null;
+      scheduleResume(stream);
+    }
+  }
+
+  private void scheduleResume(Http2Stream stream) {
+    if (!stream.responseStarted() || stream.cancelled()) return;
+    if (!stream.beginResponseBatch()) return;
+    stream.markResumeTask();
+    try {
+      context.executor().execute(stream);
+    } catch (RejectedExecutionException rejected) {
+      stream.endResponseBatch();
+      failAndRelease(stream, Http2ErrorCode.REFUSED_STREAM, rejected);
+    }
   }
 
   void dispatch(Http2Stream stream) {
@@ -48,14 +79,24 @@ final class Http2StreamDispatcher {
       return;
     }
     stream.markDispatched();
+    stream.responseSink(this);
     try {
-      context.executor().execute(() -> handle(stream));
+      context.executor().execute(stream);
     } catch (RejectedExecutionException rejected) {
       failAndRelease(stream, Http2ErrorCode.REFUSED_STREAM, rejected);
     }
   }
 
+  @Override
+  public void handleRequest(Http2Stream stream) {
+    handle(stream);
+  }
+
   private void handle(Http2Stream stream) {
+    if (stream.cancelled()) {
+      streams.release(stream);
+      return;
+    }
     try {
       Request request = stream.assembleRequest(context.remoteAddress(), context.sslSocket());
       Response pooled = stream.resetResponse();
@@ -74,6 +115,7 @@ final class Http2StreamDispatcher {
         else if (result != null) response.setBody(result);
       }
 
+      request.drain();
       Http2ResponseWriter responseWriter = stream.responseWriter();
       if (stream.cancelled()) {
         request.recycle();
@@ -81,37 +123,108 @@ final class Http2StreamDispatcher {
         streams.release(stream);
         return;
       }
-      boolean prepared;
+      boolean headRequest = request.method() == HttpMethod.HEAD;
+      int reserved;
+      int used;
       synchronized (this) {
         boolean tableUpdate = firstResponse;
-        prepared =
-            responseWriter.prepare(
-                response,
-                stream.id(),
-                request.method() == HttpMethod.HEAD,
-                context.configuration().isSendDate(),
-                true,
-                context.configuration().isH2HuffmanDynamicValues(),
-                tableUpdate,
-                peerSettings.maxFrameSize(),
-                peerSettings.maxHeaderListSize(),
-                (int) Math.min(stream.sendWindow(), Integer.MAX_VALUE));
-        if (prepared) {
-          firstResponse = false;
-          stream.transition(Http2StreamState.Event.SEND_HEADERS_ES);
-          request.recycle();
-          if (response == pooled) pooled.recycle();
-          streams.remove(stream.id());
-          frameWriter.write(responseWriter);
+        reserved = flowController.reserveSend(stream, peerSettings.maxFrameSize());
+        used = 0;
+        try {
+          used =
+              responseWriter.startFlowControlled(
+                  response,
+                  stream.id(),
+                  headRequest,
+                  context.configuration().isSendDate(),
+                  true,
+                  context.configuration().isH2HuffmanDynamicValues(),
+                  tableUpdate,
+                  peerSettings.maxFrameSize(),
+                  peerSettings.maxHeaderListSize(),
+                  reserved);
+        } finally {
+          flowController.refundSend(stream, reserved - used);
         }
+        firstResponse = false;
       }
-      if (!prepared) {
-        request.recycle();
-        if (response == pooled) pooled.recycle();
-        failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, null);
+      request.recycle();
+      if (response == pooled) pooled.recycle();
+      stream.markResponseStarted();
+      applyBatchTransition(stream, responseWriter);
+      if (!stream.beginResponseBatch()) {
+        throw new IllegalStateException("response batch already in flight");
       }
+      frameWriter.write(responseWriter);
     } catch (Exception failure) {
       failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
+    }
+  }
+
+  private void tryResumeResponse(Http2Stream stream) {
+    if (stream.cancelled()) {
+      stream.endResponseBatch();
+      streams.release(stream);
+      return;
+    }
+    Http2ResponseWriter responseWriter = stream.responseWriter();
+    if (responseWriter.finished()) {
+      stream.endResponseBatch();
+      streams.remove(stream.id());
+      streams.release(stream);
+      return;
+    }
+    int reserved = flowController.reserveSend(stream, peerSettings.maxFrameSize());
+    if (reserved == 0) {
+      stream.endResponseBatch();
+      return;
+    }
+    try {
+      int used = 0;
+      try {
+        used = responseWriter.resume(peerSettings.maxFrameSize(), reserved);
+      } finally {
+        flowController.refundSend(stream, reserved - used);
+      }
+      applyBatchTransition(stream, responseWriter);
+      frameWriter.write(responseWriter);
+    } catch (Exception failure) {
+      stream.endResponseBatch();
+      failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
+    }
+  }
+
+  @Override
+  public void resumeResponse(Http2Stream stream) {
+    tryResumeResponse(stream);
+  }
+
+  private static void applyBatchTransition(
+      Http2Stream stream, Http2ResponseWriter responseWriter) {
+    if (responseWriter.headersInBatch()) {
+      if (responseWriter.finished() && responseWriter.dataBytesInBatch() == 0) {
+        stream.transition(Http2StreamState.Event.SEND_HEADERS_ES);
+        return;
+      }
+      stream.transition(Http2StreamState.Event.SEND_HEADERS);
+    }
+    if (responseWriter.dataBytesInBatch() != 0 || responseWriter.endStreamInBatch()) {
+      stream.transition(
+          responseWriter.endStreamInBatch()
+              ? Http2StreamState.Event.SEND_DATA_ES
+              : Http2StreamState.Event.SEND_DATA);
+    }
+  }
+
+  @Override
+  public void responseBatchCompleted(Http2Stream stream) {
+    stream.endResponseBatch();
+    if (stream.id() == 0) return;
+    if (stream.cancelled() || stream.responseWriter().finished()) {
+      streams.remove(stream.id());
+      streams.release(stream);
+    } else {
+      scheduleResume(stream);
     }
   }
 
@@ -119,6 +232,11 @@ final class Http2StreamDispatcher {
     if (stream.id() == 0) return;
     if (cause != null) log.error("HTTP/2 stream {} failed", stream.id(), cause);
     streams.remove(stream.id());
+    try {
+      stream.cancel();
+    } catch (RuntimeException cancellationFailure) {
+      log.debug("Failed to cancel HTTP/2 stream {} cleanly", stream.id(), cancellationFailure);
+    }
     try {
       failures.fail(stream.id(), error);
     } catch (IOException writeFailure) {
