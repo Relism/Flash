@@ -905,3 +905,25 @@ records the partial external gate rather than claiming whole-section conformance
 the combined selection without skips.
 
 ---
+
+## DEC-26 — Keep one protocol-neutral `PreEncodedHeader` model
+
+**Context.** The original work plan proposed a second HTTP/2-specific `PreEncodedHeader` carrying
+complete HTTP/1 and HPACK renderings. The existing public model already preserves immutable name
+and value bytes, which is the common information both writers need. Adding another type would
+split one application concept across protocol packages and force callers or `Response` to retain
+protocol-specific state.
+
+**Decision.** Keep `models.PreEncodedHeader` as the only public type. HTTP/1 renders its bytes as a
+field line; HTTP/2 feeds the same byte ranges to the stateless encoder. Closed framework constants
+(status, content type and Date) retain their specialized precompiled HPACK forms because those are
+owned internally and measurably avoid work on every response.
+
+**Consequence.** Application and middleware code builds one reusable header constant that works on
+both protocols. Custom constants still traverse the HPACK literal encoder, but the measured write
+path remains allocation-free and avoids duplicating the response model.
+
+**Revisit when.** Only if profiling shows custom constant encoding is material; optimize the
+existing model internally without introducing a second public header abstraction.
+
+---

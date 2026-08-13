@@ -300,6 +300,22 @@ tests and local development. It's a no-op in production beyond a single `boolean
 `req.body()`/`RequestBody` follows the same rule — materialise (`.bytes()`) or fully consume
 (`.stream()`) it inside the handler; don't stash the `RequestBody` itself for later.
 
+### Reusable response headers
+
+Use `PreEncodedHeader` for a constant header sent by many responses. It stores the name and value
+once and remains valid on both HTTP versions:
+
+```java
+private static final PreEncodedHeader NO_STORE =
+    new PreEncodedHeader("cache-control", "no-store");
+
+app.get("/health", (req, res) -> res.header(NO_STORE).body("ok"));
+```
+
+`Response.header(byte[])` accepts a complete CRLF-terminated HTTP/1 field line and is therefore
+HTTP/1-only; HPACK needs the name and value as separate fields. Prefer `PreEncodedHeader` for shared
+application and middleware code.
+
 ## Architecture
 
 ```

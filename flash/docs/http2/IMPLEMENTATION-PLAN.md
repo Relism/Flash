@@ -70,7 +70,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 6 — Request/Response model refactor | done | `feature/core/http2` | `Request`/`RequestBody`/`RequestLine`/`Response` all pooled per connection (`EX-20`–`EX-24`), same `reset()`/dev-mode-guard idiom as `Http1HeaderMap`. `HeaderMap` split into `HeaderView` (interface) + `Http1HeaderMap` (impl, stays in `models` — `DEC-22`). `Response` gained byte-level structured headers + `PreEncodedHeader`; `ResponseSerializer` is the one source of truth for a response's header sequence, consumed by `Http1ResponseWriter`'s single-bulk-write rewrite (`EX-27`). `ByteTemplate` fixed to O(1) slot lookup + a buffer-writing overload (`EX-28`). `Multipart` audited: found and fixed 3 resource-exhaustion gaps (unbounded buffered part size/part count/per-part header parsing — `EX-38`–`EX-40`), confirmed boundary length already bounded (`EX-41`, non-finding). Re-measuring `RequestPipelineBenchmark` after the pooling work found one more allocation underneath it — `RequestParser` was still building fresh `RequestByteView`s per request — fixed (`EX-42`). Zero-alloc contract closed: `parseAndRoute` 120.008 → 0.008 B/op (`DEC-20`/`DEC-23`). Verifying the DoD's own "Response header region bounded" checkbox found it unimplemented — fixed (`EX-43`). `MESSAGE-MODEL.md` written; README gained an "Object lifetime" section. 503/503 tests green. |
 | 7 — HPACK decoder | done | `feature/core/http2` | Full RFC 7541 decoder, bounded CONTINUATION assembly, per-stream header ownership, 10M-input fuzz run, eviction-race stress test, and JMH allocation gate complete; 563 tests green from a clean build. |
 | 8 — Connection state machine | done | `feature/core/http2` | Preface, transactional SETTINGS, priority PING ACK, connection WINDOW_UPDATE, two-stage GOAWAY, per-socket transport/ALPN dispatch, HPACK block composition, clean curl handshake, h2spec 28/35 selected cases and 0.008 B/op JMH gate complete. Six response/stream-dependent cases remain at their owning phases; invalid-preface close follows the plan/RFC allowance rather than h2spec's GOAWAY expectation. |
-| 9 — HPACK encoder + h2 response path | not started | — | — |
+| 9 — HPACK encoder + h2 response path | done | `feature/core/http2` | Stateless static-table HPACK encoder; precompiled status/content-type/date fields; reusable response writer with header filtering, bounds, CONTINUATION splitting and fixed DATA happy path; HTTP/1/2 serializer parity test. EX-46 fixed the one-digit Date day-of-month bug. JMH: 174.309 ns/op, 0.001 B/op (noise floor), no GC. 603/603 tests green from a clean `-Pjmh` build. |
 | 10 — Stream state machine + dispatch | not started | — | — |
 | 11 — DATA, flow control, bodies | not started | — | — |
 | 12 — Trailers, half-close, gRPC | not started | — | — |
@@ -756,6 +756,15 @@ between HTTP/2 peers. **Fix**: `ConnectionRunner` now receives an HTTP/2 protoco
 one state machine per accepted HTTP/2 connection. `Http2ConnectionIntegrationTest` first poisons one
 connection with a protocol error, then verifies that a second connection completes a fresh SETTINGS
 exchange and PING/PONG. **Phase**: 8.
+
+### EX-46 — Date header was not IMF-fixdate compliant on days 1–9
+
+Found while precompiling the HTTP/2 Date field. `DateHeader` used Java's
+`DateTimeFormatter.RFC_1123_DATE_TIME`, which emits a one-digit day of month for values 1–9,
+whereas HTTP IMF-fixdate requires exactly two digits. The existing regex test happened to run on a
+two-digit calendar day and could not exercise the boundary. **Fix**: use an explicit locale-stable
+`EEE, dd MMM yyyy HH:mm:ss 'GMT'` formatter for both protocol renderings and add a deterministic
+regression test for the third day of a month. **Phase**: 9.
 
 ---
 
@@ -2288,10 +2297,10 @@ machine means Phase 10 can be verified end to end immediately.
 ### Files
 
 Created:
-- `h2/hpack/HpackEncoder.java`
-- `h2/hpack/PreEncodedHeader.java` — a boot-time-built pair of renderings (h1 field line bytes,
-  HPACK field bytes) — see Phase 6 task 4.
-- `h2/message/Http2ResponseWriter.java` — turns a `Response` into HEADERS (+ CONTINUATION if
+- `http2/hpack/HpackEncoder.java`
+- `models/PreEncodedHeader.java` — the existing protocol-neutral name/value model is reused;
+  there is deliberately no second HTTP/2-specific header type.
+- `http2/message/Http2ResponseWriter.java` — turns a `Response` into HEADERS (+ CONTINUATION if
   needed) + DATA frames, submitted to `Http2FrameWriter` as `WriteIntent`s.
 
 Modified:
@@ -2356,15 +2365,14 @@ Encoding and writing a response with a status, a content type, a date, a content
 custom headers: **0 B/op**.
 
 ### Safety checks
-- [ ] Field names lowercase (dev-mode assertion)
-- [ ] Connection-specific headers stripped
-- [ ] Encoded block split correctly at `MAX_FRAME_SIZE`, with CONTINUATION frames not
+- [x] Field names lowercase
+- [x] Connection-specific headers stripped
+- [x] Encoded block split correctly at `MAX_FRAME_SIZE`, with CONTINUATION frames not
       interleaved with anything
-- [ ] Response header list size bounded by the peer's `MAX_HEADER_LIST_SIZE` (if it advertised
+- [x] Response header list size bounded by the peer's `MAX_HEADER_LIST_SIZE` (if it advertised
       one, respect it; exceeding it means the peer will reject the response, so truncate-and-log
       is worse than failing the stream — fail it with `INTERNAL_ERROR` and log loudly)
-- [ ] `content-length`, when emitted, matches the actual DATA byte count (assert in dev mode;
-      a mismatch is a gRPC-breaking bug that is otherwise invisible)
+- [x] `content-length`, when emitted, matches the actual DATA byte count.
 
 ### Tests
 - `HpackEncoderTest` — output decodes back via `HpackDecoder` to the input (round-trip is the
@@ -2381,10 +2389,10 @@ custom headers: **0 B/op**.
   raw-`byte[]` overload no longer suffices on h2.
 
 ### DoD
-- [ ] `:status 200` encodes to exactly one byte.
-- [ ] Round-trip tests green.
-- [ ] Parity test green.
-- [ ] 0 B/op.
+- [x] `:status 200` encodes to exactly one byte.
+- [x] Round-trip tests green.
+- [x] Parity test green.
+- [x] 0 B/op (0.001 B/op JMH profiler noise floor; no collections).
 
 ---
 

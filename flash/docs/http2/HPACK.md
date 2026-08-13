@@ -61,3 +61,22 @@ decoder and all downstream views simpler.
 - Ten million deterministic random blocks; only typed protocol rejections may escape.
 - JMH `-prof gc`: `decodeStaticRequest` measured 102.725 ns/op and 0.001 B/op on JDK 21.0.11. The
   latter is the profiler's sampling noise floor; no garbage collections occurred.
+
+## Encoder and response path
+
+The encoder is stateless and deliberately uses only the static table plus literal fields without
+indexing. It emits a dynamic-table-size update of zero at the start of the connection's first
+response block. This avoids mutable compression state shared by concurrent streams; the trade-off
+is a few more wire bytes for repeated custom response fields.
+
+Status and known content-type fields are HPACK-encoded during class initialization. The cached Date
+header refreshes both its HTTP/1 and HPACK forms once per second. Runtime values are raw literals by
+default; `FlashConfiguration.h2HuffmanDynamicValues` enables Huffman coding when deployment-specific
+measurements justify its CPU/wire-size trade-off.
+
+`Http2ResponseWriter` is reusable per stream. It lowercases field names, removes forbidden
+connection-specific fields, enforces the peer's header-list bound, keeps HEADERS and CONTINUATION
+frames in one write intent, and appends a small fixed DATA body when flow-control permits.
+
+JMH `-prof gc` measured the representative response path at 174.309 ns/op and 0.001 B/op on JDK
+21.0.11, with no garbage collections. The reported allocation is the profiler noise floor.

@@ -96,6 +96,12 @@ public class FlashConfiguration {
   @Builder.Default boolean http2Enabled = false;
 
   /**
+   * Whether runtime-generated HTTP/2 header values use HPACK Huffman coding. Constants are always
+   * compressed once at startup; leaving this disabled avoids a per-byte encode pass on responses.
+   */
+  @Builder.Default boolean h2HuffmanDynamicValues = false;
+
+  /**
    * Whether every response includes a {@code Date} header (RFC 9110 §6.6.1). Default {@code true};
    * set {@code false} if Flash sits behind a reverse proxy that already adds one, to skip the
    * (already cheap — see {@code dev.relism.flash.http.DateHeader}) write.
