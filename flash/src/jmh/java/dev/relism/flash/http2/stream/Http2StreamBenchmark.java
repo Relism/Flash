@@ -26,11 +26,14 @@ import org.openjdk.jmh.annotations.Warmup;
 @Measurement(iterations = 5, time = 1)
 public class Http2StreamBenchmark {
   private static final byte[] BODY = "pong".getBytes(StandardCharsets.US_ASCII);
+  private static final byte[] POST_BODY = new byte[1024];
 
   private Http2StreamTable streams;
   private HpackDecoder decoder;
   private byte[] requestBlock;
   private int requestLength;
+  private byte[] postBlock;
+  private int postLength;
 
   @Setup
   public void setup() {
@@ -45,7 +48,19 @@ public class Http2StreamBenchmark {
         block, 1, "localhost".getBytes(StandardCharsets.US_ASCII), false);
     requestBlock = block.array();
     requestLength = block.length();
+    ByteWriter post = new ByteWriter(96);
+    HpackEncoder.writeIndexed(post, 3);
+    HpackEncoder.writeIndexed(post, 7);
+    HpackEncoder.writeLiteralWithNameIndex(
+        post, 4, "/ping".getBytes(StandardCharsets.US_ASCII), false);
+    HpackEncoder.writeLiteralWithNameIndex(
+        post, 1, "localhost".getBytes(StandardCharsets.US_ASCII), false);
+    HpackEncoder.writeLiteralWithNameIndex(
+        post, 28, "1024".getBytes(StandardCharsets.US_ASCII), false);
+    postBlock = post.array();
+    postLength = post.length();
     lifecycle();
+    postOneKiB();
   }
 
   @Benchmark
@@ -57,6 +72,34 @@ public class Http2StreamBenchmark {
     stream
         .responseWriter()
         .prepare(response, 1, false, false, true, false, false, 16_384, 32_768, 65_535);
+    int bytes = stream.responseWriter().length();
+    streams.remove(1);
+    streams.release(stream);
+    return bytes;
+  }
+
+  /** Unary request shape: HPACK decode, one 1 KiB DATA payload, assembly and fixed response. */
+  @Benchmark
+  public int postOneKiB() {
+    Http2Stream stream = streams.acquire(1);
+    decoder.decode(postBlock, 0, postLength, stream.headerBlock());
+    stream.prepareRequestBody(null, false);
+    stream.receiveData(POST_BODY, 0, POST_BODY.length, POST_BODY.length);
+    stream.finishRequestBody();
+    stream.assembleRequest(null, null);
+    stream
+        .responseWriter()
+        .prepare(
+            stream.resetResponse().body(BODY),
+            1,
+            false,
+            false,
+            true,
+            false,
+            false,
+            16_384,
+            32_768,
+            65_535);
     int bytes = stream.responseWriter().length();
     streams.remove(1);
     streams.release(stream);

@@ -16,6 +16,7 @@ public final class Http2StreamTable {
   private final Http2Stream[] values;
   private final int mask;
   private final int maxEntries;
+  private final int maxObjects;
   private final int[] closedIds;
   private final byte[] closedKinds;
   private int size;
@@ -42,6 +43,7 @@ public final class Http2StreamTable {
     values = new Http2Stream[capacity];
     mask = capacity - 1;
     this.maxEntries = maxEntries;
+    maxObjects = maxEntries * 2;
     this.dataBuffers = dataBuffers;
     closedIds = new int[maxEntries * 2];
     closedKinds = new byte[closedIds.length];
@@ -69,7 +71,7 @@ public final class Http2StreamTable {
       free = stream.poolNext;
       stream.poolNext = null;
     } else {
-      if (created == maxEntries) return null;
+      if (created == maxObjects) return null;
       stream = new Http2Stream(dataBuffers);
       created++;
     }
@@ -120,6 +122,13 @@ public final class Http2StreamTable {
     if (!removeIfSame(stream, streamId)) return false;
     rememberClosed(streamId, CLOSED_NORMALLY);
     release(stream);
+    return true;
+  }
+
+  /** Removes a wire-closed stream from live concurrency while retaining its in-flight buffer. */
+  public synchronized boolean detach(Http2Stream stream, int streamId) {
+    if (!removeIfSame(stream, streamId)) return false;
+    rememberClosed(streamId, CLOSED_NORMALLY);
     return true;
   }
 

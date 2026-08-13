@@ -3,6 +3,8 @@ package dev.relism.flash.http2.stream;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,5 +53,21 @@ class Http2StreamTableTest {
     assertEquals(Http2StreamTable.CLOSED_NORMALLY, table.closedKind(1));
     assertEquals(Http2StreamTable.CLOSED_BY_RESET, table.closedKind(3));
     assertEquals(Http2StreamTable.CLOSED_UNKNOWN, table.closedKind(5));
+  }
+
+  @Test
+  void detachedFinalWriteDoesNotConsumeLiveStreamCapacity() {
+    Http2StreamTable table = new Http2StreamTable(1);
+    Http2Stream first = table.acquire(1);
+
+    assertTrue(table.detach(first, 1));
+    Http2Stream second = table.acquire(3);
+    assertNotNull(second);
+    assertNotSame(first, second);
+
+    table.release(first);
+    assertTrue(table.retire(second, 3));
+    assertEquals(2, table.createdCount());
+    assertEquals(2, table.freeCount());
   }
 }

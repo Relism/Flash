@@ -190,6 +190,7 @@ public class RequestParser {
         boolean transferEncodingSeen    = false;
         boolean transferEncodingChunked = false;
         int headerCount = 0;
+        headerMap.beginParsed(buffer, sectionStart, headerEndIdx);
 
         while (current < headerEndIdx) {
             // deprecates line folding and treating a folded continuation as part of the
@@ -232,6 +233,7 @@ public class RequestParser {
             if (lineEnd - valueStart > Http1Limits.MAX_HEADER_VALUE_LENGTH) {
                 throw new MalformedRequestException(431, "Header value exceeds " + Http1Limits.MAX_HEADER_VALUE_LENGTH + " bytes");
             }
+            headerMap.addParsed(current, colon - current, valueStart, lineEnd - valueStart);
 
             if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "content-length")) {
                 // parseLong, which silently accepted "5abc" as 5 and "-1" as 1.
@@ -269,8 +271,6 @@ public class RequestParser {
             isChunked = false;
             if (!contentLengthSeen) contentLength = 0;
         }
-
-        headerMap.reset(buffer, sectionStart, headerEndIdx);
 
         // ── Body / pipelining accounting ─────────────────────────────────────
 

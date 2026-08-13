@@ -1100,3 +1100,45 @@ a second h2-only cleartext listener solely to satisfy a tool assumption.
 against that listener too.
 
 ---
+
+## DEC-35 — Separate live-stream admission from final-write ownership
+
+**Context.** A stream becomes closed on the wire before the asynchronous serialized writer calls
+back for its final batch. Counting that object as live rejects legal replacement streams; pooling
+it before the callback lets the next stream mutate memory still referenced by the writer.
+
+**Decision.** Detach a wire-closed stream from the primitive live table immediately before its
+final batch is submitted, but retain the stream object until write completion. Bound the combined
+live and detached population to twice `MAX_CONCURRENT_STREAMS`; output congestion therefore
+remains bounded and eventually applies `REFUSED_STREAM` backpressure rather than growing memory.
+
+**Consequence.** The peer can use all advertised live-stream slots while final writes drain, and
+the callback always owns the correct object generation. The closed-stream tombstone is recorded
+at detach time, so protocol error classification is unchanged.
+
+**Revisit when.** If production traces show the two-generation object bound rejecting healthy
+traffic, measure writer-drain latency first; increasing the bound without evidence would only hide
+output backpressure.
+
+---
+
+## DEC-36 — Performance gates distinguish profiler noise, latency sampling, and load results
+
+**Context.** JMH's sampling mode allocates bookkeeping records, so combining `Mode.SampleTime`
+with `GCProfiler` falsely reports allocations on otherwise allocation-free operations. End-to-end
+h2load results also show that Flash does not outperform the reference server, so the plan's
+"unmatched" wording cannot honestly become a product claim.
+
+**Decision.** Run two independent forked CI passes over the same six hot paths: average-time plus
+`GCProfiler` for allocation, and sample-time without the allocation profiler for p50/p99/p999.
+Treat up to 0.05 B/op with zero observed collections as the profiler's measurement floor. Gate
+p99 with documented per-benchmark ceilings and keep h2load comparative results informational.
+
+**Consequence.** CI detects real allocation and latency regressions without measuring its own
+sampling machinery. Performance documentation reports Flash and nghttpd numbers directly and
+makes no "unmatched" claim.
+
+**Revisit when.** Recalibrate baselines deliberately on a controlled CI runner, or replace the
+noise floor if a profiler can distinguish harness allocation from benchmark allocation exactly.
+
+---

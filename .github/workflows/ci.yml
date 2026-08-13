@@ -62,6 +62,9 @@ jobs:
           -Dcurl.executable=/usr/bin/curl
           -Dnghttp.executable=/usr/bin/nghttp
           -Dgrpcurl.executable=/tmp/grpcurl
+          -Djdk.tracePinnedThreads=full
+          -Pjmh
+          -Dflash.performance.gates=true
           clean verify
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}

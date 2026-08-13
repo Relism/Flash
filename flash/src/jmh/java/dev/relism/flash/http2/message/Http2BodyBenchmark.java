@@ -28,6 +28,7 @@ public class Http2BodyBenchmark {
   private static final Http2RequestBody.ConsumptionListener NOOP = bytes -> {};
 
   private final byte[] payload = new byte[1024];
+  private final byte[] streamingPayload = new byte[1024 * 1024];
   private final byte[] target = new byte[1024];
   private DataBufferPool pool;
   private Http2RequestBody source;
@@ -35,6 +36,7 @@ public class Http2BodyBenchmark {
   private Response response;
   private Http2ResponseWriter responseWriter;
   private ResettableInputStream responseSource;
+  private ResettableInputStream largeResponseSource;
 
   @Setup(Level.Trial)
   public void setup() throws IOException {
@@ -44,6 +46,7 @@ public class Http2BodyBenchmark {
     response = new Response(200, ContentType.BINARY);
     responseWriter = new Http2ResponseWriter();
     responseSource = new ResettableInputStream(payload);
+    largeResponseSource = new ResettableInputStream(streamingPayload);
     source.begin(-1, false, NOOP);
     source.offer(1, payload, 0, payload.length, payload.length);
     source.finish(1);
@@ -74,6 +77,20 @@ public class Http2BodyBenchmark {
     responseWriter.startFlowControlled(
         response, 1, false, false, true, false, false, 16_384, 32_768, 16_384);
     return responseWriter.length();
+  }
+
+  @Benchmark
+  public int streamingResponseOneMiB() throws IOException {
+    largeResponseSource.rewind();
+    response.reset(200, ContentType.BINARY).stream(largeResponseSource, streamingPayload.length);
+    responseWriter.startFlowControlled(
+        response, 1, false, false, true, false, false, 16_384, 32_768, 16_384);
+    int wireBytes = responseWriter.length();
+    while (!responseWriter.finished()) {
+      responseWriter.resume(16_384, 16_384);
+      wireBytes += responseWriter.length();
+    }
+    return wireBytes;
   }
 
   private static final class ResettableInputStream extends InputStream {

@@ -185,6 +185,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       if (!stream.beginResponseBatch()) {
         throw new IllegalStateException("response batch already in flight");
       }
+      detachFinalBatch(stream, responseWriter);
       frameWriter.write(responseWriter);
     } catch (Exception failure) {
       failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
@@ -220,6 +221,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
         flowController.refundSend(stream, reserved - used);
       }
       applyBatchTransition(stream, responseWriter);
+      detachFinalBatch(stream, responseWriter);
       frameWriter.write(responseWriter);
     } catch (Exception failure) {
       stream.endResponseBatch();
@@ -270,16 +272,22 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     }
     if (stream.responseWriter().finished()) {
       if (stream.state() == Http2StreamState.CLOSED) {
-        streams.retire(stream, streamId);
+        if (!streams.retire(stream, streamId)) streams.release(stream);
       }
       return;
     }
     scheduleResume(stream);
   }
 
+  private void detachFinalBatch(Http2Stream stream, Http2ResponseWriter writer) {
+    if (writer.finished() && stream.state() == Http2StreamState.CLOSED) {
+      streams.detach(stream, stream.id());
+    }
+  }
+
   private void failAndRelease(Http2Stream stream, Http2ErrorCode error, Exception cause) {
     int streamId = stream.id();
-    if (!streams.removeIfSame(stream, streamId)) return;
+    if (!streams.removeIfSame(stream, streamId) && stream.id() != streamId) return;
     if (cause != null) log.error("HTTP/2 stream {} failed", streamId, cause);
     try {
       stream.cancel();

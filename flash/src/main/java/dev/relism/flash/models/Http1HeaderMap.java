@@ -77,10 +77,31 @@ public class Http1HeaderMap implements HeaderView {
     private Slice valueSlice;
 
     public void reset(byte[] buffer, int sectionStart, int sectionEnd) {
-        this.buffer       = buffer;
-        this.sectionStart = sectionStart;
-        this.sectionEnd   = sectionEnd;
+        beginParsed(buffer, sectionStart, sectionEnd);
         buildIndex();
+    }
+
+    /**
+     * Starts an index populated by the request parser while it validates the same header lines.
+     * This avoids rescanning a validated section solely to recover offsets already known there.
+     */
+    public void beginParsed(byte[] buffer, int sectionStart, int sectionEnd) {
+        this.buffer = buffer;
+        this.sectionStart = sectionStart;
+        this.sectionEnd = sectionEnd;
+        headerCount = 0;
+    }
+
+    /** Adds one already-validated header to the current zero-copy index. */
+    public void addParsed(int nameOffset, int nameLength, int valueOffset, int valueLength) {
+        ensureIndexCapacity(headerCount + 1);
+        nameOffsets[headerCount] = nameOffset;
+        nameLengths[headerCount] = nameLength;
+        valueOffsets[headerCount] = valueOffset;
+        valueLengths[headerCount] = valueLength;
+        nameHashes[headerCount] =
+                ByteScan.hashNameIgnoreCaseAscii(buffer, nameOffset, nameLength);
+        headerCount++;
     }
 
     private void buildIndex() {
@@ -92,13 +113,7 @@ public class Http1HeaderMap implements HeaderView {
             int colon   = findColon(i, lineEnd);
             if (colon != -1) {
                 int vs = skipSpaces(colon + 1, lineEnd);
-                ensureIndexCapacity(headerCount + 1);
-                nameOffsets[headerCount]  = i;
-                nameLengths[headerCount]  = colon - i;
-                valueOffsets[headerCount] = vs;
-                valueLengths[headerCount] = lineEnd - vs;
-                nameHashes[headerCount]   = ByteScan.hashNameIgnoreCaseAscii(buffer, i, colon - i);
-                headerCount++;
+                addParsed(i, colon - i, vs, lineEnd - vs);
             }
             i = lineEnd + 2;
         }

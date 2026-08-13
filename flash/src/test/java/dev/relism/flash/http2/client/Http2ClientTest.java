@@ -2,6 +2,8 @@ package dev.relism.flash.http2.client;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
@@ -10,6 +12,7 @@ import dev.relism.flash.models.MutableHeaderMap;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -98,6 +101,15 @@ class Http2ClientTest {
           client.get(URI.create("https://localhost:" + port + "/secure"));
       assertEquals(200, response.statusCode());
       assertEquals("tls-h2", new String(response.body(), StandardCharsets.UTF_8));
+    }
+  }
+
+  @Test
+  void configuresConnectionsForRequestResponseLatency() throws Exception {
+    try (Socket socket = new Socket()) {
+      assertFalse(socket.getTcpNoDelay());
+      Http2Client.configureLowLatency(socket);
+      assertTrue(socket.getTcpNoDelay());
     }
   }
 

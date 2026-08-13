@@ -463,6 +463,7 @@ public final class Http2Client implements Closeable {
       if (!origin.secure) {
         Socket socket = new Socket();
         socket.connect(new InetSocketAddress(origin.host, origin.port), CONNECT_TIMEOUT_MS);
+        configureLowLatency(socket);
         return socket;
       }
       SSLContext context;
@@ -473,6 +474,7 @@ public final class Http2Client implements Closeable {
       }
       SSLSocket socket =
           (SSLSocket) context.getSocketFactory().createSocket(origin.host, origin.port);
+      configureLowLatency(socket);
       SSLParameters parameters = socket.getSSLParameters();
       parameters.setApplicationProtocols(new String[] {"h2"});
       parameters.setEndpointIdentificationAlgorithm("HTTPS");
@@ -484,6 +486,10 @@ public final class Http2Client implements Closeable {
       }
       return socket;
     }
+  }
+
+  static void configureLowLatency(Socket socket) throws IOException {
+    socket.setTcpNoDelay(true);
   }
 
   private static final class Exchange {
