@@ -108,14 +108,12 @@ public abstract class AbstractRouter {
      * same "create once per connection, reuse across requests" shape already used there for
      * {@code RequestParser}.
      *
-     * <p>{@code EX-06}'s router-half fix: a {@code ThreadLocal} here would mean "one per virtual
      * thread", which under this codebase's one-virtual-thread-per-connection model is "one per
      * connection with no upper bound and no pooling" — exactly the failure mode
      * {@code ConnectionScratch} already exists to avoid for every other per-connection buffer.
      * An explicit, caller-owned scratch object achieves the same per-connection reuse without
      * that unbounded-growth risk, and without requiring {@code routing} to depend on
      * {@code transport}'s {@code ConnectionScratch} type (this package has no such dependency
-     * today — see {@code DECISIONS.md}, {@code DEC-19}, for why that boundary was kept rather
      * than extending {@code ConnectionScratch} itself, which is what an earlier draft of this
      * fix assumed).
      */

@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 /**
  * Owns the server's lifecycle: the accept threads (one per listener ×
  * {@code TransportTuning.ACCEPT_THREADS}), the active-socket registry, and the two-stage
- * graceful shutdown ({@code EX-32}) — stop accepting, let in-flight connections drain up to
  * {@code shutdownDrainTimeoutMs} (during which {@code Http1Connection} forces
  * {@code Connection: close} on the next response once it observes {@link #isStopped()}), then
  * force-close whatever remains.
@@ -88,7 +87,6 @@ public final class ServerLifecycle implements ServerHandle {
                 try { bl.socket().close(); } catch (IOException e) { log.error("Error closing server socket", e); }
             }
 
-            // EX-32: give in-flight connections a chance to finish their current response and
             // exit (Http1Connection forces Connection: close once it observes isStopped())
             // before force-closing whatever is still open.
             long deadlineNanos = System.nanoTime() + configuration.getShutdownDrainTimeoutMs() * 1_000_000L;

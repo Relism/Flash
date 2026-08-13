@@ -58,7 +58,6 @@ public enum HttpStatus {
     INSUFFICIENT_STORAGE            (507, "Insufficient Storage"),
     NETWORK_AUTHENTICATION_REQUIRED (511, "Network Authentication Required");
 
-    // EX-17: the bound used to be the hand-maintained constant 504, which silently threw
     // ArrayIndexOutOfBoundsException from this static initializer the moment any constant
     // above it (421, 431, 505, 507, 511 — several of which HTTP/2 needs, see MISDIRECTED_REQUEST
     // and REQUEST_HEADER_FIELDS_TOO_LARGE above) was added. Computed from values() instead, so

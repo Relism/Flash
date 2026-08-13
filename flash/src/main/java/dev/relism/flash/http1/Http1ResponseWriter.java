@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
  * serialization — routing, handler dispatch, and the request loop live in
  * {@link Http1Connection}.
  *
- * <h3>{@code EX-27}: one bulk write, not ~10 small ones</h3>
  * The status line, {@code Content-Type}, {@code Date}, every custom header, and
  * {@code Content-Length}/{@code Connection} are all serialized into
  * {@link ConnectionScratch#responseHead} (a reused {@link ByteWriter}) before a single
@@ -58,7 +57,6 @@ public final class Http1ResponseWriter {
                                       boolean keepAlive, boolean sendDate, ConnectionScratch scratch) throws IOException {
         int statusCode = response.getStatusCode();
         // RFC 9110 §8.6/§15: 204, 304 and all 1xx responses MUST NOT carry Content-Length or a
-        // body at all — not "an empty one", none (EX-15). A HEAD response (RFC 9110 §9.3.2)
         // still reports the Content-Length GET would have, but never writes body bytes.
         boolean noContentAllowed = statusCode == 204 || statusCode == 304 || (statusCode >= 100 && statusCode < 200);
         boolean suppressBody     = noContentAllowed || method == HttpMethod.HEAD;
@@ -71,7 +69,6 @@ public final class Http1ResponseWriter {
         else writeStatusPhrase(head, statusCode);
         head.writeBytes(CRLF);
 
-        // EX-15: a Content-Type of ContentType.NONE (empty byte[]) used to still emit the line
         // "Content-Type: \r\n" — a header with no value. Skip the line entirely instead.
         byte[] contentType = response.getContentType();
         if (contentType != null && contentType.length > 0) {
@@ -80,7 +77,6 @@ public final class Http1ResponseWriter {
             head.writeBytes(CRLF);
         }
 
-        // EX-16: precomputed once per second by a shared daemon thread — one volatile read,
         // one write into the scratch, never a per-response format call.
         if (sendDate) head.writeBytes(DateHeader.bytes());
 
@@ -99,11 +95,9 @@ public final class Http1ResponseWriter {
             head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
             head.writeBytes(CRLF);
 
-            // EX-14: HEAD reports the Content-Length GET would have (above) but never writes
             // the body itself.
             boolean writeBody = body != null && !suppressBody;
             if (writeBody && len <= Http1Limits.INLINE_BODY_THRESHOLD) {
-                // EX-27: small body folded into the same scratch buffer — head + body leave in
                 // one syscall.
                 head.writeBytes(body);
                 out.write(head.array(), 0, head.length());

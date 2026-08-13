@@ -39,16 +39,13 @@ public final class Http1Connection implements ConnectionProtocol {
         OutputStream        out = ctx.out();
         byte[] idleProbe = new byte[1];
 
-        // EX-06 (router half): created once per connection, exactly like `parser` above, and
         // reused across every request on this connection — see AbstractRouter#newScratch.
         Object routeScratch   = ctx.router().newScratch();
         Object wsRouteScratch = ctx.wsRouter().newScratch();
 
-        // EX-21: one Response per connection, repositioned (never reallocated) per request.
         Response pooledResponse = new Response(200, ContentType.TEXT_PLAIN);
 
         while (!ctx.stopped().getAsBoolean()) {
-            // EX-07: wait for the next request to begin, bounded by the generous
             // idle-keep-alive timeout — sitting idle between keep-alive requests is normal, not
             // an attack. Skipped when the parser already has bytes buffered from a previous
             // read (HTTP pipelining): the next request has, by definition, already started, so
@@ -72,7 +69,6 @@ public final class Http1Connection implements ConnectionProtocol {
             try {
                 request = parser.parse(in);
             } catch (MalformedRequestException e) {
-                // EX-02/03/08/18: a fixed, minimal, non-customizable rejection — never routed
                 // through a handler or the user's exception handler — and the connection is
                 // always closed afterwards, never kept alive.
                 Response rejection = new Response(e.status(), e.getMessage(), ContentType.TEXT_PLAIN);
@@ -124,7 +120,6 @@ public final class Http1Connection implements ConnectionProtocol {
                 else if (result != null) response.setBody(result);
             }
 
-            // EX-32: re-checked here, not just before dispatch — a shutdown that begins while
             // this handler was running (the common case: draining connections mid-request) must
             // still force this response to Connection: close, not whatever was decided before
             // the handler ran.
@@ -132,7 +127,6 @@ public final class Http1Connection implements ConnectionProtocol {
             Http1ResponseWriter.writeResponse(out, response, request.method(), actuallyKeepAlive,
                     ctx.configuration().isSendDate(), ctx.scratch());
             request.drain();
-            // EX-22/EX-21: these instances are about to be repositioned over the next request (or
             // dropped, if the connection closes) — poison them in dev mode so any reference the
             // handler improperly retained (a captured field, an async callback) fails loudly on
             // its next access instead of silently reading whatever comes next. Only the pooled

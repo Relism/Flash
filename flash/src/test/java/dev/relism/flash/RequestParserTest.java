@@ -56,7 +56,6 @@ class RequestParserTest {
         assertEquals("2",     r.query("page"));
     }
 
-    // --- EX-42: pooled RequestByteViews (path/query/protocol) don't leak across requests ---
 
     @Test
     void samePooledParser_secondRequestWithoutQuery_doesNotLeakFirstRequestsQuery() throws IOException {
@@ -135,8 +134,6 @@ class RequestParserTest {
     @Test
     void missingHeaderTerminator_throwsMalformedRequestException() {
         // Valid request line but stream ends before \r\n\r\n. Previously a generic IOException;
-        // now the same typed rejection EX-08's over-limit case uses, since both mean "the
-        // header block could never be completed within the allowed buffer" (EX-08).
         byte[] raw = "GET / HTTP/1.1\r\nHost: localhost\r\n".getBytes(StandardCharsets.UTF_8);
         assertThrows(MalformedRequestException.class, () -> new RequestParser().parse(source(raw)));
     }
@@ -159,7 +156,6 @@ class RequestParserTest {
 
     @Test
     void headers_exceedingMaxBufferSize_throwsMalformedRequestException() {
-        // Feed more bytes than the configured cap with no \r\n\r\n : must throw 431 (EX-08).
         int cap = 16 * 1024;
         byte[] giant = new byte[cap + 1];
         Arrays.fill(giant, (byte) 'A');
@@ -183,7 +179,6 @@ class RequestParserTest {
 
     @Test
     void transferEncoding_multiValueEndingInChunked_recognised() throws IOException {
-        // EX-35: "gzip, chunked" — chunked need only be the FINAL coding (RFC 9112 §6.1). The
         // old whole-value comparison misclassified this as not chunked at all.
         String raw = "POST / HTTP/1.1\r\n" +
                      "Host: localhost\r\n" +

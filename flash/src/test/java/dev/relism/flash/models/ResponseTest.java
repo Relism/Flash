@@ -135,7 +135,6 @@ class ResponseTest {
         assertTrue(new Response(200, new byte[0], ContentType.TEXT_PLAIN).getHeaders().isEmpty());
     }
 
-    // --- EX-43: response header budget (Phase 6 zero-alloc DoD) ---
 
     @Test
     void header_exceedingMaxCount_throws() {

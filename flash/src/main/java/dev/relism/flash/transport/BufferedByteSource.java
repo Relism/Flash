@@ -7,7 +7,6 @@ import java.net.SocketTimeoutException;
 
 /**
  * The single buffered view over one connection's inbound bytes, for the whole lifetime of the
- * connection. Fixes {@code EX-10} (one syscall per byte in {@code ChunkedInputStream}) and
  * gives {@link dev.relism.flash.transport.ProtocolNegotiator} a way to inspect the first bytes
  * of a plaintext connection (the h2c preface) without consuming them.
  *
@@ -30,7 +29,6 @@ import java.net.SocketTimeoutException;
  * absolute {@link System#nanoTime()} deadline; every underlying socket read computes the
  * remaining budget and hands exactly that to {@code setSoTimeout} before reading, so a
  * {@link SocketTimeoutException} from an underlying read unambiguously means the deadline —
- * not just one read — has been exceeded. This is what {@code EX-07} requires: "implement that
  * deadline, do not rely on {@code setSoTimeout} alone."
  *
  * <h3>Thread-safety</h3>
@@ -92,7 +90,6 @@ public final class BufferedByteSource extends InputStream {
      * ({@code SO_TIMEOUT = 0}). Must be called before any read the caller wants to be
      * unbounded (e.g. handing the connection off to a long-lived WebSocket session loop).
      *
-     * <p>{@code EX-37}: a {@code null} socket (the constructor accepts one — every isolated unit
      * test in this codebase that constructs a {@code BufferedByteSource} directly over a
      * {@code ByteArrayInputStream} passes {@code null}, since there is no real connection to
      * bound) is treated as "no OS-level timeout to clear", not an error — only the deadline
@@ -255,7 +252,6 @@ public final class BufferedByteSource extends InputStream {
      * before reading, so a {@link SocketTimeoutException} from {@code in.read} unambiguously
      * means the deadline — not merely one read — has elapsed; see the class Javadoc.
      *
-     * <p>{@code EX-37}: the expiry check above (throwing once {@code remainingNanos <= 0}) runs
      * regardless of whether a real {@link Socket} is present; only the OS-level
      * {@code setSoTimeout} call — meaningless without a socket, and previously called
      * unconditionally, which NPE'd the instant any deadline-bounded read ran against a

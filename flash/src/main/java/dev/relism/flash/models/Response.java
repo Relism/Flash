@@ -28,7 +28,6 @@ import java.util.List;
  * return new Response(200, ContentType.TEXT_PLAIN).chunked(source);
  * }</pre>
  *
- * <h3>{@code EX-21}: pooled, not allocated per request</h3>
  * The connection driver (e.g. {@code Http1Connection}) owns one {@code Response} instance per
  * connection, reset before every handler call rather than reallocated — the same treatment
  * {@link Request} gets (see its Javadoc for the full pooling/dev-mode-guard rationale, which
@@ -47,7 +46,6 @@ public class Response {
     private boolean chunked;
     private byte[] contentType;
 
-    // EX-20: custom headers stored as (name, value) byte pairs in one growable region, instead
     // of a List<byte[]> of fully-rendered "Name: Value\r\n" lines (which cost a StringBuilder +
     // char[] + String + getBytes() chain per header(String,String) call). Two backing stores,
     // unified into one insertion-ordered sequence via headerTags/headerRefs, since a fully
@@ -63,7 +61,6 @@ public class Response {
     private int[]        headerRefs;      // one entry per header(), in call order: index into the tag's store
     private int           headerCount;    // total header() calls this response has recorded
 
-    // EX-21 dev-mode poisoning guard -- see Request's identical mechanism for the full rationale.
     private boolean active = true;
     private static volatile boolean poisoningEnabled = Flash.DEV;
 
@@ -207,7 +204,6 @@ public class Response {
     }
 
     /**
-     * Adds a response header. {@code EX-20}: writes {@code name}/{@code value} directly into a
      * reused byte region (via {@link ByteWriter#writeAscii}) instead of building an intermediate
      * {@code String} and re-encoding it — zero allocation once the region has grown to this
      * connection's high-water mark.
@@ -241,7 +237,7 @@ public class Response {
     /**
      * Adds a header from a {@link PreEncodedHeader} built once (typically at boot). Copies its
      * precomputed {@code name}/{@code value} bytes into this response's region — a memcpy, not a
-     * re-encode, and usable by a future h2 response path (unlike {@link #header(byte[])}) since
+     * re-encode, and usable by a future HTTP/2 response path (unlike {@link #header(byte[])}) since
      * the name/value structure survives.
      */
     public Response header(PreEncodedHeader preEncoded) {
@@ -277,7 +273,7 @@ public class Response {
      *
      * <p><b>h1-only</b>: a rendered {@code "Name: Value\r\n"} line carries no structured
      * name/value data an HPACK encoder could use, so this header is not representable on a
-     * future h2 response path — prefer {@link #header(PreEncodedHeader)} for anything that must
+     * future HTTP/2 response path — prefer {@link #header(PreEncodedHeader)} for anything that must
      * render correctly on both protocols. Kept for existing h1-only callers.
      */
     public Response header(byte[] preEncoded) {
@@ -289,11 +285,7 @@ public class Response {
         return this;
     }
 
-    /**
-     * {@code EX-nn}: bounds the response-side analogue of the request header limits — a handler
-     * that calls {@code header(...)} in an unbounded loop must not grow this connection's
-     * per-request scratch state without limit (Phase 6's zero-alloc DoD names this explicitly).
-     */
+    /** Prevents an unbounded header loop from growing the connection's response scratch state. */
     private void checkHeaderBudget() {
         if (headerCount >= Http1Limits.MAX_RESPONSE_HEADER_COUNT) {
             throw new IllegalStateException("response exceeds " + Http1Limits.MAX_RESPONSE_HEADER_COUNT
@@ -397,7 +389,6 @@ public class Response {
 
     /**
      * Writes every custom header directly into {@code head} (a scratch {@link ByteWriter} —
-     * see {@code EX-27}), in call order. Zero-alloc when no headers are set or on a warm region.
      * This is what {@code Http1ResponseWriter} uses; {@link #writeHeaders(OutputStream)} below
      * (the {@code OutputStream} equivalent) exists for the streaming-body write paths that
      * cannot fold their whole write into one scratch buffer.

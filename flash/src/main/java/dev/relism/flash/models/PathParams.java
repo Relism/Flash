@@ -10,9 +10,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Path parameters captured during routing, stored as byte offsets into the path view.
  * {@link #get} allocates a {@code String} on call (in one allocation when {@link #source} is
- * {@link ArrayBackedByteView} — {@code EX-25} — two otherwise); {@link #view} is zero-copy.
  *
- * <h3>Reusable instances ({@code EX-19})</h3>
  * The public constructor below builds a one-shot, fixed-size instance (used by
  * {@code AbstractWsRouter} and by tests) — {@code names.length} is taken as the exact param
  * count. {@code FastPathRouterImpl}'s per-connection scratch instead owns a single long-lived
@@ -38,7 +36,6 @@ public class PathParams {
     private final int[]    lens;
     private int count;
 
-    // EX-05: created lazily, only if view() is ever actually called.
     private SlicePool viewPool;
 
     public PathParams(ByteView source, String[] names, int[] starts, int[] lens) {
@@ -85,7 +82,6 @@ public class PathParams {
         int i = indexOf(name);
         if (i < 0) return null;
         int start = starts[i], len = lens[i];
-        // EX-25: a single-copy String construction when the source is a contiguous array slice
         // (always true for h1 today) instead of a byte-at-a-time copy into a scratch array
         // followed by a second allocation for the String itself.
         if (source instanceof ArrayBackedByteView abv) {
@@ -97,7 +93,6 @@ public class PathParams {
     }
 
     /**
-     * Returns a zero-copy view over path param {@code name}, or {@code null}. {@code EX-05}:
      * drawn from a small internal {@link SlicePool} when {@link #source} is array-backed (always
      * true for h1 today) — same reuse-window contract as {@link Http1HeaderMap#view}. Falls back to a
      * fresh (allocating) view otherwise — never exercised on the real request path.

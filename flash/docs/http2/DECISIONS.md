@@ -14,7 +14,7 @@ that supersedes the earlier one and says so explicitly.
 
 ---
 
-## DEC-01 — HTTP/2 lives in `flash` core, package `dev.relism.flash.h2`, not an extension
+## DEC-01 — HTTP/2 lives in `flash` core, package `dev.relism.flash.http2`, not an extension
 
 **Context.** Flash has an extension mechanism (`flash-ext-*` modules) for optional
 functionality. HTTP/2 could in principle be shipped as `flash-ext-h2`.
@@ -53,7 +53,7 @@ existing HTTP/1.1 code paths.
 extracted upward into protocol-neutral components (`dev.relism.flash.bytes`,
 `ResponseSerializer`), never pushed sideways with a protocol flag. This is enforced by an
 architecture test (Phase 2) asserting `dev.relism.flash.http1` never references
-`dev.relism.flash.h2` and vice versa. The cost is more up-front extraction work in Phase 2 and
+`dev.relism.flash.http2` and vice versa. The cost is more up-front extraction work in Phase 2 and
 Phase 6; the benefit is that h1 throughput cannot regress from an `if` that the JIT fails to
 eliminate, and that either implementation can be read in isolation.
 
@@ -318,7 +318,7 @@ identified. Not anticipated.
 **Consequence.** All HTTP/2 commits use `feat(core): ...` / `fix(core): ...` /
 `refactor(core): ...`, consistent with the branch name (`feature/core/http2`) and with `DEC-01`
 (HTTP/2 is core, not a separate concern). A reader can still find every h2-related commit via
-the file paths touched (`dev.relism.flash.h2/**`, `flash/docs/http2/**`) or via the commit body,
+the file paths touched (`dev.relism.flash.http2/**`, `flash/docs/http2/**`) or via the commit body,
 which is no worse than a scope label and avoids growing the scope list for what is, by `DEC-01`,
 not actually a separate module.
 
@@ -484,7 +484,7 @@ instead of a speculative one.
 ## DEC-17 — `FrameWriterBenchmark` lives in `src/jmh/java`, a source root registered only inside the `jmh` profile, not in `src/test/java`
 
 **Context.** The Phase 3 JMH benchmark (`FrameWriterBenchmark`) was first placed directly in
-`src/test/java/dev/relism/flash/h2/frame/`, on the theory recorded in `flash/pom.xml`'s comment
+`src/test/java/dev/relism/flash/http2/frame/`, on the theory recorded in `flash/pom.xml`'s comment
 at the time: since the class carries only `@Benchmark`/JMH annotations and no JUnit annotations,
 Surefire's JUnit-Jupiter engine would simply not select it as a test, so a plain `mvn test` (no
 `-Pjmh`) would harmlessly ignore it. Verifying this assumption (`mvn -pl flash -am clean
@@ -512,7 +512,7 @@ catch, just in the build graph rather than the source graph.
    profile's `<build>`. With the profile inactive, the file is not handed to the compiler at
    all, under any goal — not `test-compile`, not IDE indexing driven by the effective POM.
    This is also what the plan itself already suggested (Phase 3's Files list: `flash/src/jmh/
-   java/dev/relism/flash/h2/FrameWriterBenchmark.java (or a flash-bench submodule...)`) — the
+   java/dev/relism/flash/http2/FrameWriterBenchmark.java (or a flash-bench submodule...)`) — the
    prior session's placement in `src/test/java` was itself a deviation from the plan's own
    suggested layout, not a considered alternative.
 3. A separate `flash-bench` submodule, depending on `flash` and always pulling in JMH. The

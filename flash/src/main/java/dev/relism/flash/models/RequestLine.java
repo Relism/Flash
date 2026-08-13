@@ -8,7 +8,6 @@ import dev.relism.flash.http.HttpMethod;
  * and the header container. Internal — reached via {@link Request#getRequestLine()}, not
  * user-facing API.
  *
- * <h3>Pooled, like {@link Request} ({@code EX-22})</h3>
  * One instance per connection, repositioned via {@link #reset} for every request rather than
  * reallocated — {@code RequestParser} owns it exactly the way it owns {@link Http1HeaderMap}.
  * {@link #reset} is {@code public} rather than package-private — matching

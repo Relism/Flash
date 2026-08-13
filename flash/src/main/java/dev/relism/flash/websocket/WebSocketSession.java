@@ -36,7 +36,6 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <h3>Thread safety</h3>
  * {@link #sendText}, {@link #send}, and {@link #close} are serialized on a
- * {@link ReentrantLock} (never {@code synchronized} — see {@code EX-01}: a virtual thread
  * blocking inside {@code synchronized} pins its carrier platform thread on Java 21, and a
  * blocking socket write is exactly the kind of call that can block. {@link ReentrantLock}
  * unmounts the blocked virtual thread instead) and are safe to call from threads other than the
@@ -352,8 +351,7 @@ public final class WebSocketSession {
         }
     }
 
-    /** Bulk-reads {@code len} bytes into {@link #hdrScratch} starting at offset 0 — the {@code
-     *  EX-11} fix: the extended-length and mask-key bytes used to be read one at a time. */
+    /** Bulk-reads {@code len} bytes into {@link #hdrScratch} starting at offset 0. */
     private void readFullyHeader(int len) throws IOException {
         int remaining = len;
         while (remaining > 0) {

@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-07}: a socket-level {@code SO_TIMEOUT} alone never trips against a peer that keeps
  * trickling bytes slower than the timeout window — each individual read still succeeds. These
  * tests prove the absolute deadline in {@code dev.relism.flash.transport.BufferedByteSource}
  * actually bounds the total time, not just each read.
@@ -142,7 +141,6 @@ class HttpServerTimeoutTest {
 
         long start = System.nanoTime();
         // A plain socket that never speaks TLS at all — the server's explicit
-        // startHandshake() (EX-30) blocks waiting for a ClientHello that is never coming,
         // and must be bounded by headerReadTimeoutMs rather than hanging forever. Whether the
         // JSSE implementation sends a TLS alert record before closing or just closes outright
         // is a JSSE implementation detail, not something this test should pin down — the

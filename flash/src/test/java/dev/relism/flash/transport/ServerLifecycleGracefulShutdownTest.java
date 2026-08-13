@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-32}: the two-stage graceful shutdown — stop accepting, let an in-flight request
  * finish (forced to {@code Connection: close}), then force-close whatever remains after
  * {@code shutdownDrainTimeoutMs}.
  */
@@ -72,7 +71,6 @@ class ServerLifecycleGracefulShutdownTest {
 
             assertTrue(response.startsWith("HTTP/1.1 200 OK"), response);
             assertTrue(response.contains("done"), response);
-            // EX-32: the in-flight request is forced to close rather than keep-alive, even
             // though the client asked for HTTP/1.1's default keep-alive.
             assertTrue(response.contains("Connection: close"), response);
 

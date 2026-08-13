@@ -1,7 +1,7 @@
 # The Serialized Frame Writer (Phase 3 — GO/NO-GO gate)
 
 Audience: contributors. This is the design record and benchmark evidence for
-`dev.relism.flash.h2.frame.Http2FrameWriter`, the one component every HTTP/2 write in this
+`dev.relism.flash.http2.frame.Http2FrameWriter`, the one component every HTTP/2 write in this
 codebase passes through. Phase 3 of `IMPLEMENTATION-PLAN.md` treats this component as the
 single genuinely novel architectural risk in the whole project — everything downstream (frames,
 HPACK, flow control) is table-driven work with known cost, but nothing in Flash today
@@ -139,7 +139,7 @@ from the path this document's gate criteria are strictest about.
 
 ## Benchmark methodology
 
-`flash/src/jmh/java/dev/relism/flash/h2/frame/FrameWriterBenchmark.java` (a JMH source root
+`flash/src/jmh/java/dev/relism/flash/http2/frame/FrameWriterBenchmark.java` (a JMH source root
 registered only under the `jmh` Maven profile — see `DECISIONS.md`, `DEC-17`, for why it does not
 live in `src/test/java`) compares four harnesses at `threads` ∈ {1, 2, 4, 8, 16, 64}:
 

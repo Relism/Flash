@@ -127,7 +127,6 @@ class ChunkedInputStreamTest {
         assertEquals("hi", new String(in.readAllBytes(), StandardCharsets.UTF_8));
     }
 
-    // --- EX-10: no per-byte syscalls against the underlying stream ------------
 
     /** Counts every {@code read} call that reaches the wrapped stream — i.e. every syscall. */
     private static final class CountingInputStream extends ByteArrayInputStream {
@@ -159,7 +158,6 @@ class ChunkedInputStreamTest {
         assertEquals(1, counting.reads);
     }
 
-    // --- EX-02/09 chunk safety limits ------------------------------------------
 
     @Test
     void chunkSizeAboveLimit_rejected() {

@@ -64,7 +64,6 @@ public class FlashConfiguration {
      * (see {@code dev.relism.flash.transport.BufferedByteSource}), not merely a per-read socket
      * timeout — a per-read timeout alone never trips as long as each individual read succeeds
      * within the window, no matter how long the overall header block takes. Default: 10 000
-     * ({@code EX-07}).
      */
     @Builder.Default
     int headerReadTimeoutMs = 10_000;
@@ -74,7 +73,6 @@ public class FlashConfiguration {
      * request before being closed. More generous than {@link #headerReadTimeoutMs} because an
      * idle keep-alive connection is normal, expected behaviour, not an attack in progress — the
      * tighter bound applies only once bytes have actually started arriving. Default: 60 000
-     * ({@code EX-07}).
      */
     @Builder.Default
     int idleKeepAliveTimeoutMs = 60_000;
@@ -82,7 +80,6 @@ public class FlashConfiguration {
     /**
      * Maximum time, in milliseconds, a request's body may take to be fully read (by the handler
      * or by the automatic drain after it returns) once headers are parsed. Default: 30 000
-     * ({@code EX-07}).
      */
     @Builder.Default
     int bodyReadTimeoutMs = 30_000;
@@ -90,15 +87,12 @@ public class FlashConfiguration {
     /**
      * Maximum time, in milliseconds, {@link dev.relism.flash.ServerHandle#stop()} waits for
      * in-flight requests to finish after it stops accepting new connections, before force-
-     * closing whatever remains. Default: 15 000 ({@code EX-32} — the graceful two-stage
-     * shutdown this bounds is wired up starting Phase 2).
      */
     @Builder.Default
     int shutdownDrainTimeoutMs = 15_000;
 
     /**
      * Whether this server will ever negotiate HTTP/2. Default {@code false}: until the h2
-     * connection state machine exists (Phase 8) there is nothing to negotiate into, so this
      * flag currently only gates the h2c cleartext-preface detection
      * ({@code dev.relism.flash.transport.ProtocolNegotiator}) — skipping it entirely keeps
      * plaintext connections byte-for-byte identical to pre-HTTP/2 Flash when left at its

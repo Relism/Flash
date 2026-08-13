@@ -12,7 +12,6 @@ import java.io.InputStream;
  * Handles pre-buffered bytes from the header read-ahead, chunk framing, and trailer consumption.
  * Returns -1 at end of the final chunk; the underlying socket is left positioned for the next request.
  *
- * <p><b>{@code EX-10}:</b> reads through the connection's shared {@link BufferedByteSource}
  * instead of the raw, unbuffered socket stream. Chunk-size digits, the trailing CRLF after each
  * chunk, and trailer lines are all read one byte at a time by design (the framing is
  * byte-oriented) — that used to mean one {@code read(2)} syscall per byte on the raw socket;
@@ -124,7 +123,6 @@ final class ChunkedInputStream extends InputStream {
      * (RFC 9112 §7.1.2). Bounded by {@link Http1Limits#MAX_TRAILER_COUNT} and
      * {@link Http1Limits#MAX_HEADER_VALUE_LENGTH} — without a bound, a peer could follow the
      * final chunk with an unbounded trailer section purely to waste CPU discarding it. Trailers
-     * are discarded, not exposed to the handler; exposing them is Phase 12 scope
      * ({@code Request.trailers()}).
      */
     private void consumeTrailers() throws IOException {

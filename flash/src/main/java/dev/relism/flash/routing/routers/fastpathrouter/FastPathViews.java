@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 public final class FastPathViews {
 
     /**
-     * {@code EX-04}: {@code fpr-core}'s decompiled {@code ByteCompare} (its word-at-a-time
      * router-matching fast path — see {@code ByteCompare.equals}/{@code indexOf}) reads a
      * comparison word via {@code MethodHandles.byteArrayViewVarHandle(long[].class,
      * ByteOrder.LITTLE_ENDIAN)} and compares it bit-for-bit against whatever
@@ -35,14 +34,12 @@ public final class FastPathViews {
      * {@link ByteView#longAt} implementation to. Caller-guaranteed contract (never asserted here
      * — {@code ByteCompare} itself never calls this without first checking {@code pos + 8 <=
      * length}, so a defensive check here would be dead code on every real call path; see
-     * {@code EX-04}'s registry entry): {@code pos + 8 <= array.length}.
      */
     private static long longAtLittleEndian(byte[] array, int pos) {
         return (long) LONG_VIEW_LE.get(array, pos);
     }
 
     /**
-     * {@code EX-42}: not immutable — {@link #reset} repositions an existing instance over new
      * bounds instead of requiring a fresh allocation. {@code RequestParser} owns one pooled
      * instance per role (path/query/protocol) per connection and calls {@link #reset} on it for
      * every request, the same "do not retain past the handler" pooling contract every other
@@ -91,7 +88,6 @@ public final class FastPathViews {
             return start;
         }
 
-        /** {@code EX-04}: array-backed and contiguous — the word-at-a-time router path applies. */
         @Override
         public boolean supportsLong() {
             return true;
@@ -110,9 +106,7 @@ public final class FastPathViews {
 
     /**
      * Mutable composite view: method bytes + path. Reused per connection, call {@link #reset}
-     * before use (see {@code FastPathRouterImpl}'s per-connection scratch, {@code EX-06}).
      *
-     * <h3>{@code EX-04}: deliberately not array-backed, {@code supportsLong()} stays {@code false}</h3>
      * Unlike every other view in this file, this one is a composite of two independent sources
      * (a raw {@code byte[]} for the method, and another {@link ByteView} — itself possibly
      * array-backed — for the path). There is no single backing array a word-at-a-time read could
@@ -173,7 +167,6 @@ public final class FastPathViews {
             return 0;
         }
 
-        /** {@code EX-04}: array-backed and contiguous — the word-at-a-time router path applies. */
         @Override
         public boolean supportsLong() {
             return true;
@@ -212,7 +205,6 @@ public final class FastPathViews {
             return 0;
         }
 
-        /** {@code EX-04}: array-backed and contiguous — the word-at-a-time router path applies. */
         @Override
         public boolean supportsLong() {
             return true;

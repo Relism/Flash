@@ -57,7 +57,6 @@ public final class Multipart {
 
     private final List<Part> scanned = new ArrayList<>();
     private PartBodyStream   active  = null; // open file stream; must be drained before next scan
-    private int              partCount = 0;  // EX-29: bounds Http1Limits.MAX_MULTIPART_PARTS
 
     // -------------------------------------------------------------------------
     // Factory
@@ -159,7 +158,6 @@ public final class Multipart {
         Map<String, String> headers = readPartHeaders();
         if (headers == null) { done = true; return null; }
 
-        // EX-29: without this bound, a peer sending an unbounded number of minimal parts forces
         // unbounded growth of `scanned` and unbounded cumulative header-parsing work.
         if (++partCount > Http1Limits.MAX_MULTIPART_PARTS) {
             throw new IOException("multipart body exceeds max part count (" + Http1Limits.MAX_MULTIPART_PARTS + ")");
@@ -177,7 +175,6 @@ public final class Multipart {
             // File part — expose streaming body; not cached (stream is consumed once)
             p = Part.streaming(name, filename, ct, active);
         } else {
-            // Text part, or full-scan path: buffer body now. EX-29: bounded, not
             // InputStream.readAllBytes() — an unbounded field/file body would otherwise let a
             // hostile peer force an arbitrarily large single heap allocation.
             byte[] body = readBoundedBody(active);
@@ -302,7 +299,6 @@ public final class Multipart {
         while (true) {
             String line = readLine();
             if (line == null || line.isEmpty()) break;
-            // EX-29: without this bound a peer can send an effectively unlimited number of
             // header lines before the blank line that ends a part's header block.
             if (++count > Http1Limits.MAX_MULTIPART_PART_HEADER_COUNT) {
                 throw new IOException("multipart part exceeds max header count ("
@@ -338,7 +334,6 @@ public final class Multipart {
                 sb.append(new String(win, wPos, append, StandardCharsets.UTF_8));
                 wPos += append; wLen -= append;
             }
-            // EX-29: without this bound, a peer that never sends \r\n keeps this StringBuilder
             // growing for as long as it keeps streaming bytes — the multipart-header analogue of
             // RequestParser's Http1Limits.MAX_HEADER_VALUE_LENGTH check, which does not apply
             // here since these header lines live inside the body, not the top-level HTTP headers.

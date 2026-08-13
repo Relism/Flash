@@ -9,10 +9,8 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-26}: the clean-value (no {@code %}/{@code +}) fast path in {@code QueryParams.decode}
  * must produce byte-for-byte identical results to the percent-decoding slow path it bypasses —
  * verified here across clean values, values needing every kind of decoding, and the boundary
- * between them. Also covers {@code EX-05}'s pooled {@code view()}.
  */
 class QueryParamsFastPathTest {
 
@@ -63,7 +61,6 @@ class QueryParamsFastPathTest {
         assertEquals("a b", qp.get("plussed"));
     }
 
-    // ── EX-05: pooled view() ────────────────────────────────────────────────
 
     @Test
     void view_returnsRawUndecodedBytes() {

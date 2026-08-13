@@ -3,8 +3,6 @@ package dev.relism.flash.exceptions;
 /**
  * Thrown by the HTTP/1.1 parser when a request violates a protocol rule that must be rejected
  * outright — most importantly the request-smuggling defenses of RFC 9112 §6.1 (see
- * {@code EX-02}/{@code EX-03} in {@code flash/docs/http2/IMPLEMENTATION-PLAN.md}) and the hard
- * safety limits in {@code Http1Limits} (see {@code EX-08}).
  *
  * <p>Distinct from {@link HttpException}, which a <em>handler</em> throws to describe an
  * application-level failure and which is routed through the user's configured exception

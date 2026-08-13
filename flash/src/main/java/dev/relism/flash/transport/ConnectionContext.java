@@ -26,7 +26,6 @@ import java.util.function.BooleanSupplier;
  * @param rawOut        the unbuffered output stream — for WebSocket, whose writes are already
  *                       bulk (see {@code WebSocketSession})
  * @param remoteAddress the client's address, or {@code null} if unavailable
- * @param scratch       this connection's reusable buffers ({@code EX-06})
  * @param router        the HTTP router
  * @param wsRouter      the WebSocket router
  * @param configuration the server configuration (timeouts, limits, feature flags)

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** {@code EX-21}'s dev-mode use-after-recycle guard — mirrors {@code RequestRecycleGuardTest}. */
 class ResponseRecycleGuardTest {
 
     @AfterEach

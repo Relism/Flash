@@ -114,7 +114,7 @@ public interface ConnectionProtocol {
 `ConnectionRunner` decides h1 vs h2 exactly once, immediately after ALPN/preface detection, and
 dispatches. Today only `Http1Connection` exists; an `H2` negotiation result is closed cleanly
 (there is no `Http2Connection` to hand off to until Phase 8). Neither implementation is aware
-the other exists — `dev.relism.flash.http1` and `dev.relism.flash.h2` do not import each other,
+the other exists — `dev.relism.flash.http1` and `dev.relism.flash.http2` do not import each other,
 enforced by `PackageBoundaryTest`.
 
 ## Graceful shutdown (`EX-32`)

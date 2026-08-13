@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * A scratch is always released — including on an exception path — and a socket is always
  * removed from {@code activeSockets}, regardless of how the dispatched
- * {@link ConnectionProtocol} exits. This is a resource-leak safety property (Phase 2's Safety
  * checks list), verified here with a protocol implementation that deliberately throws.
  */
 class ConnectionRunnerTest {

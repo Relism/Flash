@@ -1,6 +1,6 @@
 # The Frame Layer (Phase 5)
 
-Audience: contributors. This is the design record for `dev.relism.flash.h2.frame`'s frame
+Audience: contributors. This is the design record for `dev.relism.flash.http2.frame`'s frame
 reading, validation, and writing — the 9-byte header and payload boundary, with no connection
 semantics, no streams, and no HPACK above it.
 
@@ -32,7 +32,7 @@ out of `streamId()` once, so no caller has to remember to.
 ## Package layout
 
 ```
-dev.relism.flash.h2.frame
+dev.relism.flash.http2.frame
 ├── FrameType            the 10 known types + per-type validation descriptor (min/max length, stream-id rule)
 ├── FrameFlags            END_STREAM/ACK/END_HEADERS/PADDED/PRIORITY bit constants + predicates
 ├── FrameHeader           flyweight over a read buffer: length/type/flags/streamId/payloadOffset

@@ -1,10 +1,10 @@
 # Flash — HTTP/2 Implementation Plan
 
-> **Status**: design document, not yet implemented.
+> **Status**: working implementation ledger; it is not product documentation or an API contract.
 > **Target branch**: `feature/core/http2`
 > **Target module**: `flash` (core). HTTP/2 is a transport concern and must live where
 > `HttpServer` lives; it cannot be an extension.
-> **Target package root**: `dev.relism.flash.h2`
+> **Target package root**: `dev.relism.flash.http2`
 > **Java baseline**: 21 (`maven.compiler.source/target=21` in the root `pom.xml`). Every
 > decision in this document assumes Java 21 semantics, in particular that
 > **`synchronized` pins the carrier thread of a virtual thread** (JEP 491, which removes
@@ -61,7 +61,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 
 | Phase | Status | Branch/PR | Notes |
 |---|---|---|---|
-| 0 — Groundwork | done | `feature/core/http2` | Package skeleton, `Http2Limits`, `Http1Limits`, `Http2ErrorCode`, `Http2Exception`/`Http2StreamException`, `DECISIONS.md` (`DEC-01`…`DEC-11`), `package-info.java`. 226/226 tests green. |
+| 0 — Groundwork | done | `feature/core/http2` | Package skeleton, `Http2Limits`, `Http1Limits`, `Http2ErrorCode`, `Http2Exception`/`Http2StreamException`, and `DECISIONS.md`. 226/226 tests green. |
 | 1 — HTTP/1.1 hardening + ALPN/preface | done | `feature/core/http2` | EX-02/03/07/08/10/17/18/30/31 fixed; EX-35/36 found+fixed. `BufferedByteSource`, `ProtocolNegotiator`, `MalformedRequestException` added (plan corrected, DEC-12). 277/277 tests green (run twice). h1 benchmark check deferred — no JMH harness until Phase 3 (documented in DoD). |
 | 2 — Transport decomposition | done | `feature/core/http2` | `HttpServer.java` deleted; `transport`/`http1` packages + WS extraction (EX-01/06/11/12/13/14/15/16/32/34) done. Router `ThreadLocal` (EX-06 router half) deliberately deferred to Phase 4 per DEC-15. 311/311 tests green (run 3×). h1 benchmark check deferred — no JMH harness until Phase 3. |
 | 3 — Serialized frame writer (GO/NO-GO gate) | done | `feature/core/http2` | `Http2FrameWriter`/`WriteIntent`/`IntrusiveMpscQueue` + `Http2FrameWriterTest`/`Http2FrameWriterStressTest` + `FrameWriterBenchmark` (JMH, `-Pjmh`, `src/jmh/java` — moved there from `src/test/java` after it broke default `mvn test`; see `DEC-17`). All 4 gate criteria met: N=1 0 B/op & 42.6 ns overhead (≤50 ns budget); N=64 65.5% throughput retention (≥60%) & 11.8–14.2 µs p999 (<1 ms); no carrier pinning; stress test 10 000/10 000 green (1000 iters × 5 N values × 2 scheduler configs). Full numbers in `WRITER.md`, `DEC-09`. 321/321 non-JMH tests green. |
@@ -782,11 +782,10 @@ prevents three different naming schemes for the same idea.
 ### Files created
 
 ```
-flash/src/main/java/dev/relism/flash/h2/package-info.java
-flash/src/main/java/dev/relism/flash/h2/Http2Limits.java
-flash/src/main/java/dev/relism/flash/h2/Http2ErrorCode.java
-flash/src/main/java/dev/relism/flash/h2/Http2Exception.java
-flash/src/main/java/dev/relism/flash/h2/Http2StreamException.java
+flash/src/main/java/dev/relism/flash/http2/Http2Limits.java
+flash/src/main/java/dev/relism/flash/http2/Http2ErrorCode.java
+flash/src/main/java/dev/relism/flash/http2/Http2Exception.java
+flash/src/main/java/dev/relism/flash/http2/Http2StreamException.java
 flash/src/main/java/dev/relism/flash/http/Http1Limits.java
 flash/docs/http2/IMPLEMENTATION-PLAN.md          (this file)
 flash/docs/http2/DECISIONS.md                    (decision log, see below)
@@ -795,8 +794,7 @@ flash/docs/http2/DECISIONS.md                    (decision log, see below)
 ### Package layout (final; later phases fill it in)
 
 ```
-dev.relism.flash.h2
-├── package-info.java              module-level Javadoc: the whole architecture in one page
+dev.relism.flash.http2
 ├── Http2Limits.java               every bound, every default, each with its attack rationale
 ├── Http2ErrorCode.java            the 14 RFC 9113 §7 codes, with pre-encoded 4-byte forms
 ├── Http2Exception.java            connection error → GOAWAY
@@ -867,11 +865,7 @@ dev.relism.flash.bytes                (new, Phase 4 — protocol-neutral byte ut
    (`DEC-01` … `DEC-08`, listed in Part VI). Every subsequent non-obvious choice appends an
    entry: context, options, decision, consequence. This is how the next agent understands why
    the encoder has no dynamic table.
-2. Write `dev/relism/flash/h2/package-info.java` containing the one-page architecture
-   description: the demux loop, the virtual-thread-per-stream model, the writer discipline, the
-   arena strategy, and the explicit list of what Flash does not implement (server push,
-   priority scheduling) with the RFC citation permitting it.
-3. Write `Http2ErrorCode` as an enum of the 14 RFC 9113 §7 codes with `code()` and a
+2. Write `Http2ErrorCode` as an enum of the 14 RFC 9113 §7 codes with `code()` and a
    **pre-encoded 4-byte big-endian `byte[]`** per constant (used in RST_STREAM and GOAWAY
    payloads without formatting).
 4. Write `Http2Limits` with every bound this plan will need. Each field gets a Javadoc naming
@@ -906,7 +900,7 @@ positive and internally consistent, e.g. `MAX_FRAME_SIZE_LOCAL` within RFC bound
 16384..16777215).
 
 ### Docs
-`flash/docs/http2/DECISIONS.md` created. `package-info.java` written.
+`flash/docs/http2/DECISIONS.md` created.
 
 ### DoD
 - [x] Package skeleton compiles (empty classes are acceptable only for classes whose phase has
@@ -1241,7 +1235,7 @@ nothing but stops syscalling per byte. No new steady-state allocation is introdu
       immediately.
 - [x] `PackageBoundaryTest` — a source-scan architecture test (decision recorded in the test's
       own Javadoc: no ArchUnit dependency yet, and one import check per package pair does not
-      need one): `dev.relism.flash.http1` must not import `dev.relism.flash.h2` and vice versa.
+      need one): `dev.relism.flash.http1` must not import `dev.relism.flash.http2` and vice versa.
 
 ### Docs
 - `README.md` architecture section (lines 257-274) rewritten to reflect the new component
@@ -1337,16 +1331,16 @@ race documented in the Javadoc, and verified by a dedicated stress test.
 ### Files
 
 Created:
-- `flash/src/main/java/dev/relism/flash/h2/frame/Http2FrameWriter.java`
-- `flash/src/main/java/dev/relism/flash/h2/frame/WriteIntent.java` — the interface a stream
+- `flash/src/main/java/dev/relism/flash/http2/frame/Http2FrameWriter.java`
+- `flash/src/main/java/dev/relism/flash/http2/frame/WriteIntent.java` — the interface a stream
   implements to describe "serialize yourself into this buffer". Implemented by `Http2Stream`
   and by connection-level singletons (SETTINGS ACK, PING ACK, GOAWAY, WINDOW_UPDATE) so that
   connection frames use the same path as stream frames — one writer, no exceptions.
-- `flash/src/main/java/dev/relism/flash/h2/frame/IntrusiveMpscQueue.java` — the Vyukov queue,
+- `flash/src/main/java/dev/relism/flash/http2/frame/IntrusiveMpscQueue.java` — the Vyukov queue,
   operating on a `Node` interface that `Http2Stream` implements.
-- `flash/src/test/java/dev/relism/flash/h2/frame/Http2FrameWriterTest.java`
-- `flash/src/test/java/dev/relism/flash/h2/frame/Http2FrameWriterStressTest.java`
-- `flash/src/jmh/java/dev/relism/flash/h2/FrameWriterBenchmark.java` (or a `flash-bench`
+- `flash/src/test/java/dev/relism/flash/http2/frame/Http2FrameWriterTest.java`
+- `flash/src/test/java/dev/relism/flash/http2/frame/Http2FrameWriterStressTest.java`
+- `flash/src/jmh/java/dev/relism/flash/http2/FrameWriterBenchmark.java` (or a `flash-bench`
   submodule — decide and record in `DECISIONS.md`; a `jmh` profile on the `flash` module is
   simplest and avoids a new artifact).
 
@@ -2801,7 +2795,7 @@ speak h2 as a **client** so Pathway can proxy.
    the same frame reader/writer, the same HPACK codec (the encoder now needs `:method`,
    `:scheme`, `:authority`, `:path` — all static-table entries), the same stream machine with
    the roles inverted. New: connection pooling, `:status` handling, and response assembly.
-   Keep it in `dev.relism.flash.h2.client` and keep it honest about scope: it exists to serve
+   Keep it in `dev.relism.flash.http2.client` and keep it honest about scope: it exists to serve
    the proxy use case, not to be a general-purpose HTTP client.
 4. **Trailer relay.** A proxy must forward trailers in both directions, and must forward them
    *as trailers*, not fold them into headers. Getting this wrong is the single most common
@@ -2918,7 +2912,7 @@ defines the h2 mechanism.
    - A soak test: 10 minutes of sustained mixed traffic (GET, POST, streaming, RST, PING) with
      heap and pool-size assertions at the end. Tagged for nightly, not per-PR.
 6. **Regression corpus.** Every bug found during implementation gets a test with the exact
-   frame bytes that triggered it, checked in under `src/test/resources/h2/regressions/`.
+   frame bytes that triggered it, checked in under `src/test/resources/http2/regressions/`.
 
 ### Docs
 `flash/docs/http2/COMPLIANCE.md` — the `h2spec` result table, the interop matrix with versions, the
@@ -3044,8 +3038,7 @@ be traceable to a number in this file.
   orientation for someone opening the package for the first time.
 
 **Javadoc:**
-- Every public type in `dev.relism.flash.h2` and the new `transport`/`http1`/`bytes` packages.
-- `package-info.java` for each new package.
+- Every public type in `dev.relism.flash.http2` and the new `transport`/`http1`/`bytes` packages.
 - The release workflow publishes Javadoc to GitHub Pages (`release.yml`); verify the new
   packages render correctly and that no `@link` is broken.
 
@@ -3080,7 +3073,7 @@ be traceable to a number in this file.
 | Concurrency | 1000 streams, stress, leak, pinning | `*ConcurrencyTest`, `*LeakTest` |
 | Allocation | 0 B/op gates | JMH `-prof gc` in CI |
 | Performance | Throughput and latency baselines | JMH + `h2load` |
-| Regression | Every bug ever found, by its exact bytes | `src/test/resources/h2/regressions/` |
+| Regression | Every bug ever found, by its exact bytes | `src/test/resources/http2/regressions/` |
 
 ## Rules
 
@@ -3141,7 +3134,7 @@ an entry in the same format: **Context / Options / Decision / Consequence / Revi
 
 | Id | Decision | One-line rationale |
 |---|---|---|
-| `DEC-01` | HTTP/2 lives in `flash` core, package `dev.relism.flash.h2`, not an extension | The protocol branch must sit where the transport sits; `HttpServer` is package-private |
+| `DEC-01` | HTTP/2 lives in `flash` core, package `dev.relism.flash.http2`, not an extension | The protocol branch must sit where the transport sits; `HttpServer` is package-private |
 | `DEC-02` | h1 and h2 are peers behind a `ConnectionProtocol` seam, never flags in shared code | `R1`; protects h1 performance and both implementations' readability |
 | `DEC-03` | `ReentrantLock` everywhere, never `synchronized` around blocking I/O | Java 21 pins carriers on `synchronized`; JEP 491 is JDK 24+ |
 | `DEC-04` | The HPACK **encoder** uses the static table only; no dynamic table | Removes all shared mutable state from the write path, at a cost of a few bytes on the wire |
@@ -3267,4 +3260,3 @@ pressure and it is the one the project owner asked for most explicitly:
 > description. Do not open a TODO, do not defer it, and do not work around it.
 >
 > The registry in Part II came from reading the codebase once. It is a floor, not a ceiling.
-

@@ -121,7 +121,6 @@ class TlsConfigTest {
         }
     }
 
-    // --- EX-31: cipher suite filtering when h2 is offered -----------------------
 
     @Test
     void negotiatesH2_trueOnlyWhenH2IsInTheOfferedList() throws Exception {

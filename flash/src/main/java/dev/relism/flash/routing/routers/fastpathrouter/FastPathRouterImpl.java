@@ -19,7 +19,6 @@ import java.util.Arrays;
  * virtual {@code METHOD + path} byte sequence in a single pass; the per-connection
  * {@link RouteScratch} ({@link #newScratch}) owns the reused {@link MatchResult},
  * {@link FastPathViews.MethodPathByteView} and path-param arrays that would otherwise allocate
- * (or, before {@code EX-06}'s router-half fix, sit in an unbounded {@code ThreadLocal}) on every
  * request.
  */
 public class FastPathRouterImpl extends AbstractRouter {
@@ -30,12 +29,10 @@ public class FastPathRouterImpl extends AbstractRouter {
     public FastPathRouterImpl() {}
 
     /**
-     * Per-connection reusable matching state — {@code EX-06}'s router half and {@code EX-19}
      * together. Created once per connection by {@link #newScratch} and threaded back into every
      * {@link #route} call for that connection's lifetime (see {@link AbstractRouter#newScratch}
      * for why this replaced the two {@code ThreadLocal}s this class used to hold).
      *
-     * <p>{@code paramNames}/{@code paramStarts}/{@code paramLens} ({@code EX-19}) start small and
      * grow (doubling, via {@link #ensureParamCapacity}) to the connection's high-water mark —
      * the number of path params the most param-heavy route matched on this connection ever
      * needed — and are never shrunk back down or reallocated once warm, the same amortized policy

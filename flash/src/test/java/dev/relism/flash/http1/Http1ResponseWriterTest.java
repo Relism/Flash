@@ -26,7 +26,6 @@ class Http1ResponseWriterTest {
         return out.toString(StandardCharsets.UTF_8);
     }
 
-    // --- EX-14: HEAD ------------------------------------------------------------
 
     @Test
     void head_reportsContentLengthButWritesNoBody() throws IOException {
@@ -46,7 +45,6 @@ class Http1ResponseWriterTest {
         assertTrue(raw.endsWith("hello world"), raw);
     }
 
-    // --- EX-15: 204 / 304 / 1xx never carry Content-Length or a body ------------
 
     @Test
     void status204_omitsContentLengthAndBody() throws IOException {
@@ -85,7 +83,6 @@ class Http1ResponseWriterTest {
         assertTrue(raw.contains("Content-Length: 1\r\n"), raw);
     }
 
-    // --- EX-15: ContentType.NONE omits the Content-Type line entirely -----------
 
     @Test
     void contentTypeNone_omitsContentTypeLine() throws IOException {
@@ -101,7 +98,6 @@ class Http1ResponseWriterTest {
         assertTrue(raw.contains("Content-Type: text/plain\r\n"), raw);
     }
 
-    // --- EX-16: Date header -------------------------------------------------------
 
     @Test
     void sendDateTrue_includesDateHeader() throws IOException {
@@ -135,7 +131,6 @@ class Http1ResponseWriterTest {
         assertTrue(raw.contains("Connection: close\r\n"), raw);
     }
 
-    // --- EX-27: one bulk write for a small fixed body -----------------------------
 
     /** Counts calls to {@code write(byte[], int, int)} — the only overload {@link Http1ResponseWriter} uses. */
     private static final class CountingOutputStream extends java.io.OutputStream {

@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
  * Randomized agreement testing for {@link ByteScan}'s SWAR methods against their scalar
- * counterparts, per Phase 4's task 1 ("property-test SWAR against scalar on random inputs of
  * every length 0..256 ... including unaligned starts"). {@link ByteScanTest} already covers
  * every exact boundary deterministically; this class instead throws a large volume of fully
  * random bytes and random sub-ranges at both implementations, on a fixed seed for reproducible

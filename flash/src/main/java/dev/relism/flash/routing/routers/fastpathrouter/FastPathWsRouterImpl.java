@@ -12,9 +12,7 @@ import dev.relism.flash.websocket.WebSocketHandler;
 
 /**
  * WebSocket-upgrade counterpart of {@link FastPathRouterImpl} — same {@code fpr-core} matching
- * engine, same {@code EX-06} router-half fix (an explicit per-connection {@link RouteScratch}
  * via {@link #newScratch} in place of the {@code ThreadLocal}s this class used to hold). Unlike
- * {@link FastPathRouterImpl}, its path-param extraction is not covered by {@code EX-19} (that
  * registry entry names {@code FastPathRouterImpl.route} specifically) and still allocates a
  * fresh {@code PathParams} per matched, parametric WebSocket upgrade — WebSocket upgrades are
  * inherently rare relative to ordinary requests (one per connection, not one per message), so
@@ -26,9 +24,7 @@ public final class FastPathWsRouterImpl extends AbstractWsRouter {
     private volatile FastPathRouter<ByteView, WebSocketHandler> router;
     private          String[]                                   cachedParamNames;
 
-    /** Per-connection reusable matching state — see {@link FastPathRouterImpl.RouteScratch}'s
-     *  javadoc for the full {@code EX-06} rationale; this router's scratch is smaller since
-     *  {@code EX-19}'s path-param reuse does not apply here (see the class Javadoc). */
+    /** Per-connection reusable matching state. */
     static final class RouteScratch {
         final MatchResult<WebSocketHandler> matchResult = new MatchResult<>(32, 128);
         final FastPathViews.MethodPathByteView combinedView = new FastPathViews.MethodPathByteView();

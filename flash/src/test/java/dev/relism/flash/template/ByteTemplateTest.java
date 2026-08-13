@@ -56,7 +56,6 @@ class ByteTemplateTest {
         assertEquals("A12B", new String(result, StandardCharsets.UTF_8));
     }
 
-    // --- EX-28: renderInto(buffer, offset, ...) ------------------------------------
 
     @Test
     void renderInto_writesAtOffset_andReturnsLength() {

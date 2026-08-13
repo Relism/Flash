@@ -22,7 +22,6 @@ import java.util.concurrent.Executors;
  * and the h1 protocol, and returns the {@link ServerHandle} implementation
  * ({@link ServerLifecycle}) that {@link dev.relism.flash.ServerHandle#create} exposes publicly.
  *
- * <p>{@code EX-34}: this is the "composed transport rather than a god object" the registry
  * asked for — {@code ServerHandle.create} used to construct {@code HttpServer} directly, which
  * no longer exists. Package-private-in-spirit (public only because {@code ServerHandle} lives
  * in a different package and must call it) — user code has no reason to call this directly.

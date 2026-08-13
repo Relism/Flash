@@ -15,7 +15,6 @@ import java.util.Map;
  * <p>
  * Layout: seg[0] slot[0] seg[1] slot[1] … seg[n-1] slot[n-1] seg[n]
  *
- * <h3>{@code EX-28}: slot lookup is O(1) per key-value pair, not O(slots)</h3>
  * A slot name can appear more than once (e.g. {@code {{var}} == {{var}}}), so the map built at
  * construction maps each name to the (usually single-element) array of every slot index using
  * that name, instead of the nested "scan every slot for every pair" loop this used to do.

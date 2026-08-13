@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-11} (bulk header read) and {@code EX-12} (continuation reassembly, mandatory
  * masking, opcode validation, control-frame constraints, correct close codes) coverage for
  * {@link WebSocketSession#readFrame}.
  */
@@ -52,7 +51,6 @@ class WebSocketFragmentationAndValidationTest {
         return new WebSocketSession(new ByteArrayInputStream(raw), new ByteArrayOutputStream(), bufferSize);
     }
 
-    // --- EX-12: continuation reassembly ------------------------------------------
 
     @Test
     void continuationFrames_reassembleIntoOneMessage() throws IOException {
@@ -118,7 +116,6 @@ class WebSocketFragmentationAndValidationTest {
         assertEquals(1009, e.closeCode());
     }
 
-    // --- EX-12: mandatory masking direction ---------------------------------------
 
     @Test
     void serverSession_unmaskedIncomingFrame_rejected1002() throws IOException {
@@ -149,7 +146,6 @@ class WebSocketFragmentationAndValidationTest {
         assertEquals("hi", new String(frame.copyPayload(), StandardCharsets.UTF_8));
     }
 
-    // --- EX-12: opcode validation --------------------------------------------------
 
     @Test
     void reservedOpcode_rejected1002() throws IOException {
@@ -160,7 +156,6 @@ class WebSocketFragmentationAndValidationTest {
         assertEquals(1002, e.closeCode());
     }
 
-    // --- EX-12: control-frame constraints ------------------------------------------
 
     @Test
     void fragmentedControlFrame_rejected1002() throws IOException {
@@ -189,7 +184,6 @@ class WebSocketFragmentationAndValidationTest {
         assertEquals(125, frame.payloadLength());
     }
 
-    // --- EX-11: bulk header read, not one syscall per byte -------------------------
 
     private static final class CountingInputStream extends InputStream {
         private final InputStream delegate;

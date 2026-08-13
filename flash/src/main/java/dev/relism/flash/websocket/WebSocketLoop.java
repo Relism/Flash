@@ -4,7 +4,6 @@ import java.io.IOException;
 
 /**
  * Drives one {@link WebSocketSession}'s read loop until the session closes, dispatching frames
- * to the user's {@link WebSocketHandler}. Extracted from {@code HttpServer} (Phase 2) — its only
  * responsibility is this loop; the handshake and upgrade detection live in
  * {@link WebSocketUpgrade}.
  */
@@ -30,7 +29,6 @@ public final class WebSocketLoop {
                 }
             }
         } catch (WebSocketProtocolException e) {
-            // EX-12: tell the peer why, with the correct close code, before tearing down.
             try { session.close(e.closeCode()); } catch (IOException ignored) { }
             handler.onError(session, e);
         } catch (IOException e) {

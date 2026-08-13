@@ -29,7 +29,6 @@ import java.util.List;
  * });
  * }</pre>
  *
- * <h3>{@code EX-22}: pooled, not allocated per request</h3>
  * A {@code Request} instance is owned by its connection (HTTP/1.1) or its stream (HTTP/2) and is
  * recycled after the handler returns. <b>Do not retain it</b> — the same instance is repositioned
  * over the next request's data as soon as this one's handler returns. {@code equals}/
@@ -48,7 +47,6 @@ import java.util.List;
  * loudly, and at the exact call site that misused it — instead of silently reading whatever the
  * next (or a completely different) request happened to reset this instance to. In production
  * this check is a single {@code boolean} field read gated behind a {@code static final} flag the
- * JIT treats as a trusted constant once the class is initialized — see {@code DECISIONS.md} for
  * the measured cost.
  */
 public class Request {
@@ -65,7 +63,6 @@ public class Request {
     private InetSocketAddress remoteAddress;
     private SSLSocket sslSocket;
 
-    // EX-22 dev-mode poisoning guard: true from reset() until recycle() marks this instance
     // unsafe to use further. Only consulted when poisoningEnabled is true (see checkActive()).
     private boolean active;
 
@@ -137,7 +134,6 @@ public class Request {
     /**
      * Repositions {@code pooled} over a freshly-parsed request. {@code body} is already fully
      * configured by the caller ({@code RequestParser}, which owns and resets its own pooled
-     * {@link RequestBody} for the fixed-length/chunked/empty cases — see {@code EX-22}) — this
      * method's only job is wiring it, {@code requestLine}, and the connection identity fields
      * into {@code pooled}.
      */
@@ -160,7 +156,6 @@ public class Request {
         checkActive();
         if (cachedPath != null) return cachedPath;
         ByteView v = requestLine.getPath();
-        // EX-25: one allocation via a direct String(array, offset, length) construction when the
         // view is a contiguous array slice (always true for h1 today), instead of a byte-at-a-time
         // copy into a scratch array followed by a second allocation for the String itself.
         if (v instanceof ArrayBackedByteView abv) {

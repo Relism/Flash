@@ -12,7 +12,6 @@ import dev.relism.fpr.core.ByteView;
  * <h3>Deliberately not array-backed</h3>
  * This does not implement {@link ArrayBackedByteView} — there is no single {@code (array,
  * offset)} pair that describes it — and {@link #supportsLong()} returns {@code false}
- * unconditionally rather than attempting a cross-segment 8-byte read ({@code EX-04}'s word-at-a-
  * time path is only sound for a genuinely contiguous backing array; see
  * {@code FastPathViews.MethodPathByteView} for the other deliberately-segmented view in this
  * codebase, which makes the same choice for the same reason).

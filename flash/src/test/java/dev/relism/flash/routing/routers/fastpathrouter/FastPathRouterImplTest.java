@@ -72,7 +72,6 @@ class FastPathRouterImplTest {
 
     @Test
     void route_reusesScratchAcrossManyRequests_includingGrowingParamCapacity() throws Exception {
-        // EX-19: the same scratch, reused across a mix of param counts, must keep matching
         // correctly as its arrays grow past their initial size (8) and get reused afterward.
         FastPathRouterImpl router = new FastPathRouterImpl();
         router.doRegister(HttpMethod.GET, "/a/{p1}/{p2}/{p3}/{p4}/{p5}/{p6}/{p7}/{p8}/{p9}/{p10}",

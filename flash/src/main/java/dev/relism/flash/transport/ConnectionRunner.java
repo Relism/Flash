@@ -21,14 +21,12 @@ import java.util.function.BooleanSupplier;
 
 /**
  * Owns one connection's socket lifecycle from accept to close: configures socket options,
- * forces the TLS handshake if applicable ({@code EX-30}), negotiates the protocol, and
  * dispatches to the matching {@link ConnectionProtocol} — guaranteeing cleanup (scratch
  * release, active-socket tracking) regardless of how the protocol implementation exits.
  *
  * <p>Sole responsibility: connection setup/teardown. It contains no HTTP semantics at all —
  * those live entirely inside whichever {@link ConnectionProtocol} it dispatches to (today,
  * always {@code Http1Connection}; an {@code H2} negotiation result is closed cleanly, since
- * {@code Http2Connection} does not exist until Phase 8).
  */
 @Slf4j
 public final class ConnectionRunner {
@@ -77,7 +75,6 @@ public final class ConnectionRunner {
 
             SSLSocket sslSocket = socket instanceof SSLSocket ssl ? ssl : null;
             if (sslSocket != null) {
-                // EX-30: force the handshake explicitly, under a bounded timeout, before any
                 // protocol decision — SSLSocket#getApplicationProtocol() (which
                 // ProtocolNegotiator relies on) returns null until the handshake has run.
                 socket.setSoTimeout(configuration.getHeaderReadTimeoutMs());
@@ -92,8 +89,7 @@ public final class ConnectionRunner {
             BufferedByteSource in = new BufferedByteSource(socket.getInputStream(), socket);
 
             NegotiatedProtocol negotiated = negotiateProtocol(socket, in);
-            if (negotiated == NegotiatedProtocol.H2) {
-                // No Http2Connection exists yet (lands in Phase 8) — close cleanly rather than
+            if (negotiated == NegotiatedProtocol.HTTP_2) {
                 // attempt to speak a protocol this version cannot yet serve.
                 return;
             }

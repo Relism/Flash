@@ -41,7 +41,6 @@ class HttpStatusTest {
         assertNull(HttpStatus.reasonForCode(0));
     }
 
-    // --- EX-17: bound computed from values(), not a hand-maintained constant -----
 
     @Test
     void statusesAboveThePreviousHandMaintainedBound_workCorrectly() {

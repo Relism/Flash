@@ -12,12 +12,10 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-04}: verifies the {@code longAt()}/{@code supportsLong()} contract against
  * {@code fpr-core}'s own word-at-a-time comparison code — not merely against a hand-derived
  * expectation, per the plan's explicit instruction to verify by testing against {@code fpr-core}
  * directly rather than by reading its bytecode (bytecode-reading only informed which byte order
  * to use; this test is the actual verification). A wrong endianness or a wrong bounds assumption
- * here produces silently mis-routed requests, the worst possible failure mode ({@code EX-04}'s
  * own registry entry) — so this covers both the raw word-read contract and an end-to-end router
  * match with the long path actually engaged.
  */

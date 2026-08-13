@@ -9,13 +9,11 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-22}: {@link Request} is pooled <em>per connection</em> (one instance owned by
  * {@code RequestParser}, repositioned via {@link Request#forParsed} for every request on that
  * connection) — not via a shared cross-connection pool. The plan's own safety-check wording
  * ("connection A's {@code Authorization} header must never be visible on connection B") describes
  * a threat model that does not structurally apply to this design: two different connections
  * never share a {@code Request} instance at all (each owns its own {@code RequestParser}, hence
- * its own {@code Request}) — see {@code DECISIONS.md} for the pooling-granularity decision this
  * follows from. The real, applicable threat this class actually tests: request <em>N+1</em> on
  * the *same* keep-alive connection must never see stale data left over from request <em>N</em>,
  * since those two requests genuinely do share one {@code Request} instance.

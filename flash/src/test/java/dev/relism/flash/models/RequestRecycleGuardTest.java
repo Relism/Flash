@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-22}'s dev-mode use-after-recycle guard. Exercises the poisoning check directly via
  * {@code Request.setPoisoningEnabledForTesting} rather than the real {@code Flash.DEV} flag,
  * which is a {@code static final boolean} fixed once at JVM startup and cannot be toggled by an
  * individual test — see that field's own comment in {@code Request.java}.

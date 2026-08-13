@@ -2,7 +2,6 @@ package dev.relism.flash.bytes;
 
 /**
  * A small, fixed-size ring of {@link PooledSlice} instances — one per {@code ConnectionScratch}-
- * held call site that used to allocate a fresh {@code ByteView} per call ({@code EX-05}:
  * {@code Http1HeaderMap.view}, {@code QueryParams.view}, {@code PathParams.view}).
  *
  * <h3>Why a ring, not a single reused slice</h3>

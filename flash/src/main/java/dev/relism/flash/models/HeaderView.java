@@ -5,19 +5,15 @@ import dev.relism.fpr.core.ByteView;
 import java.util.List;
 
 /**
- * The read-side contract every header container implements, protocol-neutral: {@link
- * Http1HeaderMap} backs it with an HTTP/1.1 byte-buffer range today; a Phase 10
- * {@code Http2HeaderMap} will back it with HPACK-decoded (name, value) pairs. Neither concrete
- * shape leaks into this interface — there is no {@code reset(byte[], int, int)} here, since that
- * signature only makes sense for a byte-range-backed implementation.
+ * The read-side, protocol-neutral contract every header container implements. HTTP/1.1 uses a
+ * byte-range-backed implementation; HTTP/2 uses HPACK-decoded name/value pairs. Neither concrete
+ * representation leaks into this interface.
  *
- * <p>{@link RequestLine#getHeaders()} is typed as this interface (not a concrete class), which
- * is what lets Phase 10 hand a {@link Request} an HPACK-backed header container without touching
- * a single line of {@code Request}'s own code — the entire point of this phase's refactor (R1:
- * h1 and h2 are peers behind a shared abstraction, never one forking the other).
+ * <p>{@link RequestLine#getHeaders()} exposes this interface rather than a protocol-specific
+ * implementation so request handling remains independent of the transport protocol.
  *
  * <h3>Lifetime contract</h3>
- * Every implementation lives on the connection (h1) or the stream (h2), not per-request, and is
+ * Every implementation lives on the connection (HTTP/1.1) or the stream (HTTP/2), not per-request, and is
  * repositioned in place between requests — never retain an instance past the handler that
  * received it. {@code String} values returned by {@link #first}/{@link #all} are safe to retain
  * (independent heap copies); {@link ByteView}s returned by {@link #view} and passed to {@link

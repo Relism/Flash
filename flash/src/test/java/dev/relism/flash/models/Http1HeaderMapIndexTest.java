@@ -8,7 +8,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-09}: dedicated correctness coverage for {@link Http1HeaderMap}'s per-{@code reset()}
  * index — duplicate names, case variation, zero headers, and growth past the initial index
  * capacity up to {@code Http1Limits.MAX_HEADER_COUNT}. {@link HeaderMapTest} already covers the
  * ordinary lookup/forEach contract; this class targets the index machinery specifically.
@@ -104,7 +103,6 @@ class Http1HeaderMapIndexTest {
 
     @Test
     void allocation_indexArraysAreNotReallocatedOnceWarm() {
-        // The rigorous 0 B/op verification is the Phase 17 JMH gate (-prof gc); this is a
         // unit-test-level structural guarantee that repeated first()/all()/view() lookups never
         // re-trigger index growth (Arrays.copyOf inside ensureIndexCapacity) after the first
         // reset() has already sized the arrays for this header count — asserted by identity: the
@@ -124,7 +122,6 @@ class Http1HeaderMapIndexTest {
 
     @Test
     void view_poolWraparound_aliasesAnEarlierReturnedView() {
-        // EX-05's documented hazard, demonstrated through the actual public API: Http1HeaderMap's
         // view() pool is sized 4 (VIEW_POOL_SIZE); a 5th call in the same request wraps around
         // and silently repositions the object the 1st call returned.
         dev.relism.fpr.core.ByteView v1 = null;

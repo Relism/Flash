@@ -1,7 +1,6 @@
 package dev.relism.flash.bytes;
 
 /**
- * A mutable, reusable {@link ArrayBackedByteView} — the {@code EX-05} fix. Replaces the
  * per-call {@code new ByteView() { ... }} anonymous-class allocation that used to live in
  * {@code Http1HeaderMap.view}, {@code QueryParams.view}, and {@code PathParams.view}: instead of
  * allocating a fresh view object (plus its capturing instance) on every call, a small

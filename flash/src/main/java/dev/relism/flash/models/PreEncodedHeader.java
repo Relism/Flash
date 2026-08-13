@@ -7,7 +7,6 @@ import java.util.Arrays;
  * A header name/value pair pre-encoded once (typically at boot, as a {@code static final}
  * constant) and reused across many responses via {@link Response#header(PreEncodedHeader)}.
  *
- * <h3>{@code EX-20}: why this exists alongside {@link Response#header(byte[])}</h3>
  * The older {@code header(byte[])} overload takes an already-fully-rendered h1 field line
  * (e.g. {@code "X-RateLimit-Limit: 100\r\n"}) — fine for h1, but not valid HPACK: HPACK encodes
  * a header as a compressed (name, value) pair, never as a literal CRLF-terminated line, so a
@@ -15,11 +14,10 @@ import java.util.Arrays;
  * PreEncodedHeader} instead precomputes the {@code name}/{@code value} bytes <em>separately</em>
  * (still once, still at boot) so either protocol's writer can render them in its own format —
  * {@link Response#header(byte[])} is kept, working, for h1-only callers, but is documented as
- * ignored on a future h2 response path (there is no way to recover structured name/value data
+ * ignored on a future HTTP/2 response path (there is no way to recover structured name/value data
  * from an opaque pre-rendered line); prefer this class for any header a handler wants to send on
  * both protocols.
  *
- * <p>The HPACK-encoded rendering itself is Phase 9 scope (no HPACK encoder exists yet) — this
  * class stores the raw {@code name}/{@code value} bytes now, which is everything a future HPACK
  * encoder needs to produce its own rendering from; it does not yet expose a precomputed HPACK
  * byte form, since building one before HPACK exists would be speculative, untested API surface.

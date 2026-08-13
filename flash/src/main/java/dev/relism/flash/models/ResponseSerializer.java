@@ -5,8 +5,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * The protocol-neutral enumeration of a {@link Response}'s header fields — one source of truth
  * consumed by every protocol's own writer, so {@code Content-Type}/custom-header logic is never
- * duplicated (and cannot drift) between {@code Http1ResponseWriter} and a future h2 encoder
- * (Phase 9). {@code Http1ResponseWriter} renders each field as {@code "Name: Value\r\n"}; the h2
+ * duplicated (and cannot drift) between {@code Http1ResponseWriter} and a future HTTP/2 encoder
  * encoder will render the same fields via HPACK.
  *
  * <h3>Scope: response-object fields only, not connection framing</h3>
@@ -22,7 +21,7 @@ import java.nio.charset.StandardCharsets;
  * recoverable (name, value) structure — see that method's own Javadoc — so it cannot appear in
  * this enumeration. {@code Http1ResponseWriter} still renders it (via {@link
  * Response#writeHeaders}, which handles both structured and raw entries, in the original call
- * order); a future h2 writer will not be able to.
+ * order); a future HTTP/2 writer will not be able to.
  */
 public final class ResponseSerializer {
     private ResponseSerializer() {}
@@ -37,7 +36,6 @@ public final class ResponseSerializer {
 
     /**
      * Enumerates {@code response}'s fields in a fixed, deterministic order: {@code Content-Type}
-     * first (if set to a non-empty value — {@code EX-15}: {@code ContentType.NONE} emits
      * nothing, never an empty-valued header line), then every {@code header(String,String)}/
      * {@code header(PreEncodedHeader)}-added field in call order. Zero allocation: every byte
      * range handed to {@code consumer} is a slice of {@code response}'s own already-allocated

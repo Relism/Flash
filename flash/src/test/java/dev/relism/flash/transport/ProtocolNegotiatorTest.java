@@ -36,13 +36,13 @@ class ProtocolNegotiatorTest {
     @Test
     void h2cPrefaceExact_negotiatesH2() throws IOException {
         BufferedByteSource src = plaintextSource("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
-        assertEquals(NegotiatedProtocol.H2, ProtocolNegotiator.negotiate(new Socket(), src));
+        assertEquals(NegotiatedProtocol.HTTP_2, ProtocolNegotiator.negotiate(new Socket(), src));
     }
 
     @Test
     void h2cPrefaceFollowedByMoreData_stillNegotiatesH2_andDoesNotConsume() throws IOException {
         BufferedByteSource src = plaintextSource("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\nEXTRA");
-        assertEquals(NegotiatedProtocol.H2, ProtocolNegotiator.negotiate(new Socket(), src));
+        assertEquals(NegotiatedProtocol.HTTP_2, ProtocolNegotiator.negotiate(new Socket(), src));
         // peek() must not have consumed anything — the full 24-byte preface is still there for
         // whatever reads next (Http2Connection, once it exists).
         byte[] readBack = new byte[24];
@@ -85,7 +85,6 @@ class ProtocolNegotiatorTest {
     /**
      * Binds a real TLS listener offering {@code serverAlpn}, connects a client offering
      * {@code clientAlpn}, forces the handshake on both sides (mirroring {@code Http1Connection}/{@code ConnectionRunner}'s
-     * EX-30 fix), and hands the accepted server-side socket to {@code assertion}.
      */
     private static void withNegotiatedAlpn(Path dir, String[] serverAlpn, String[] clientAlpn,
                                             ThrowingConsumer<SSLSocket> assertion) throws Exception {
@@ -129,7 +128,7 @@ class ProtocolNegotiatorTest {
     void alpnH2_negotiatesH2(@TempDir Path dir) throws Exception {
         withNegotiatedAlpn(dir, new String[]{"h2", "http/1.1"}, new String[]{"h2", "http/1.1"}, server -> {
             assertEquals("h2", server.getApplicationProtocol());
-            assertEquals(NegotiatedProtocol.H2,
+            assertEquals(NegotiatedProtocol.HTTP_2,
                     ProtocolNegotiator.negotiate(server, new BufferedByteSource(server.getInputStream(), server)));
         });
     }

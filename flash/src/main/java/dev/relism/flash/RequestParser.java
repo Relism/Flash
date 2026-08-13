@@ -40,7 +40,6 @@ import java.util.Arrays;
  * and reset to {@code 0/0} before any work begins, so an exception thrown mid-parse
  * leaves the fields clean rather than pointing at stale data from a previous request.
  *
- * <h3>Rejection model (RFC 9112 §6.1, {@code EX-02}/{@code EX-03}/{@code EX-08}/{@code EX-18})</h3>
  * Anything wrong with the request itself — smuggling-relevant ambiguity, an over-limit
  * header, a malformed byte where the grammar forbids one — is reported as a
  * {@link MalformedRequestException} carrying the exact status the caller must respond with.
@@ -58,13 +57,10 @@ public class RequestParser {
     private final InetSocketAddress remoteAddress;
     private final SSLSocket         sslSocket;
     private final Http1HeaderMap    headerMap   = new Http1HeaderMap();
-    // EX-22: one Request/RequestLine per connection, repositioned (never reallocated) per
     // request — same idiom as headerMap above.
     private final RequestLine       requestLine = new RequestLine();
     private final Request           request     = new Request();
     private final RequestBody       requestBody = new RequestBody();
-    // EX-42: one pooled RequestByteView per role, repositioned (never reallocated) per request —
-    // closes the last per-request allocation left after EX-20..EX-24 pooled Request/RequestBody/
     // RequestLine/Response themselves. queryView is only reset and used when a query string is
     // actually present; RequestLine.getQuery() must keep returning null otherwise (see reset()).
     private final FastPathViews.RequestByteView pathView     = new FastPathViews.RequestByteView(null, 0, 0);
@@ -174,7 +170,6 @@ public class RequestParser {
         int protocolEnd   = ByteScan.indexOf(buffer, protocolStart, headerEndIdx, (byte) '\r');
         if (protocolEnd == -1) throw new MalformedRequestException(400, "Invalid request line (protocol)");
 
-        // EX-08: the request line itself (method SP target SP version) is bounded separately
         // from the overall header-block size, so an oversized request line gets its own,
         // specific rejection rather than being folded into the generic "headers too large" case.
         if (protocolEnd - base > Http1Limits.MAX_REQUEST_LINE_LENGTH) {
@@ -194,7 +189,6 @@ public class RequestParser {
         int headerCount = 0;
 
         while (current < headerEndIdx) {
-            // EX-18 (obs-fold): a header line MUST NOT begin with whitespace. RFC 9112 §5.2
             // deprecates line folding and treating a folded continuation as part of the
             // previous header's value is a known request-smuggling vector.
             byte first = buffer[current];
@@ -205,7 +199,6 @@ public class RequestParser {
             int lineEnd = ByteScan.indexOf(buffer, current, headerEndIdx + 1, (byte) '\r');
             if (lineEnd == -1 || lineEnd == current) break;
 
-            // EX-18: verify the '\r' is immediately followed by '\n' instead of blindly
             // advancing past two bytes — a bare '\r' not followed by '\n' desynchronizes the
             // parse and is a known bare-CR smuggling surface. Safe to read lineEnd+1: lineEnd
             // is at most headerEndIdx, and findEndOfHeader already guaranteed 4 readable bytes
@@ -238,11 +231,9 @@ public class RequestParser {
             }
 
             if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "content-length")) {
-                // EX-03: strict, overflow-safe parsing — replaces the old digit-skipping
                 // parseLong, which silently accepted "5abc" as 5 and "-1" as 1.
                 long parsed = parseContentLengthStrict(buffer, valueStart, lineEnd);
                 // Multiple Content-Length lines with differing values is itself a smuggling
-                // primitive (EX-02); identical repeated values are tolerated (RFC 9110 §8.6
                 // permits a recipient to treat that as one value).
                 if (contentLengthSeen && parsed != contentLength) {
                     throw new MalformedRequestException(400, "Conflicting Content-Length values");
@@ -251,8 +242,6 @@ public class RequestParser {
                 contentLengthSeen = true;
             } else if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "transfer-encoding")) {
                 transferEncodingSeen = true;
-                // Correctness fix found while implementing EX-02 in this exact code path
-                // (registered as EX-35): the old check required the WHOLE value to equal
                 // "chunked", so "gzip, chunked" — valid per RFC 9112 §6.1, where chunked need
                 // only be the FINAL coding — was silently treated as not chunked at all,
                 // corrupting the message boundary. Fixed by inspecting only the last token.
@@ -261,7 +250,6 @@ public class RequestParser {
             current = lineEnd + 2;
         }
 
-        // EX-02 (RFC 9112 §6.1): a request with both Content-Length and Transfer-Encoding
         // MUST be treated as an error by an origin server — this is the canonical CL.TE/TE.CL
         // smuggling vector. Checked once both headers are known, regardless of the order they
         // appeared in, so ordering games cannot bypass it.
@@ -301,7 +289,6 @@ public class RequestParser {
 
         requestLine.reset(method, pathView, queryMark != -1 ? queryView : null, protocolView, headerMap);
 
-        // EX-22: requestBody is this connection's single pooled instance (see its own class
         // Javadoc) -- reset() repositions it for the fixed-length/empty case (contentLength == 0
         // is handled by the same call: preBufLen is already forced to 0 for it above) or the
         // chunked case, never reallocated.
@@ -314,7 +301,6 @@ public class RequestParser {
     }
 
     /**
-     * Strict, overflow-safe {@code Content-Length} parsing ({@code EX-03}). Rejects: an empty
      * value, any non-digit byte (including a leading {@code +}/{@code -}, which are not
      * digits), more than 19 digits (the longest possible {@code Long.MAX_VALUE}), arithmetic
      * overflow past {@code Long.MAX_VALUE}, and a value above
@@ -349,7 +335,6 @@ public class RequestParser {
      * ({@code "gzip, chunked"}), {@code chunked} MUST be the final one for the message to be
      * self-delimiting. Returns whether the last comma-separated token in {@code [start, end)}
      * is exactly {@code "chunked"} (case-insensitive), ignoring surrounding whitespace around
-     * that token. Registered as {@code EX-35}: the previous whole-value comparison silently
      * misclassified any multi-coding value as non-chunked.
      */
     private static boolean isFinalCodingChunked(byte[] buf, int start, int end) {

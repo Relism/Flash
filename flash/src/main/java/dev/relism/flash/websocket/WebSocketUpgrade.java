@@ -13,7 +13,6 @@ import java.util.Base64;
 
 /**
  * WebSocket upgrade detection (RFC 6455 §4.2.1) and handshake response. Extracted from
- * {@code HttpServer} (Phase 2) — its only responsibility is deciding whether a request is an
  * upgrade request and, if so, answering the {@code 101 Switching Protocols} handshake. The
  * session loop itself lives in {@link WebSocketLoop}.
  */
@@ -40,7 +39,6 @@ public final class WebSocketUpgrade {
 
     /**
      * Whether {@code request} is a WebSocket upgrade request: {@code Upgrade: websocket} and a
-     * {@code Connection} header whose token list includes {@code upgrade} ({@code EX-13} — the
      * shared token-list scanner in {@link Http1KeepAlive} is what fixed the whole-value compare
      * bug this check used to have too).
      */

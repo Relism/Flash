@@ -11,15 +11,12 @@ import java.nio.ByteOrder;
  * {@code \r\n\r\n} header-terminator search (SWAR-accelerated), case-insensitive comparison,
  * comma-separated token-list scanning ({@code Connection: a, b, c}), RFC 9110 {@code tchar}
  * validation, and the case-insensitive header-name hash {@link dev.relism.flash.models.Http1HeaderMap}'s
- * index uses ({@code EX-09}).
  *
  * <p>Every method here is {@code static} and allocates nothing. Every SWAR method has a plain
  * scalar counterpart ({@code *Scalar}) that exists for two reasons: it is what the tests use as
  * the correctness oracle (property-tested against the SWAR version on randomized inputs — see
  * {@code ByteScanTest}/{@code ByteScanFuzzTest}), and it is the documented fallback if a future
  * measurement ever shows the SWAR path is not worth its complexity on some path (none has been
- * found not worth it so far — see {@code DECISIONS.md} for the one path that {@em was}
- * measured and kept, {@code EX-33}).
  *
  * <h3>The SWAR technique used throughout</h3>
  * Both {@link #indexOf} and {@link #indexOfCrLfCrLf} use the classic "does this word contain
@@ -60,7 +57,6 @@ public final class ByteScan {
 
     /**
      * RFC 9110 §5.6.2 {@code tchar} set, table-driven so validation is a single array read per
-     * byte (R4/R5) rather than a chain of range comparisons. Indexed directly by byte value;
      * only the ASCII range a valid header-name character can ever occupy is populated.
      */
     private static final boolean[] TCHAR = new boolean[128];
@@ -119,7 +115,6 @@ public final class ByteScan {
      * Index of the first {@code "\r\n\r\n"} in {@code buf[from, to)}, or {@code -1}. SWAR
      * pre-filter (find a candidate {@code CR} byte 8 at a time) plus a cheap scalar 3-byte
      * verify at each candidate — see the class Javadoc for the technique and
-     * {@code RequestParser}, {@code EX-33}, for why this replaced a fully byte-at-a-time scan.
      */
     public static int indexOfCrLfCrLf(byte[] buf, int from, int to) {
         int limit = to - 4; // last index at which a 4-byte match can start
@@ -216,7 +211,6 @@ public final class ByteScan {
     /**
      * Whether the comma-separated, OWS-tolerant token list {@code view} contains {@code token}
      * (case-insensitive). The shared scanner behind both {@code Http1KeepAlive.isKeepAlive} and
-     * the {@code Connection: Upgrade} check ({@code EX-13}) — a single home so the two can never
      * drift apart the way a whole-value {@code equals} check once did.
      */
     public static boolean tokenListContains(ByteView view, String token) {
@@ -238,7 +232,6 @@ public final class ByteScan {
         return equalsIgnoreCase(view, start, start + wlen, token);
     }
 
-    // ── Header-name hash (EX-09) ─────────────────────────────────────────────
 
     /**
      * Case-insensitive (ASCII fold) 32-bit FNV-1a hash of {@code buf[start, start + len)}. Used

@@ -68,7 +68,6 @@ class PathParamsTest {
 
     @Test
     void view_poolWraparound_aliasesAnEarlierReturnedView() {
-        // EX-05's pooled path only engages when `source` is array-backed (ArrayBackedByteView) —
         // unlike of()'s plain inline ByteView (which exercises the non-pooled fallback, still
         // correct but not the code path this test targets), use the same view type RequestParser
         // actually produces.

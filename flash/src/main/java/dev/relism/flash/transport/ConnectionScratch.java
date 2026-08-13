@@ -6,7 +6,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * The {@code EX-06} fix. Owns every per-connection reusable buffer that used to live in a
  * {@link ThreadLocal} on {@code HttpServer}: the decimal-formatting scratch, the streaming
  * relay buffer, and the WebSocket-handshake {@link MessageDigest}.
  *
@@ -25,10 +24,7 @@ import java.security.NoSuchAlgorithmException;
  * pool when the connection closes. Never shared between two connections at once — there is no
  * synchronization here because none is needed.
  *
- * <p>{@code EX-06}'s router half (the {@code FastPathRouterImpl}/{@code FastPathWsRouterImpl}
- * {@code ThreadLocal}s) is fixed in Phase 4, but deliberately <em>not</em> by extending this
  * class: {@code routing} has no dependency on {@code transport} today, and folding the router's
- * scratch fields in here would have created one — see {@code DECISIONS.md}, {@code DEC-19}, for
  * the opaque-per-connection-object mechanism ({@code AbstractRouter#newScratch}) used instead.
  * This class gains HTTP/2 write/HPACK scratch in later phases, where {@code h2} already depends
  * on {@code transport} and no such boundary concern applies.
@@ -45,7 +41,6 @@ public final class ConnectionScratch {
     public final byte[] relayBuffer = new byte[RELAY_BUFFER_SIZE];
 
     /**
-     * {@code EX-27}: the scratch {@code Http1ResponseWriter} serializes a whole response head
      * (status line, {@code Content-Type}, {@code Date}, custom headers, {@code Content-Length}/
      * {@code Connection}, and — for small fixed bodies — the body itself) into before issuing a
      * single bulk {@code write()}, instead of ~10 small {@code OutputStream.write} calls.

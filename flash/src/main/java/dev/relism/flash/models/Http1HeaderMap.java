@@ -22,8 +22,6 @@ import java.util.List;
  * instance per connection) lives in the root {@code dev.relism.flash} package, and {@code http1}
  * already depends on root (via {@code Http1Connection}'s use of {@code RequestParser}) — placing
  * this class in {@code http1} would require root to import back from {@code http1}, the exact
- * kind of package cycle {@code DEC-19} already found and avoided once in this codebase. See
- * {@code DECISIONS.md}, {@code DEC-22}, for the full reasoning; this note exists so a future
  * reader does not "fix" the location back to what the plan's Files list originally suggested.
  *
  * <h3>Lifetime contract — read carefully</h3>
@@ -45,7 +43,6 @@ import java.util.List;
  *       {@code byte[]} before leaving the synchronous handler scope.</li>
  * </ol>
  *
- * <h3>{@code EX-09}: an index built once per {@link #reset}, not rescanned per lookup</h3>
  * {@link #reset} scans the header section exactly once and records, per header, its name/value
  * byte offsets and a case-insensitive 32-bit hash of the name — into {@code int[]} arrays grown
  * (never shrunk) to this connection's high-water mark. Every lookup method
@@ -62,7 +59,6 @@ public class Http1HeaderMap implements HeaderView {
     private int sectionStart;
     private int sectionEnd;
 
-    // EX-09 index — grown (never shrunk) to this connection's high-water mark, rebuilt in place
     // by every reset() call. Entry i's name is buffer[nameOffsets[i], nameOffsets[i]+nameLengths[i]),
     // its value is buffer[valueOffsets[i], valueOffsets[i]+valueLengths[i]).
     private int   headerCount;
@@ -72,7 +68,6 @@ public class Http1HeaderMap implements HeaderView {
     private int[] valueLengths = new int[INITIAL_INDEX_CAPACITY];
     private int[] nameHashes   = new int[INITIAL_INDEX_CAPACITY];
 
-    // EX-05: pooled, reused slices for view() — see its own Javadoc for the reuse window.
     private final SlicePool viewPool = new SlicePool(VIEW_POOL_SIZE);
 
     // forEach's own pair, reused across every header of every call — same idiom as viewPool,
@@ -81,7 +76,6 @@ public class Http1HeaderMap implements HeaderView {
     private Slice nameSlice;
     private Slice valueSlice;
 
-    /** Resets this map to the header section {@code buffer[sectionStart, sectionEnd)}, rebuilding the {@code EX-09} index. */
     public void reset(byte[] buffer, int sectionStart, int sectionEnd) {
         this.buffer       = buffer;
         this.sectionStart = sectionStart;
@@ -112,7 +106,6 @@ public class Http1HeaderMap implements HeaderView {
 
     private void ensureIndexCapacity(int needed) {
         if (needed <= nameOffsets.length) return;
-        // EX-08 (Http1Limits.MAX_HEADER_COUNT) already rejects any request with more headers
         // than this before it ever reaches reset() — this can only fire while growing toward
         // that ceiling, never past it. Asserted, not silently truncated: an index that silently
         // dropped headers past this point would be a correctness bug, not a capacity one.
@@ -203,7 +196,6 @@ public class Http1HeaderMap implements HeaderView {
     /**
      * Returns a zero-copy {@link ByteView} over the first value of {@code name}, or {@code null}.
      *
-     * <h3>{@code EX-05}: pooled, not allocated per call</h3>
      * The returned view is drawn from a small internal {@link SlicePool} rather than allocated
      * fresh. It stays valid until either the request ends, or {@link #view} is called
      * {@value #VIEW_POOL_SIZE} more times on this same {@code Http1HeaderMap} — whichever comes
@@ -218,7 +210,6 @@ public class Http1HeaderMap implements HeaderView {
         return viewPool.acquire(buffer, valueOffsets[i], valueLengths[i]);
     }
 
-    /** Index into the {@code EX-09} arrays of the first header named {@code name}, or {@code -1}. */
     private int indexOfHeader(String name) {
         if (buffer == null) return -1;
         int hash = ByteScan.hashNameIgnoreCaseAscii(name);

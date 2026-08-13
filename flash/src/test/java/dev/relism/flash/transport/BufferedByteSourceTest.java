@@ -10,11 +10,8 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-37}: this class previously had zero dedicated tests — its deadline mechanism (the
- * actual {@code EX-07} slowloris fix) was exercised only indirectly through real-socket,
  * end-to-end tests, which never hit the {@code null}-socket path every isolated unit test in
  * this codebase actually uses. Found and fixed while building {@code Http2FrameReaderTest}
- * (Phase 5); this class closes the gap.
  */
 class BufferedByteSourceTest {
 
@@ -100,7 +97,6 @@ class BufferedByteSourceTest {
         assertThrows(IllegalStateException.class, () -> src.prependOnce(a, 0, 1));
     }
 
-    // ── Deadline mechanism, EX-37's actual regression coverage ──────────────
 
     @Test
     void clearDeadline_withNullSocket_doesNotThrow() throws IOException {

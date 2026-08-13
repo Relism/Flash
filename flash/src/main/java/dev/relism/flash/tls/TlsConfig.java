@@ -54,7 +54,6 @@ public final class TlsConfig {
     private static final String[] SECURE_PROTOCOLS = { "TLSv1.3", "TLSv1.2" };
 
     /**
-     * {@code EX-31}: RFC 9113 §9.2.2 requires that an HTTP/2 endpoint MUST NOT use any of these
      * cipher suites over TLS 1.2 (the list is unchanged from RFC 7540 Appendix A, which 9113
      * carries forward verbatim), and that it MUST support at least
      * {@code TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}. TLS 1.3 is unaffected: none of its cipher
@@ -65,11 +64,9 @@ public final class TlsConfig {
      * <p>Transcribed from Go's {@code golang.org/x/net/http2} {@code isBadCipher} table
      * (BSD-licensed, itself an implementation of this exact RFC 9113 requirement, cross-checked
      * against the IANA TLS Cipher Suite registry) rather than by hand from the RFC text, for the
-     * same reason Appendix D of {@code flash/docs/http2/IMPLEMENTATION-PLAN.md} insists the HPACK
      * static table be transcribed from the RFC directly and verified: a transcription error in a
      * ~280-entry list is easy to make and easy to miss, and here the failure mode is silently
      * permitting a cipher suite RFC 9113 requires rejecting. Built once, in a static
-     * initializer (R4) — never reconstructed per connection.
      */
     private static final Set<String> TLS12_H2_BLOCKED_CIPHERS = Set.of(
             "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
@@ -435,7 +432,6 @@ public final class TlsConfig {
         if (clientAuth == ClientAuth.REQUIRE)       socket.setNeedClientAuth(true);
         else if (clientAuth == ClientAuth.OPTIONAL) socket.setWantClientAuth(true);
 
-        // EX-31: RFC 9113 §9.2.2 — when this listener can negotiate h2, the enabled cipher
         // suite list must exclude every suite on the TLS 1.2 blocklist. TLS 1.3 suites are
         // never in that list (see TLS12_H2_BLOCKED_CIPHERS's Javadoc) so this only narrows
         // which TLS 1.2 suites remain available; TLS 1.3 is unaffected either way.
@@ -452,7 +448,6 @@ public final class TlsConfig {
     /**
      * Whether this listener's configured ALPN protocol list ({@link #applicationProtocols})
      * includes {@code "h2"}. Lets a caller (the connection runner, for logging; {@link #applyTo}
-     * itself, for {@code EX-31}'s cipher filtering) know a listener's h2 capability without
      * duplicating the offered-protocols check.
      */
     public boolean negotiatesH2() {

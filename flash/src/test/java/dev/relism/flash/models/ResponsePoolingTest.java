@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** {@code EX-21}: mirrors {@code RequestPoolingTest} for {@link Response}. */
 class ResponsePoolingTest {
 
     @Test

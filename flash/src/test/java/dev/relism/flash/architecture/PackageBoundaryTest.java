@@ -10,31 +10,21 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
-/**
- * {@code R1}/{@code DEC-02}: HTTP/1.1 and HTTP/2 are peers behind the {@code ConnectionProtocol}
- * seam, never coupled to each other directly. A lightweight source-scan rather than ArchUnit —
- * this project has no bytecode-analysis test dependency yet, and one import-statement check per
- * package pair does not need one; record the choice here rather than in {@code DECISIONS.md}
- * since it is this test's own implementation detail, not a design decision affecting shipped
- * code.
- */
+/** Ensures that the HTTP/1.1 and HTTP/2 implementations remain independent peers. */
 class PackageBoundaryTest {
 
     @Test
-    void http1DoesNotImportH2() throws IOException {
-        assertNoImportOfPackage("dev/relism/flash/http1", "dev.relism.flash.h2");
+    void http1DoesNotImportHttp2() throws IOException {
+        assertNoImportOfPackage("dev/relism/flash/http1", "dev.relism.flash.http2");
     }
 
     @Test
-    void h2DoesNotImportHttp1() throws IOException {
-        assertNoImportOfPackage("dev/relism/flash/h2", "dev.relism.flash.http1");
+    void http2DoesNotImportHttp1() throws IOException {
+        assertNoImportOfPackage("dev/relism/flash/http2", "dev.relism.flash.http1");
     }
 
     private static void assertNoImportOfPackage(String sourceDirRelative, String forbiddenImportPrefix) throws IOException {
         Path root = findSourceRoot(sourceDirRelative);
-        // Neither package boundary can be meaningfully checked before both packages exist; once
-        // dev.relism.flash.h2 gains real classes (Phase 3+) this stops being a no-op for the
-        // h2-side test.
         if (root == null) return;
 
         try (Stream<Path> files = Files.walk(root)) {
@@ -45,7 +35,7 @@ class PackageBoundaryTest {
                     if (trimmed.startsWith("import " + forbiddenImportPrefix + ".")
                             || trimmed.startsWith("import " + forbiddenImportPrefix + ";")) {
                         fail(file + " imports " + forbiddenImportPrefix
-                                + " — violates the h1/h2 package boundary (R1/DEC-02): " + trimmed);
+                                + " and violates the HTTP protocol package boundary: " + trimmed);
                     }
                 }
             }

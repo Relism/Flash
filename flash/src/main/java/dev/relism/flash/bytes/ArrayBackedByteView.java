@@ -20,7 +20,6 @@ import dev.relism.fpr.core.ByteView;
  *   <li>Single-allocation {@code String} construction —
  *       {@code new String(view.array(), view.offset(), view.length(), UTF_8)} instead of a
  *       byte-at-a-time copy into a scratch {@code byte[]} followed by a second allocation for
- *       the {@code String} itself ({@code EX-25}).</li>
  *   <li>A single {@code System.arraycopy} instead of a manual loop wherever a view's bytes need
  *       to be copied.</li>
  * </ul>

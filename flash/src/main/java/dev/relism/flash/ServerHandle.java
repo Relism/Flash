@@ -13,7 +13,6 @@ import java.util.concurrent.CompletableFuture;
  * Public handle to the underlying HTTP transport. Returned by {@link #create}
  * so that {@link FlashApp} can start and stop the server
  * without holding a direct reference to the transport's internal composition
- * ({@link TransportFactory}, {@code EX-34}).
  */
 public interface ServerHandle {
 

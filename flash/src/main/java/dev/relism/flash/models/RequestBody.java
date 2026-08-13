@@ -10,7 +10,6 @@ import java.io.*;
  *       Safe to call multiple times; the second call returns the cached array. Throws for
  *       bodies larger than 2 GB.</li>
  *   <li>{@link #stream()} — returns a bounded {@link InputStream} without upfront allocation.
- *       For fixed-length bodies this is a reused, repositioned view (see {@code EX-23} below)
  *       into the already-buffered header bytes stitched to the socket; for chunked bodies it is
  *       the raw {@link dev.relism.ChunkedInputStream} that de-chunks on the fly.</li>
  * </ul>
@@ -21,13 +20,11 @@ import java.io.*;
  * <p><b>Keep-alive:</b> unread body bytes are discarded by {@link Request#drain()} after the
  * handler returns so the socket is correctly positioned for the next pipelined request.
  *
- * <h3>{@code EX-22}: pooled, not allocated per request</h3>
  * One instance per connection (owned by {@code RequestParser}, repositioned via {@link #reset}
  * for every request), the same treatment {@link Request}/{@link RequestLine} get. The {@link
  * #of(byte[])} factory below remains for test/manual construction and returns a freestanding,
  * unpooled instance — exactly like {@link Request}'s own manual constructor.
  *
- * <h3>{@code EX-23}/{@code EX-24}: the reusable bounded stream and drain buffer</h3>
  * {@link #stream()} used to allocate a {@link SequenceInputStream}, a {@link ByteArrayInputStream}
  * and an anonymous bounded {@link InputStream} on every call. It now hands out one persistent
  * {@link BoundedBufferedInputStream}, repositioned per request instead of reallocated.
@@ -45,10 +42,8 @@ public class RequestBody {
     private byte[] resolved;
     private long   socketConsumed;
 
-    // EX-23: created once, repositioned per request via reset()'s call into boundedStream.reset(...).
     private BoundedBufferedInputStream boundedStream;
 
-    // EX-24: created lazily on first chunked-body drain(), then reused for the life of the connection.
     private byte[] drainBuffer;
 
     /** Pooled instance, populated later via {@link #reset}. One per connection — see {@code RequestParser}. */
@@ -128,7 +123,6 @@ public class RequestBody {
      * Returns a bounded {@link InputStream} over the body without upfront allocation.
      *
      * <p>For fixed-length bodies: a reused {@link BoundedBufferedInputStream} (see the class
-     * Javadoc, {@code EX-23}) serving any already-buffered header bytes followed by a bounded
      * view of the socket stream — zero allocation on a warm connection.
      *
      * <p>For chunked bodies: the raw {@link dev.relism.ChunkedInputStream} that de-chunks on
@@ -136,7 +130,6 @@ public class RequestBody {
      * the next keep-alive request.
      *
      * <p>If {@link #bytes()} was called first, returns a fresh {@link java.io.ByteArrayInputStream}
-     * over the cached array — a rare dual-access pattern, not the hot path {@code EX-23} targets.
      */
     public InputStream stream() {
         if (resolved != null) return new ByteArrayInputStream(resolved);
@@ -152,7 +145,6 @@ public class RequestBody {
     void drain() {
         if (isEmpty() || resolved != null) return;
         if (contentLength < 0) {
-            // EX-24: InputStream.transferTo's default implementation allocates a fresh 8 KiB
             // byte[] on every call — replaced with a buffer this instance allocates once
             // (lazily, only if a chunked body is ever actually drained) and reuses thereafter.
             if (drainBuffer == null) drainBuffer = new byte[8192];
@@ -167,7 +159,6 @@ public class RequestBody {
     }
 
     /**
-     * {@code EX-23}: a reused, repositionable {@link InputStream} that serves bytes first from a
      * caller-owned pre-buffered array, then from the socket, bounded overall to a fixed length —
      * replacing the {@code SequenceInputStream}+{@code ByteArrayInputStream}+anonymous-bounded-
      * stream trio that used to be allocated fresh on every {@link #stream()} call. One instance

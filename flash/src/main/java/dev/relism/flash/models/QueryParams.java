@@ -22,7 +22,6 @@ public class QueryParams {
 
     private final ByteView raw;
 
-    // EX-05: created lazily, only if view() is ever actually called — QueryParams itself is
     // recreated per request (see Request#resolveQueryParams), so an eagerly-constructed pool
     // would cost VIEW_POOL_SIZE allocations on every request that touches query params at all,
     // even the (currently: every) request that never calls view().
@@ -40,7 +39,6 @@ public class QueryParams {
 
     /**
      * Returns a view over the first raw (not percent-decoded) value of {@code name}, or
-     * {@code null}. {@code EX-05}: drawn from a small internal {@link SlicePool} when
      * {@link #raw} is array-backed (always true for h1 today) instead of allocated per call —
      * same reuse-window contract as {@link Http1HeaderMap#view}: valid until either the request ends
      * or {@link #view} is called {@value #VIEW_POOL_SIZE} more times on this instance, whichever
@@ -116,7 +114,6 @@ public class QueryParams {
      * {@code %XX} triplets are decoded to their byte values; {@code +} decodes as space.
      * Invalid {@code %} sequences are passed through as-is.
      *
-     * <p>{@code EX-26}: the overwhelmingly common query value contains neither {@code %} nor
      * {@code +} — scanned for first; when clean and {@link #raw} is array-backed, the
      * {@code String} is built directly from the backing array in one allocation, skipping the
      * scratch {@code byte[]} copy this method used to make unconditionally for every value.

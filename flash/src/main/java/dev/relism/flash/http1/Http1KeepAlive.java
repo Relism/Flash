@@ -7,7 +7,6 @@ import dev.relism.fpr.core.ByteView;
  * HTTP/1.1 keep-alive decision (RFC 9110 §7.6.1) and the shared {@code Connection} header
  * token-list scanner both it and WebSocket upgrade detection need.
  *
- * <p>{@code EX-13}: {@code Connection} is a comma-separated token list
  * (e.g. {@code "Connection: keep-alive, Upgrade"}), not a single value — a whole-value compare
  * against {@code "close"} misses exactly that case. {@link #tokenListContains} is the one
  * scanner both this class's {@link #isKeepAlive} and {@code WebSocketUpgrade}'s

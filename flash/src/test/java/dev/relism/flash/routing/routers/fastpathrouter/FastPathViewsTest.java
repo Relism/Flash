@@ -28,7 +28,6 @@ class FastPathViewsTest {
         assertThrows(IndexOutOfBoundsException.class, () -> view.byteAt(10));
     }
 
-    // --- EX-42: reset() repositions the same instance, zero allocation ---------
 
     @Test
     void requestByteView_reset_repositionsSameInstance() {

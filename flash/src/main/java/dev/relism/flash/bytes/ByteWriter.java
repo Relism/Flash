@@ -8,12 +8,8 @@ import java.nio.charset.StandardCharsets;
  * on an already-warm buffer (the steady-state case: the buffer has already grown to the
  * connection's high-water mark), no method here allocates.
  *
- * <p>This is the infrastructure {@code EX-27} (Phase 6, collapsing {@code Http1ResponseWriter}'s
- * ~10 small writes into one) and the Phase 5 frame layer serialize into: build a complete
- * message into a {@code ByteWriter}-backed scratch buffer, then issue one bulk
- * {@code write(buffer, 0, length())} — the same "serialize outside the lock, one bulk write"
- * discipline {@link dev.relism.flash.h2.frame.Http2FrameWriter} already established for the h2
- * writer (see its Javadoc's "Layer 1"), extended to the byte layer both protocols share.
+ * Callers build a complete message in a {@code ByteWriter}-backed scratch buffer and then issue
+ * one bulk {@code write(buffer, 0, length())}. The same writer is shared by HTTP/1.1 and HTTP/2.
  *
  * <h3>Lifetime and thread-safety contract</h3>
  * Not thread-safe — exactly one writer at a time, matching every other per-connection scratch
@@ -24,6 +20,7 @@ import java.nio.charset.StandardCharsets;
  */
 public final class ByteWriter {
     private byte[] buf;
+    private final byte[] digits = new byte[20];
     private int len;
 
     public ByteWriter(int initialCapacity) {
@@ -80,9 +77,8 @@ public final class ByteWriter {
             writeByte((byte) '0');
             return;
         }
-        // Digits emerge least-significant-first; stage them in a small fixed buffer (at most 20
-        // digits for any long) and copy in reverse — avoids a second pass to compute digit count.
-        byte[] digits = new byte[20];
+        // Digits emerge least-significant-first. The reusable field holds every possible long
+        // representation, so decimal rendering does not allocate on a warm writer.
         int n = 0;
         long v = value;
         while (v > 0) {
@@ -101,7 +97,6 @@ public final class ByteWriter {
             writeByte((byte) '0');
             return;
         }
-        byte[] digits = new byte[8];
         int n = 0;
         int v = value;
         while (v != 0) {
@@ -125,10 +120,8 @@ public final class ByteWriter {
 
     /**
      * Writes {@code s}'s ASCII bytes, case preserved. {@code s} must be ASCII-only. Unlike
-     * {@code new String(...).getBytes(UTF_8)}, writes each character directly into this
-     * writer's buffer — no intermediate {@code byte[]} ({@code EX-20}: this is what lets
-     * {@code Response.header(String, String)} avoid the {@code StringBuilder}+concat+
-     * {@code getBytes} allocation chain it used to pay per call).
+     * {@code new String(...).getBytes(UTF_8)}, writes each character directly into this buffer
+     * and avoids an intermediate {@code byte[]}.
      */
     public void writeAscii(String s) {
         int n = s.length();

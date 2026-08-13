@@ -13,8 +13,6 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * One test per rejection rule added in HTTP/2 plan Phase 1 (EX-02, EX-03, EX-08, EX-18, EX-35,
- * EX-36), each asserting the specific status code {@link MalformedRequestException} carries —
  * not merely that some exception was thrown. {@code Http1Connection}/{@code ConnectionRunner} always closes the connection
  * after any of these (never keep-alive); that behaviour is exercised at the integration level
  * by {@code HttpServerTest}.
@@ -34,7 +32,6 @@ class RequestParserSecurityTest {
         return assertThrows(MalformedRequestException.class, () -> parse(raw));
     }
 
-    // --- EX-02: Content-Length + Transfer-Encoding smuggling -------------------
 
     @Test
     void contentLengthAndTransferEncodingBothPresent_rejected400() {
@@ -79,7 +76,6 @@ class RequestParserSecurityTest {
         assertEquals(501, e.status());
     }
 
-    // --- EX-03: strict Content-Length parsing -----------------------------------
 
     @Test
     void contentLength_nonDigitSuffix_rejected400() {
@@ -112,7 +108,6 @@ class RequestParserSecurityTest {
         assertEquals(413, expect("POST / HTTP/1.1\nHost: h\nContent-Length: " + tooLarge + "\n\n").status());
     }
 
-    // --- EX-08: header/request-line limits --------------------------------------
 
     @Test
     void tooManyHeaders_rejected431() {
@@ -140,7 +135,6 @@ class RequestParserSecurityTest {
         assertEquals(431, expect("GET " + path + " HTTP/1.1\nHost: h\n\n").status());
     }
 
-    // --- EX-18: bare CR / obs-fold -----------------------------------------------
 
     @Test
     void bareLfInsteadOfCrlf_headerLine_rejected() {
@@ -178,7 +172,6 @@ class RequestParserSecurityTest {
         assertThrows(MalformedRequestException.class, () -> new RequestParser().parse(source(raw)));
     }
 
-    // --- EX-36: header line missing ':' -------------------------------------------
 
     @Test
     void headerLineMissingColon_rejected400() {
