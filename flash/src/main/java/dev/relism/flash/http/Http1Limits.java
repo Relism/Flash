@@ -24,8 +24,15 @@ public final class Http1Limits {
      * resource-exhaustion vector for any code path that pre-sizes a buffer from it. Requests
      * declaring a length above this are rejected with {@code 413 Payload Too Large} before any
      * body byte is read.
+     *
+     * <p>4 GiB — generous enough for legitimate large uploads (Flash is a general-purpose
+     * server, not an API-only framework with a tiny default), while still bounding a hostile
+     * peer to a finite, known-in-advance number rather than the effectively unbounded
+     * {@code Long.MAX_VALUE} the parser accepted before this limit existed. Comfortably above
+     * {@code Integer.MAX_VALUE} (~2.1 billion) so legitimate very-large declared lengths are
+     * not confused with the int-overflow bug this same fix (EX-03) also closes.
      */
-    public static final long MAX_CONTENT_LENGTH = 100L * 1024 * 1024;
+    public static final long MAX_CONTENT_LENGTH = 4L * 1024 * 1024 * 1024;
 
     /**
      * Maximum number of header lines accepted in a single request. Without this bound, a
@@ -55,4 +62,38 @@ public final class Http1Limits {
      * into the generic header-block-too-large case.
      */
     public static final int MAX_REQUEST_LINE_LENGTH = 8_192;
+
+    /**
+     * Maximum size, in bytes, of a single {@code Transfer-Encoding: chunked} chunk.
+     * {@code ChunkedInputStream.readChunkSize} previously accepted any value up to 2 GiB before
+     * rejecting it; a hostile peer can advertise a huge chunk size and then trickle bytes,
+     * forcing the connection to stay open far longer than any legitimate chunk would need
+     * (bounded separately by {@code bodyReadTimeoutMs}, but this limit catches the size claim
+     * itself before that timeout would).
+     */
+    public static final long MAX_CHUNK_SIZE = 16L * 1024 * 1024;
+
+    /**
+     * Maximum length, in bytes, of the chunk-extension section (the optional
+     * {@code ;name=value} data after a chunk size and before its CRLF, RFC 9112 §7.1.1). Flash
+     * does not interpret chunk extensions; without a bound, a peer could send an arbitrarily
+     * long extension on every chunk purely to waste CPU discarding it.
+     */
+    public static final int MAX_CHUNK_EXT_LENGTH = 256;
+
+    /**
+     * Maximum number of chunks accepted in a single request body. Without this bound, a peer
+     * can send an unbounded number of minimal (or zero-length) chunks, each cheap individually
+     * but collectively forcing unbounded per-chunk framing work — a "death by a thousand
+     * chunks" variant of a slow-body attack.
+     */
+    public static final int MAX_CHUNKS_PER_BODY = 100_000;
+
+    /**
+     * Maximum number of trailer header lines accepted after the final chunk of a chunked body
+     * (RFC 9112 §7.1.2). Bounded for the same reason {@link #MAX_HEADER_COUNT} bounds the
+     * regular header section; trailer values are separately bounded by
+     * {@link #MAX_HEADER_VALUE_LENGTH}.
+     */
+    public static final int MAX_TRAILER_COUNT = 50;
 }

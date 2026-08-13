@@ -167,6 +167,12 @@ app.onException((ex, req, res) -> {
 | `tls` | `null` | TLS for the default listener — see [TLS](#tls) |
 | `listeners` | `[]` | Multiple bind targets (port + host + optional TLS) on one app — see [TLS](#tls) |
 | `maxHeaderBufferSize` | `65536` | Max size of the header buffer (bytes) |
+| `wsFrameBufferSize` | `65536` | Per-connection WebSocket read buffer (bytes) |
+| `headerReadTimeoutMs` | `10000` | Once a request's first byte arrives, how long the full header block may take. Bounds slowloris-style attacks — see [`HTTP1-HARDENING.md`](flash/docs/http2/HTTP1-HARDENING.md). |
+| `idleKeepAliveTimeoutMs` | `60000` | How long a keep-alive connection may sit idle waiting for its next request. |
+| `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
+| `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
+| `http2Enabled` | `false` | Whether this server will ever negotiate HTTP/2. Off by default until the HTTP/2 connection state machine lands (see `flash/docs/http2/IMPLEMENTATION-PLAN.md`). |
 
 ## TLS
 

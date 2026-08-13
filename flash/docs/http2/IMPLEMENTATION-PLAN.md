@@ -62,7 +62,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | Phase | Status | Branch/PR | Notes |
 |---|---|---|---|
 | 0 — Groundwork | done | `feature/core/http2` | Package skeleton, `Http2Limits`, `Http1Limits`, `Http2ErrorCode`, `Http2Exception`/`Http2StreamException`, `DECISIONS.md` (`DEC-01`…`DEC-11`), `package-info.java`. 226/226 tests green. |
-| 1 — HTTP/1.1 hardening + ALPN/preface | not started | — | — |
+| 1 — HTTP/1.1 hardening + ALPN/preface | done | `feature/core/http2` | EX-02/03/07/08/10/17/18/30/31 fixed; EX-35/36 found+fixed. `BufferedByteSource`, `ProtocolNegotiator`, `MalformedRequestException` added (plan corrected, DEC-12). 277/277 tests green (run twice). h1 benchmark check deferred — no JMH harness until Phase 3 (documented in DoD). |
 | 2 — Transport decomposition | not started | — | — |
 | 3 — Serialized frame writer (GO/NO-GO gate) | not started | — | — |
 | 4 — Byte-layer foundations | not started | — | — |
@@ -608,6 +608,28 @@ composed transport rather than a god object.
 package-private `TransportFactory`.
 **Phase**: 2.
 
+### EX-35 — `Transfer-Encoding` multi-value handling drops the message boundary silently
+Found while implementing `EX-02` in `RequestParser.java`'s header-scan loop (the exact code that
+decides `isChunked`). The pre-existing check was `equalsIgnoreCase(buffer, valueStart, lineEnd,
+"chunked")` — an exact **whole-value** comparison. RFC 9112 §6.1 requires only that `chunked` be
+the **final** coding in a comma-separated list (e.g. `Transfer-Encoding: gzip, chunked` is valid
+and self-delimiting). The old check silently treated any such multi-coding value as *not*
+chunked at all — `isChunked` stayed `false`, `contentLength` stayed `0`, and the body bytes that
+followed were left for the next `parse()` call to misinterpret as the start of a new request:
+a real message-boundary corruption, not just a missed feature.
+**Fix**: parse the comma-separated token list and inspect only the last token
+(`RequestParser.isFinalCodingChunked`). A value whose final coding is not `chunked` is now
+rejected with `501` (`EX-02`'s own fix), rather than silently misparsed.
+**Phase**: 1.
+
+### EX-36 — A header line without a `:` was silently skipped instead of rejected
+Found in the same loop as `EX-18`/`EX-35`. `RequestParser`'s header-line loop located the colon
+via `find(...)` and, if none was found (`colon == -1`), simply did nothing for that line and
+moved on to the next — a malformed header line was permissively ignored rather than rejected.
+RFC 9112 §5 gives no such leniency: a header field line without a colon is not valid HTTP.
+**Fix**: `colon == -1` now rejects the request with `400 Bad Request`.
+**Phase**: 1.
+
 ---
 
 # PART III — The phases
@@ -800,7 +822,9 @@ is unreadable) blocks every h2 phase, and fixing it is the natural companion to 
 seam.
 
 ### EX items
-`EX-02`, `EX-03`, `EX-07`, `EX-08`, `EX-10`, `EX-17`, `EX-18`, `EX-30`, `EX-31`.
+`EX-02`, `EX-03`, `EX-07`, `EX-08`, `EX-10`, `EX-17`, `EX-18`, `EX-30`, `EX-31`, plus two found
+while implementing this phase and registered in Part II per R10: `EX-35` (multi-value
+`Transfer-Encoding` silently misparsed), `EX-36` (a header line with no `:` silently skipped).
 
 ### Files
 
@@ -813,9 +837,19 @@ Modified:
 - `flash/src/main/java/dev/relism/flash/extension/FlashConfiguration.java`
 
 Created:
-- `flash/src/main/java/dev/relism/flash/http/Http1Limits.java` (from Phase 0)
+- `flash/src/main/java/dev/relism/flash/http/Http1Limits.java` (from Phase 0; extended here with
+  the chunked-transfer bounds for `EX-10`'s safety task)
 - `flash/src/main/java/dev/relism/flash/transport/ProtocolNegotiator.java`
 - `flash/src/main/java/dev/relism/flash/transport/NegotiatedProtocol.java` (enum: `HTTP_1_1`, `H2`)
+- `flash/src/main/java/dev/relism/flash/transport/BufferedByteSource.java` — **plan correction**:
+  task 8 below requires this class (the buffered, deadline-aware, peekable source `EX-10`'s fix
+  and `EX-07`'s absolute-deadline requirement both need), but it was missing from this phase's
+  original Files list. Added here; recorded as `DEC-12` in `DECISIONS.md`.
+- `flash/src/main/java/dev/relism/flash/exceptions/MalformedRequestException.java` — likewise
+  not originally listed: the typed, status-carrying rejection `EX-02`/`EX-03`/`EX-08`/`EX-18`
+  all need to tell `HttpServer` which status to respond with, as distinct from
+  `HttpException` (which routes through the user's handler chain — a malformed request must
+  not). Recorded alongside `DEC-12`.
 
 ### Tasks
 
@@ -900,18 +934,18 @@ Created:
   already has one.
 
 ### Safety checks (checklist — all mandatory)
-- [ ] `Content-Length` strict-numeric, bounded, single-valued
-- [ ] `Content-Length` + `Transfer-Encoding` rejected
-- [ ] Non-`chunked` final transfer coding rejected
-- [ ] Bare CR / missing LF rejected
-- [ ] obs-fold (leading whitespace continuation line) rejected
-- [ ] Header name `tchar` validated
-- [ ] Header count / name length / value length / request-line length bounded
-- [ ] Chunk size, chunk count, chunk-extension length, trailer count bounded
-- [ ] Header-read absolute deadline enforced (not just `setSoTimeout`)
-- [ ] Idle keep-alive timeout enforced
-- [ ] Body-read timeout enforced
-- [ ] TLS handshake covered by a timeout
+- [x] `Content-Length` strict-numeric, bounded, single-valued — `RequestParserSecurityTest`
+- [x] `Content-Length` + `Transfer-Encoding` rejected, regardless of order — `RequestParserSecurityTest`
+- [x] Non-`chunked` final transfer coding rejected — `RequestParserSecurityTest`
+- [x] Bare CR / missing LF rejected — `RequestParserSecurityTest`
+- [x] obs-fold (leading whitespace continuation line) rejected — `RequestParserSecurityTest`
+- [x] Header name `tchar` validated — `RequestParserSecurityTest`
+- [x] Header count / name length / value length / request-line length bounded — `RequestParserSecurityTest`
+- [x] Chunk size, chunk count, chunk-extension length, trailer count bounded — `ChunkedInputStreamTest`
+- [x] Header-read absolute deadline enforced (not just `setSoTimeout`) — `HttpServerTimeoutTest.slowlorisHeaderDribble_disconnectedWithinHeaderReadTimeout`
+- [x] Idle keep-alive timeout enforced — `HttpServerTimeoutTest.idleKeepAliveConnection_disconnectedWithinIdleTimeout`
+- [x] Body-read timeout enforced — `HttpServerTimeoutTest.slowBodyDribble_disconnectedWithinBodyReadTimeout`
+- [x] TLS handshake covered by a timeout — `HttpServerTimeoutTest.tlsHandshakeNeverStarted_disconnectedWithinHeaderReadTimeout`
 
 ### Tests
 - `RequestParserSecurityTest` — one test per rejection above, each asserting both the status
@@ -933,11 +967,21 @@ Created:
   operators can understand a `400` in their logs.
 
 ### DoD
-- [ ] Every checklist item above is implemented and tested.
-- [ ] `mvn test` green.
-- [ ] No behavioural change to well-formed HTTP/1.1 traffic (verified by the existing test
-      suite passing unmodified).
-- [ ] h1 benchmark shows no regression beyond noise (baseline captured before the phase).
+- [x] Every checklist item above is implemented and tested.
+- [x] `mvn test` green. Full `flash` module: 277/277, run twice in a row for timing-test stability
+      (the four `HttpServerTimeoutTest` cases are wall-clock-based).
+- [x] No behavioural change to well-formed HTTP/1.1 traffic (verified by the existing test
+      suite passing unmodified — the only test-file edits were signature updates for
+      `RequestParser.parse(BufferedByteSource)` and exception-type/status updates for the small
+      number of existing tests that asserted the pre-fix buggy behaviour, e.g. a 5 GB
+      `Content-Length` being silently accepted, or an unrecognised method producing a bare
+      `IOException` instead of a typed `501`; each such change is called out in the Phase 1
+      commit).
+- [ ] h1 benchmark shows no regression beyond noise (baseline captured before the phase). **Not
+      verified — no JMH harness exists yet; it is a Phase 3 deliverable.** Left unchecked
+      rather than claimed. Once Phase 3 adds the harness, an h1 GET benchmark should be run
+      against the pre-Phase-1 commit and against this one before Phase 3 is considered started,
+      so this box can be resolved retroactively.
 
 ---
 

@@ -280,3 +280,94 @@ not actually a separate module.
 
 **Revisit when.** The `h2` package's commit volume makes `core` too coarse to navigate in
 `git log` — not expected before Phase 10 at the earliest, if ever.
+
+---
+
+## DEC-12 — Phase 1 plan corrections: two missing files, one corrected limit check
+
+**Context.** While implementing Phase 1, two problems in the plan document itself surfaced
+(distinct from problems in the *code*, which is what the `EX-nn` registry tracks).
+
+1. Phase 1 task 8 requires "a `BufferedByteSource` owned by the connection that wraps the read
+   buffer plus the socket and exposes `readByte()`, `readFully(...)`, `skip(...)` and `peek()`",
+   and task 12 depends on it for h2c preface detection — but the Phase 1 **Files** list never
+   named the file. Likewise, the typed rejection `EX-02`/`EX-03`/`EX-08`/`EX-18` all need (a
+   specific HTTP status to respond with, as distinct from `HttpException`'s handler-routed
+   semantics — see `DEC-14`) was never named as a file either.
+2. Task 4's exact wording — "Enforce `MAX_REQUEST_LINE_LENGTH` against `headerEndIdx - base` for
+   the request line specifically" — describes checking the length of the *entire header block*
+   (`headerEndIdx` is where the whole header section ends), not the request line. The request
+   line's own end is `protocolEnd` (or `sectionStart`), not `headerEndIdx`.
+
+**Decision.**
+1. Added `flash/src/main/java/dev/relism/flash/transport/BufferedByteSource.java` and
+   `flash/src/main/java/dev/relism/flash/exceptions/MalformedRequestException.java` to Phase 1's
+   Files list (see the phase section itself, now corrected in place).
+2. Implemented the check as `protocolEnd - base > MAX_REQUEST_LINE_LENGTH` — the request line's
+   actual span — rather than the literal (and, read literally, incorrect) `headerEndIdx - base`.
+
+**Consequence.** None beyond the plan text now matching what was actually built and why —
+these are wording/omission fixes, not design trade-offs. Recorded per the plan's own rule that
+corrections to the plan must be explicit and tracked, never silent.
+
+**Revisit when.** N/A — already resolved.
+
+---
+
+## DEC-13 — `BufferedByteSource`'s deadline is enforced by computing the exact remaining `SO_TIMEOUT` per underlying read, not by a fixed poll-and-retry loop
+
+**Context.** `EX-07` requires an *absolute* deadline across a sequence of socket reads (a
+per-read `SO_TIMEOUT` alone never trips against a peer that keeps each individual read within
+the window while never completing the whole message — the canonical slowloris shape). Two ways
+to implement that on top of the blocking `Socket`/`SSLSocket` API, which only offers a per-read
+timeout:
+
+**Options.**
+1. Set `SO_TIMEOUT` to a fixed, short polling interval (e.g. 1 s); on each
+   `SocketTimeoutException`, re-check whether the absolute deadline has actually passed, and if
+   not, retry. Deadline precision is bounded by the poll interval (up to ~1 s of slop).
+2. Before every underlying read, compute the exact remaining budget
+   (`deadlineNanos - System.nanoTime()`) and hand that exact value to `setSoTimeout`. A
+   `SocketTimeoutException` from that read then unambiguously means the deadline — not merely
+   one poll cycle — has elapsed, with no retry loop needed.
+
+**Decision.** Option 2.
+
+**Consequence.** Deadline precision is exact (modulo OS timer granularity) rather than
+poll-interval-bounded, and the implementation is simpler — no retry loop, no distinction between
+"timed out this poll" and "timed out for real". The cost is one `setSoTimeout` syscall per
+underlying fill (not per byte, not per `read()` call served from the buffer) — negligible, since
+fills already happen at buffer granularity (up to 8 KiB at a time), not per byte.
+
+**Revisit when.** Not expected to be revisited; this is strictly better than option 1 on both
+precision and simplicity.
+
+---
+
+## DEC-14 — `MalformedRequestException extends HttpException`; caught separately from the per-request handler try/catch, never routed through the user's exception handler
+
+**Context.** `EX-02`/`EX-03`/`EX-08`/`EX-18` all need to reject a request with a specific HTTP
+status before any handler or middleware runs. `HttpException` already exists in this codebase
+for "carry a status code, get turned into a response" — but it is caught by
+`router.getExceptionHandler()` inside the per-request try/catch, which is user-configurable
+(e.g. `flash-ext-jackson` installs a JSON-formatting handler).
+
+**Options.**
+1. Reuse `HttpException` directly, letting a malformed request flow through the same
+   user-configurable exception handler as an application-level failure.
+2. A new type, `MalformedRequestException extends HttpException`, caught at a separate site —
+   around `parser.parse(in)` itself, before routing — with a fixed, minimal, non-customizable
+   response, always followed by closing the connection.
+
+**Decision.** Option 2.
+
+**Consequence.** A malformed or hostile request never reaches user code at all — not the
+handler, not middleware, not a custom exception handler that might (reasonably, for its actual
+purpose) try to look up a route, log structured JSON, or otherwise do work that assumes a
+well-formed `Request`. The connection is always closed afterwards, never kept alive, which is
+exactly the property `EX-02`'s smuggling defense depends on. Subclassing `HttpException` (rather
+than an unrelated new hierarchy) keeps `status()`/message` access idiomatic with the rest of the
+codebase's error-status convention, while the distinct type is what lets `HttpServer` catch it
+at the parse site specifically.
+
+**Revisit when.** Not expected to be revisited.

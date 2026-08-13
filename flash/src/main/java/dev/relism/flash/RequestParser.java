@@ -1,17 +1,19 @@
 package dev.relism.flash;
 
+import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.models.HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.transport.BufferedByteSource;
 
 import lombok.extern.slf4j.Slf4j;
 
 import javax.net.ssl.SSLSocket;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 
@@ -35,10 +37,40 @@ import java.util.Arrays;
  * to the <em>next</em> request. They are snapshotted at the top of {@link #parse}
  * and reset to {@code 0/0} before any work begins, so an exception thrown mid-parse
  * leaves the fields clean rather than pointing at stale data from a previous request.
+ *
+ * <h3>Rejection model (RFC 9112 §6.1, {@code EX-02}/{@code EX-03}/{@code EX-08}/{@code EX-18})</h3>
+ * Anything wrong with the request itself — smuggling-relevant ambiguity, an over-limit
+ * header, a malformed byte where the grammar forbids one — is reported as a
+ * {@link MalformedRequestException} carrying the exact status the caller must respond with.
+ * This is distinct from {@link IOException}, which still means "the socket failed" (EOF,
+ * reset, timeout). The caller ({@code HttpServer.process}) must always close the connection
+ * after a {@link MalformedRequestException}, never keep it alive — RFC 9112 §6.1's rationale
+ * for rejecting {@code Content-Length} + {@code Transfer-Encoding} outright is exactly that a
+ * kept-alive connection after a disputed request boundary is what a smuggling attack needs.
  */
 @Slf4j
 public class RequestParser {
     private static final int INITIAL_BUFFER_SIZE = 8192;
+
+    /**
+     * RFC 9110 §5.6.2 {@code tchar} set, table-driven so header-name validation is a single
+     * array read per byte rather than a chain of comparisons (R4/R5). Indexed directly by
+     * byte value; only defined for the ASCII range a valid header name can ever occupy.
+     */
+    private static final boolean[] TCHAR = new boolean[128];
+
+    static {
+        for (byte b : "!#$%&'*+-.^_`|~".getBytes(java.nio.charset.StandardCharsets.US_ASCII)) {
+            TCHAR[b] = true;
+        }
+        for (char c = '0'; c <= '9'; c++) TCHAR[c] = true;
+        for (char c = 'A'; c <= 'Z'; c++) TCHAR[c] = true;
+        for (char c = 'a'; c <= 'z'; c++) TCHAR[c] = true;
+    }
+
+    private static boolean isTChar(byte b) {
+        return b >= 0 && b < 128 && TCHAR[b];
+    }
 
     private final int               maxHeaderBufferSize;
     private final InetSocketAddress remoteAddress;
@@ -66,6 +98,19 @@ public class RequestParser {
     }
 
     /**
+     * Whether bytes from a previous {@link #parse} call are already buffered and ready to be
+     * consumed by the next call without reading anything further from the source — the HTTP
+     * pipelining case. The caller (the connection loop) uses this to decide whether it is safe
+     * to skip waiting for "the next request has started arriving": if bytes are already
+     * buffered, the next request has, by definition, already started (and may even be
+     * complete), so an idle-timeout wait on the underlying source would wait for bytes that
+     * were never going to arrive there — they are already here.
+     */
+    boolean hasBufferedBytes() {
+        return bufLen > 0;
+    }
+
+    /**
      * Parses the next HTTP request from {@code in}.
      *
      * <p><b>Exception safety:</b> {@code bufBase} and {@code bufLen} are reset
@@ -75,9 +120,11 @@ public class RequestParser {
      * the same parser instance is reused after an error.
      *
      * @return the parsed {@link Request}, or {@code null} on clean EOF.
-     * @throws IOException on malformed headers or I/O failure.
+     * @throws MalformedRequestException if the request violates the HTTP/1.1 grammar or a
+     *         configured safety limit — carries the exact status to respond with.
+     * @throws IOException on genuine I/O failure (socket reset, timeout).
      */
-    public Request parse(InputStream in) throws IOException {
+    public Request parse(BufferedByteSource in) throws IOException {
         // Snapshot leftover bytes from the previous request, then reset immediately.
         // Any exception thrown below leaves bufBase/bufLen at 0 — safe state.
         int base      = bufBase;
@@ -94,7 +141,8 @@ public class RequestParser {
                     System.arraycopy(buffer, base, buffer, 0, totalRead);
                     base = 0;
                 } else if (buffer.length >= maxHeaderBufferSize) {
-                    throw new IOException("Request headers exceed " + maxHeaderBufferSize + " bytes");
+                    throw new MalformedRequestException(431,
+                            "Request headers exceed " + maxHeaderBufferSize + " bytes");
                 } else {
                     buffer = Arrays.copyOf(buffer, Math.min(buffer.length * 2, maxHeaderBufferSize));
                 }
@@ -107,20 +155,22 @@ public class RequestParser {
         }
         if (totalRead <= 0) return null;
         if (headerEndIdx == -1) {
-            throw new IOException("Request headers exceed " + maxHeaderBufferSize + " bytes");
+            throw new MalformedRequestException(431,
+                    "Request headers exceed " + maxHeaderBufferSize + " bytes");
         }
 
         // ── Request line ─────────────────────────────────────────────────────
 
         int methodEnd = find(buffer, base, headerEndIdx, (byte) ' ');
-        if (methodEnd == -1) throw new IOException("Invalid request line (method)");
+        if (methodEnd == -1) throw new MalformedRequestException(400, "Invalid request line (method)");
+        if (methodEnd == base) throw new MalformedRequestException(400, "Missing HTTP method");
 
         HttpMethod method = HttpMethod.fromBytes(buffer, base, methodEnd - base);
-        if (method == null) throw new IOException("Unsupported HTTP method");
+        if (method == null) throw new MalformedRequestException(501, "Unsupported HTTP method");
 
         int pathStart = methodEnd + 1;
         int pathEnd   = find(buffer, pathStart, headerEndIdx, (byte) ' ');
-        if (pathEnd == -1) throw new IOException("Invalid request line (path)");
+        if (pathEnd == -1) throw new MalformedRequestException(400, "Invalid request line (path)");
 
         int queryMark = find(buffer, pathStart, pathEnd, (byte) '?');
         FastPathViews.RequestByteView pathView = new FastPathViews.RequestByteView(buffer, pathStart,
@@ -131,7 +181,14 @@ public class RequestParser {
 
         int protocolStart = pathEnd + 1;
         int protocolEnd   = find(buffer, protocolStart, headerEndIdx, (byte) '\r');
-        if (protocolEnd == -1) throw new IOException("Invalid request line (protocol)");
+        if (protocolEnd == -1) throw new MalformedRequestException(400, "Invalid request line (protocol)");
+
+        // EX-08: the request line itself (method SP target SP version) is bounded separately
+        // from the overall header-block size, so an oversized request line gets its own,
+        // specific rejection rather than being folded into the generic "headers too large" case.
+        if (protocolEnd - base > Http1Limits.MAX_REQUEST_LINE_LENGTH) {
+            throw new MalformedRequestException(431, "Request line exceeds " + Http1Limits.MAX_REQUEST_LINE_LENGTH + " bytes");
+        }
 
         FastPathViews.RequestByteView protocolView =
                 new FastPathViews.RequestByteView(buffer, protocolStart, protocolEnd - protocolStart);
@@ -140,25 +197,96 @@ public class RequestParser {
 
         int sectionStart = find(buffer, protocolEnd, headerEndIdx, (byte) '\n') + 1;
         int current      = sectionStart;
-        long contentLength = 0;
-        boolean isChunked  = false;
+        long contentLength          = -1;
+        boolean contentLengthSeen   = false;
+        boolean transferEncodingSeen    = false;
+        boolean transferEncodingChunked = false;
+        int headerCount = 0;
 
         while (current < headerEndIdx) {
+            // EX-18 (obs-fold): a header line MUST NOT begin with whitespace. RFC 9112 §5.2
+            // deprecates line folding and treating a folded continuation as part of the
+            // previous header's value is a known request-smuggling vector.
+            byte first = buffer[current];
+            if (first == ' ' || first == '\t') {
+                throw new MalformedRequestException(400, "Obsolete line folding is not supported");
+            }
+
             int lineEnd = find(buffer, current, headerEndIdx + 1, (byte) '\r');
             if (lineEnd == -1 || lineEnd == current) break;
 
-            int colon = find(buffer, current, lineEnd, (byte) ':');
-            if (colon != -1) {
-                int valueStart = colon + 1;
-                while (valueStart < lineEnd && buffer[valueStart] == ' ') valueStart++;
+            // EX-18: verify the '\r' is immediately followed by '\n' instead of blindly
+            // advancing past two bytes — a bare '\r' not followed by '\n' desynchronizes the
+            // parse and is a known bare-CR smuggling surface. Safe to read lineEnd+1: lineEnd
+            // is at most headerEndIdx, and findEndOfHeader already guaranteed 4 readable bytes
+            // (\r\n\r\n) starting at headerEndIdx.
+            if (buffer[lineEnd + 1] != '\n') {
+                throw new MalformedRequestException(400, "Malformed line terminator (bare CR)");
+            }
 
-                if (equalsIgnoreCase(buffer, current, colon, "content-length")) {
-                    contentLength = parseLong(buffer, valueStart, lineEnd);
-                } else if (equalsIgnoreCase(buffer, current, colon, "transfer-encoding")) {
-                    isChunked = equalsIgnoreCase(buffer, valueStart, lineEnd, "chunked");
+            if (++headerCount > Http1Limits.MAX_HEADER_COUNT) {
+                throw new MalformedRequestException(431, "Too many headers");
+            }
+
+            int colon = find(buffer, current, lineEnd, (byte) ':');
+            if (colon == -1) {
+                throw new MalformedRequestException(400, "Header line missing ':'");
+            }
+            if (colon - current > Http1Limits.MAX_HEADER_NAME_LENGTH) {
+                throw new MalformedRequestException(431, "Header name exceeds " + Http1Limits.MAX_HEADER_NAME_LENGTH + " bytes");
+            }
+            for (int i = current; i < colon; i++) {
+                if (!isTChar(buffer[i])) {
+                    throw new MalformedRequestException(400, "Invalid header name character");
                 }
             }
+
+            int valueStart = colon + 1;
+            while (valueStart < lineEnd && buffer[valueStart] == ' ') valueStart++;
+            if (lineEnd - valueStart > Http1Limits.MAX_HEADER_VALUE_LENGTH) {
+                throw new MalformedRequestException(431, "Header value exceeds " + Http1Limits.MAX_HEADER_VALUE_LENGTH + " bytes");
+            }
+
+            if (equalsIgnoreCase(buffer, current, colon, "content-length")) {
+                // EX-03: strict, overflow-safe parsing — replaces the old digit-skipping
+                // parseLong, which silently accepted "5abc" as 5 and "-1" as 1.
+                long parsed = parseContentLengthStrict(buffer, valueStart, lineEnd);
+                // Multiple Content-Length lines with differing values is itself a smuggling
+                // primitive (EX-02); identical repeated values are tolerated (RFC 9110 §8.6
+                // permits a recipient to treat that as one value).
+                if (contentLengthSeen && parsed != contentLength) {
+                    throw new MalformedRequestException(400, "Conflicting Content-Length values");
+                }
+                contentLength = parsed;
+                contentLengthSeen = true;
+            } else if (equalsIgnoreCase(buffer, current, colon, "transfer-encoding")) {
+                transferEncodingSeen = true;
+                // Correctness fix found while implementing EX-02 in this exact code path
+                // (registered as EX-35): the old check required the WHOLE value to equal
+                // "chunked", so "gzip, chunked" — valid per RFC 9112 §6.1, where chunked need
+                // only be the FINAL coding — was silently treated as not chunked at all,
+                // corrupting the message boundary. Fixed by inspecting only the last token.
+                transferEncodingChunked = isFinalCodingChunked(buffer, valueStart, lineEnd);
+            }
             current = lineEnd + 2;
+        }
+
+        // EX-02 (RFC 9112 §6.1): a request with both Content-Length and Transfer-Encoding
+        // MUST be treated as an error by an origin server — this is the canonical CL.TE/TE.CL
+        // smuggling vector. Checked once both headers are known, regardless of the order they
+        // appeared in, so ordering games cannot bypass it.
+        if (contentLengthSeen && transferEncodingSeen) {
+            throw new MalformedRequestException(400, "Content-Length and Transfer-Encoding both present");
+        }
+        boolean isChunked;
+        if (transferEncodingSeen) {
+            if (!transferEncodingChunked) {
+                throw new MalformedRequestException(501, "Unsupported Transfer-Encoding");
+            }
+            isChunked = true;
+        } else {
+            isChunked = false;
+            if (!contentLengthSeen) contentLength = 0;
         }
 
         headerMap.reset(buffer, sectionStart, headerEndIdx);
@@ -219,12 +347,54 @@ public class RequestParser {
         return true;
     }
 
-    private static long parseLong(byte[] buf, int start, int end) {
+    /**
+     * Strict, overflow-safe {@code Content-Length} parsing ({@code EX-03}). Rejects: an empty
+     * value, any non-digit byte (including a leading {@code +}/{@code -}, which are not
+     * digits), more than 19 digits (the longest possible {@code Long.MAX_VALUE}), arithmetic
+     * overflow past {@code Long.MAX_VALUE}, and a value above
+     * {@link Http1Limits#MAX_CONTENT_LENGTH}. The pre-existing {@code parseLong} silently
+     * skipped any non-digit character instead of rejecting it — {@code "5abc"} parsed as
+     * {@code 5} and {@code "-1"} parsed as {@code 1}.
+     */
+    private static long parseContentLengthStrict(byte[] buf, int start, int end) throws MalformedRequestException {
+        int len = end - start;
+        if (len == 0) throw new MalformedRequestException(400, "Empty Content-Length value");
+        if (len > 19) throw new MalformedRequestException(400, "Content-Length value too long");
         long value = 0;
         for (int i = start; i < end; i++) {
             byte c = buf[i];
-            if (c >= '0' && c <= '9') value = value * 10 + (c - '0');
+            if (c < '0' || c > '9') {
+                throw new MalformedRequestException(400, "Malformed Content-Length value");
+            }
+            int digit = c - '0';
+            if (value > (Long.MAX_VALUE - digit) / 10) {
+                throw new MalformedRequestException(400, "Content-Length overflow");
+            }
+            value = value * 10 + digit;
+        }
+        if (value > Http1Limits.MAX_CONTENT_LENGTH) {
+            throw new MalformedRequestException(413, "Content-Length exceeds configured maximum");
         }
         return value;
+    }
+
+    /**
+     * RFC 9112 §6.1: when {@code Transfer-Encoding} lists multiple codings
+     * ({@code "gzip, chunked"}), {@code chunked} MUST be the final one for the message to be
+     * self-delimiting. Returns whether the last comma-separated token in {@code [start, end)}
+     * is exactly {@code "chunked"} (case-insensitive), ignoring surrounding whitespace around
+     * that token. Registered as {@code EX-35}: the previous whole-value comparison silently
+     * misclassified any multi-coding value as non-chunked.
+     */
+    private static boolean isFinalCodingChunked(byte[] buf, int start, int end) {
+        int e = end;
+        while (e > start && (buf[e - 1] == ' ' || buf[e - 1] == '\t')) e--;
+        int lastComma = start - 1;
+        for (int i = start; i < e; i++) {
+            if (buf[i] == ',') lastComma = i;
+        }
+        int tokenStart = lastComma + 1;
+        while (tokenStart < e && (buf[tokenStart] == ' ' || buf[tokenStart] == '\t')) tokenStart++;
+        return equalsIgnoreCase(buf, tokenStart, e, "chunked");
     }
 }

@@ -1,5 +1,6 @@
 package dev.relism.flash;
 
+import dev.relism.flash.exceptions.MalformedRequestException;
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.http.ContentType;
@@ -11,6 +12,9 @@ import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.AbstractRouter;
 import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.flash.tls.TlsConfig;
+import dev.relism.flash.transport.BufferedByteSource;
+import dev.relism.flash.transport.NegotiatedProtocol;
+import dev.relism.flash.transport.ProtocolNegotiator;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
@@ -25,6 +29,7 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -275,7 +280,6 @@ class HttpServer implements ServerHandle {
             executorService.submit(() -> {
                 activeSockets.add(socket);
                 try (socket;
-                     InputStream  in  = socket.getInputStream();
                      OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
 
                     // TCP_NODELAY: disable Nagle's algorithm.
@@ -286,6 +290,18 @@ class HttpServer implements ServerHandle {
                     socket.setTcpNoDelay(true);
                     socket.setSendBufferSize(SOCKET_BUF_SIZE);
 
+                    // EX-30: force the TLS handshake explicitly, under a bounded timeout,
+                    // before any protocol decision is made. SSLSocket#getApplicationProtocol()
+                    // (which ProtocolNegotiator relies on) returns null until the handshake has
+                    // actually completed; nothing previously forced that before the first read,
+                    // which happened to work by accident (the JDK triggers it lazily on read)
+                    // but left ALPN unreadable at exactly the point negotiation needs it.
+                    if (socket instanceof SSLSocket sslSocketForHandshake) {
+                        socket.setSoTimeout(configuration.getHeaderReadTimeoutMs());
+                        sslSocketForHandshake.startHandshake();
+                        socket.setSoTimeout(0); // BufferedByteSource's deadline takes over below
+                    }
+
                     // rawOut is the unbuffered socket stream — passed to WebSocketSession
                     // directly. WS writes are already bulk (header + payload in two calls);
                     // with TCP_NODELAY the kernel ships them without Nagle delay, so no
@@ -295,16 +311,71 @@ class HttpServer implements ServerHandle {
                     // userspace coalescing before a single syscall.
                     OutputStream rawOut = socket.getOutputStream();
 
+                    // EX-10: the single buffered, deadline-aware view over this connection's
+                    // inbound bytes — see BufferedByteSource's Javadoc. Not part of the
+                    // try-with-resources list above because closing `socket` already closes
+                    // the stream it wraps (same reasoning that already applied to rawOut).
+                    BufferedByteSource in = new BufferedByteSource(socket.getInputStream(), socket);
+
+                    NegotiatedProtocol negotiated = negotiateProtocol(socket, in);
+                    if (negotiated == NegotiatedProtocol.H2) {
+                        // No Http2Connection exists yet (lands in Phase 8) — close cleanly
+                        // rather than attempt to speak a protocol this version cannot serve.
+                        return;
+                    }
+
                     RequestParser parser = new RequestParser(
                             configuration.getMaxHeaderBufferSize(),
                             (InetSocketAddress) socket.getRemoteSocketAddress(),
                             socket instanceof SSLSocket sslSocket ? sslSocket : null);
 
+                    byte[] idleProbe = new byte[1];
+
                     while (!stopped) {
-                        Request request = parser.parse(in);
+                        // EX-07: wait for the next request to begin, bounded by the generous
+                        // idle-keep-alive timeout — sitting idle between keep-alive requests is
+                        // normal, not an attack. peek() lets us detect "bytes have started
+                        // arriving" without handing them to the parser under the wrong deadline.
+                        //
+                        // Skipped entirely when the parser already has bytes buffered from a
+                        // previous read (HTTP pipelining: a client that sent two requests back
+                        // to back before reading either response). In that case the next
+                        // request has, by definition, already started — peeking the *source*
+                        // for a fresh byte would wait for something that is never coming there,
+                        // since it already arrived and is sitting in the parser's own buffer.
+                        if (!parser.hasBufferedBytes()) {
+                            in.setDeadline(System.nanoTime() + configuration.getIdleKeepAliveTimeoutMs() * 1_000_000L);
+                            int firstByteSeen;
+                            try {
+                                firstByteSeen = in.peek(idleProbe, 0, 1);
+                            } catch (SocketTimeoutException e) {
+                                break; // idle timeout — nothing pending; close quietly, like EOF
+                            }
+                            if (firstByteSeen <= 0) break; // clean EOF
+                        }
+
+                        // Bytes have started arriving: tighten to the slowloris-specific bound
+                        // for the rest of the header block. A per-read SO_TIMEOUT alone would
+                        // never trip here — see BufferedByteSource's Javadoc.
+                        in.setDeadline(System.nanoTime() + configuration.getHeaderReadTimeoutMs() * 1_000_000L);
+                        Request request;
+                        try {
+                            request = parser.parse(in);
+                        } catch (MalformedRequestException e) {
+                            // EX-02/03/08/18: a fixed, minimal, non-customizable rejection —
+                            // never routed through the handler or the user's exception handler
+                            // (see MalformedRequestException's Javadoc) — and the connection is
+                            // always closed afterwards, never kept alive.
+                            Response rejection = new Response(e.status(), e.getMessage(), ContentType.TEXT_PLAIN);
+                            writeResponse(out, rejection, false);
+                            break;
+                        } catch (SocketTimeoutException e) {
+                            break; // header-read deadline exceeded — close
+                        }
                         if (request == null) break;
 
                         if (request.method() == HttpMethod.GET && isWebSocketUpgrade(request)) {
+                            in.clearDeadline(); // the WS session loop is long-lived; it paces itself
                             WebSocketHandler wsHandler = wsRouter.route(request);
                             if (wsHandler == null) {
                                 out.write(WS_REJECT_400);
@@ -322,6 +393,11 @@ class HttpServer implements ServerHandle {
                             runWsLoop(session, wsHandler);
                             return;
                         }
+
+                        // Headers are fully read; the body (if any) may still be pending —
+                        // whether the handler consumes it or the automatic drain() below does,
+                        // bound it by the same deadline (EX-07).
+                        in.setDeadline(System.nanoTime() + configuration.getBodyReadTimeoutMs() * 1_000_000L);
 
                         boolean keepAlive = isKeepAlive(request);
                         Response response = new Response(200, ContentType.TEXT_PLAIN);
@@ -341,6 +417,7 @@ class HttpServer implements ServerHandle {
 
                         writeResponse(out, response, keepAlive);
                         request.drain();
+                        in.clearDeadline();
                         if (!keepAlive) break;
                     }
 
@@ -365,6 +442,32 @@ class HttpServer implements ServerHandle {
             });
         } catch (RejectedExecutionException ignored) {
             try { socket.close(); } catch (IOException e) { log.debug("Error closing socket on shutdown", e); }
+        }
+    }
+
+    // ── Protocol negotiation ───────────────────────────────────────────────────
+
+    /**
+     * Decides h1 vs h2 for one connection, applying {@link FlashConfiguration#isHttp2Enabled()}
+     * to the plaintext (h2c) path — see {@link ProtocolNegotiator}'s Javadoc for why the flag is
+     * applied here rather than inside the negotiator itself. TLS/ALPN detection costs nothing
+     * (the handshake already resolved it) and is therefore always performed, regardless of the
+     * flag: what the flag gates is whether Flash even attempts the h2c preface peek on a
+     * plaintext socket, so that a plaintext connection with the feature left at its default
+     * behaves byte-for-byte like pre-HTTP/2 Flash.
+     */
+    private NegotiatedProtocol negotiateProtocol(Socket socket, BufferedByteSource in) throws IOException {
+        if (socket instanceof SSLSocket) {
+            return ProtocolNegotiator.negotiate(socket, in);
+        }
+        if (!configuration.isHttp2Enabled()) {
+            return NegotiatedProtocol.HTTP_1_1;
+        }
+        in.setDeadline(System.nanoTime() + configuration.getIdleKeepAliveTimeoutMs() * 1_000_000L);
+        try {
+            return ProtocolNegotiator.negotiate(socket, in);
+        } finally {
+            in.clearDeadline();
         }
     }
 

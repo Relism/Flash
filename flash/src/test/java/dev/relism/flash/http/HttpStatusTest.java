@@ -40,4 +40,26 @@ class HttpStatusTest {
         assertNull(HttpStatus.reasonForCode(999));
         assertNull(HttpStatus.reasonForCode(0));
     }
+
+    // --- EX-17: bound computed from values(), not a hand-maintained constant -----
+
+    @Test
+    void statusesAboveThePreviousHandMaintainedBound_workCorrectly() {
+        // The bound used to be hardcoded at 504; any of these (all >504, all needed by h1
+        // hardening or h2) used to throw ArrayIndexOutOfBoundsException from the static
+        // initializer at class-load time.
+        assertArrayEquals("421 Misdirected Request".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(421));
+        assertArrayEquals("431 Request Header Fields Too Large".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(431));
+        assertArrayEquals("505 HTTP Version Not Supported".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(505));
+        assertArrayEquals("507 Insufficient Storage".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(507));
+        assertArrayEquals("511 Network Authentication Required".getBytes(StandardCharsets.UTF_8), HttpStatus.bytesForCode(511));
+    }
+
+    @Test
+    void everyEnumConstant_hasAWorkingBytesForCodeEntry() {
+        for (HttpStatus s : HttpStatus.values()) {
+            assertNotNull(HttpStatus.bytesForCode(s.code()), s.name());
+            assertNotNull(HttpStatus.reasonForCode(s.code()), s.name());
+        }
+    }
 }

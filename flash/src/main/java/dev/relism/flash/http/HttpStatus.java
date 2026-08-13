@@ -37,24 +37,42 @@ public enum HttpStatus {
     CONFLICT                        (409, "Conflict"),
     GONE                            (410, "Gone"),
     LENGTH_REQUIRED                 (411, "Length Required"),
+    PRECONDITION_FAILED             (412, "Precondition Failed"),
     PAYLOAD_TOO_LARGE               (413, "Payload Too Large"),
     URI_TOO_LONG                    (414, "URI Too Long"),
     UNSUPPORTED_MEDIA_TYPE          (415, "Unsupported Media Type"),
+    RANGE_NOT_SATISFIABLE           (416, "Range Not Satisfiable"),
+    EXPECTATION_FAILED              (417, "Expectation Failed"),
+    MISDIRECTED_REQUEST             (421, "Misdirected Request"),
     UNPROCESSABLE_ENTITY            (422, "Unprocessable Entity"),
     TOO_MANY_REQUESTS               (429, "Too Many Requests"),
+    REQUEST_HEADER_FIELDS_TOO_LARGE (431, "Request Header Fields Too Large"),
 
     // 5xx
     INTERNAL_SERVER_ERROR           (500, "Internal Server Error"),
     NOT_IMPLEMENTED                 (501, "Not Implemented"),
     BAD_GATEWAY                     (502, "Bad Gateway"),
     SERVICE_UNAVAILABLE             (503, "Service Unavailable"),
-    GATEWAY_TIMEOUT                 (504, "Gateway Timeout");
+    GATEWAY_TIMEOUT                 (504, "Gateway Timeout"),
+    HTTP_VERSION_NOT_SUPPORTED      (505, "HTTP Version Not Supported"),
+    INSUFFICIENT_STORAGE            (507, "Insufficient Storage"),
+    NETWORK_AUTHENTICATION_REQUIRED (511, "Network Authentication Required");
 
-    private static final int MAX_STATUS_CODE = 504;
-    private static final byte[][] INDEX = new byte[MAX_STATUS_CODE + 1][];
-    private static final String[] REASONS = new String[MAX_STATUS_CODE + 1];
+    // EX-17: the bound used to be the hand-maintained constant 504, which silently threw
+    // ArrayIndexOutOfBoundsException from this static initializer the moment any constant
+    // above it (421, 431, 505, 507, 511 — several of which HTTP/2 needs, see MISDIRECTED_REQUEST
+    // and REQUEST_HEADER_FIELDS_TOO_LARGE above) was added. Computed from values() instead, so
+    // adding a status code can never silently break class loading again.
+    private static final int MAX_STATUS_CODE;
+    private static final byte[][] INDEX;
+    private static final String[] REASONS;
 
     static {
+        int max = 0;
+        for (HttpStatus s : values()) max = Math.max(max, s.code);
+        MAX_STATUS_CODE = max;
+        INDEX = new byte[MAX_STATUS_CODE + 1][];
+        REASONS = new String[MAX_STATUS_CODE + 1];
         for (HttpStatus s : values()) {
             INDEX[s.code] = s.bytes;
             REASONS[s.code] = s.reason;
