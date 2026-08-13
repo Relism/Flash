@@ -7,7 +7,7 @@ import dev.relism.flash.http2.frame.FrameWriteBuffer;
 import java.nio.charset.StandardCharsets;
 
 /** Byte-exact client preface and immutable server startup frames, compiled once at class load. */
-final class Http2Preface {
+public final class Http2Preface {
   private static final byte[] CLIENT_PREFACE =
       "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
   private static final byte[] SERVER_SETTINGS = buildServerSettings();
@@ -15,6 +15,11 @@ final class Http2Preface {
   private static final byte[] INITIAL_CONNECTION_WINDOW = buildInitialConnectionWindow();
 
   private Http2Preface() {}
+
+  /** Immutable client connection preface bytes. Callers must not modify the returned array. */
+  public static byte[] clientPreface() {
+    return CLIENT_PREFACE;
+  }
 
   static int clientPrefaceLength() {
     return CLIENT_PREFACE.length;

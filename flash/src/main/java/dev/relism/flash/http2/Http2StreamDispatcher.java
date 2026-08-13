@@ -1,6 +1,7 @@
 package dev.relism.flash.http2;
 
 import dev.relism.flash.http.HttpMethod;
+import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
 import dev.relism.flash.http2.message.Http2ResponseWriter;
 import dev.relism.flash.http2.stream.Http2FlowController;
@@ -103,17 +104,21 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       Response pooled = stream.resetResponse();
       Response response = pooled;
       Object routeScratch = stream.routeScratch(context.router());
-      RequestHandler handler = context.router().route(request, routeScratch);
-      if (handler == null) handler = context.router().getNotFoundHandler();
-      try {
-        Object result = handler.handle(request, response);
-        if (result instanceof Response returned) response = returned;
-        else if (result != null) response.setBody(result);
-      } catch (Exception handlerFailure) {
-        Object result =
-            context.router().getExceptionHandler().handle(handlerFailure, request, response);
-        if (result instanceof Response returned) response = returned;
-        else if (result != null) response.setBody(result);
+      if (!Http2Authority.isServed(request.header("host"), request.sslSession())) {
+        response.status(HttpStatus.MISDIRECTED_REQUEST);
+      } else {
+        RequestHandler handler = context.router().route(request, routeScratch);
+        if (handler == null) handler = context.router().getNotFoundHandler();
+        try {
+          Object result = handler.handle(request, response);
+          if (result instanceof Response returned) response = returned;
+          else if (result != null) response.setBody(result);
+        } catch (Exception handlerFailure) {
+          Object result =
+              context.router().getExceptionHandler().handle(handlerFailure, request, response);
+          if (result instanceof Response returned) response = returned;
+          else if (result != null) response.setBody(result);
+        }
       }
 
       boolean pushStreaming = response.isPushStreaming();

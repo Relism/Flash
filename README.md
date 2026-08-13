@@ -172,7 +172,8 @@ app.onException((ex, req, res) -> {
 | `idleKeepAliveTimeoutMs` | `60000` | How long a keep-alive connection may sit idle waiting for its next request. |
 | `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
 | `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
-| `http2Enabled` | `false` | Whether the server negotiates HTTP/2 through ALPN or accepts h2c prior knowledge. The conservative default keeps protocol rollout explicit. |
+| `http2Enabled` | `false` | Whether TLS listeners advertise HTTP/2 through ALPN. |
+| `http2CleartextEnabled` | `false` | Whether plaintext listeners accept HTTP/2 prior knowledge (h2c). Independent from TLS HTTP/2. |
 | `h2MaxResetStreamsPerInterval` | `200` | Rapid Reset budget per rolling interval. |
 | `h2MaxStreamsCreatedPerInterval` | `400` | New-stream budget per rolling interval. |
 | `h2AbuseRateIntervalMs` | `10000` | Rolling interval for the two operator-tunable rate limits above. |
@@ -349,7 +350,21 @@ return res.streaming(stream -> {
 
 The API renders as chunked data and trailers on HTTP/1.1, and DATA plus trailing HEADERS on
 HTTP/2. Flash core supplies these transport primitives; a higher-level gRPC codec belongs in a
-separate extension.
+future `flash-ext-grpc` extension.
+
+### HTTP/2 upstream proxy
+
+The core includes a deliberately small, proxy-oriented HTTP/2 client and a protocol-neutral relay:
+
+```java
+Http2Client upstream = new Http2Client();
+app.post("/service/{path}",
+    HttpProxy.toHttp2(URI.create("http://service.internal:8080"), upstream));
+```
+
+The relay preserves the path, query, body and trailers and applies one shared hop-by-hop field
+policy for HTTP/1.1 and HTTP/2. Close the client when the application stops. Cleartext upstreams
+use prior knowledge; Flash never implements the obsolete `Upgrade: h2c` mechanism.
 
 ## Architecture
 
@@ -358,13 +373,9 @@ TransportFactory.create()           # binds every listener, wires the connection
   → AcceptLoop                      # one per listener × accept thread; hands sockets off
   → ConnectionRunner.accept()       # per-connection setup: TLS handshake, protocol negotiation
       → ProtocolNegotiator          # ALPN / h2c-preface — decides the protocol once
-      → Http1Connection.run()       # the ConnectionProtocol seam; HTTP/2 plugs in here later
-          → RequestParser.parse()       # zero-alloc header parsing, buffer reuse across keep-alive
-          → GlobalRouter.route()        # two-tier: mounted sub-routers (longest prefix) then FastPathRouterImpl
-          → RequestHandler.handle()     # user handler; return value sets body
-          → Request.drain()             # consume unread body for keep-alive
-          → Http1ResponseWriter.write() # status line, headers, then fixed or chunked body
-          → loop or close socket        # based on Connection header, or ServerLifecycle draining
+      ├─ Http1Connection.run()      # request parser, router, handler, h1 response writer
+      └─ Http2Connection.run()      # frame demux, HPACK, stream dispatch, flow control
+             → RequestHandler.handle()  # the same protocol-neutral request/response API
 ```
 
 - **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`, owned by `TransportFactory`). Java 21 required.
@@ -372,7 +383,7 @@ TransportFactory.create()           # binds every listener, wires the connection
 - **Keep-alive** — `RequestParser` reuses its header buffer across requests on the same connection.
 - **Chunked transfer** — both chunked request bodies (decoded via `ChunkedInputStream`) and chunked response bodies are supported.
 - **TLS is transport-only** — see [TLS](#tls). Listeners bind either a plain `ServerSocket` or an `SSLServerSocket`; nothing downstream of `accept()` branches on which.
-- **`ConnectionProtocol` seam** — h1 and h2 (in progress, see `flash/docs/http2/`) are peers behind this interface, decided once per connection by `ProtocolNegotiator`, never by an `if` inside shared code. See `flash/docs/http2/TRANSPORT.md` for the full component breakdown.
+- **`ConnectionProtocol` seam** — HTTP/1.1 and HTTP/2 are peers behind this interface, selected once per connection by `ProtocolNegotiator`; routing and application models are shared.
 
 ## Build & test
 

@@ -75,7 +75,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 11 — DATA, flow control, bodies | done | `feature/core/http2` | Two-level receive/send flow control, consumption-driven WINDOW_UPDATE hysteresis, bounded/coalescing DATA pool, inline and blocking streaming request bodies through the existing `RequestBody`, resumable fixed/known/unknown response streams, content-length and empty-DATA validation. Real TLS HTTP/2 transfer: 100 MiB upload + 100 MiB download verified byte-for-byte. h2spec combined sections 5, 6.1, 6.9 and 8: 50 passed, 1 tool-skipped, 0 failed. JMH: inline materialization exactly one 1,040-byte array; request streaming 0.001 B/op; response streaming 0.002 B/op; full pooled lifecycle 0.003 B/op. 633/633 tests green from a clean `-Pjmh` build. |
 | 12 — Trailers, half-close, gRPC | done | `feature/core/http2` | Protocol-neutral request/response trailers, bounded push streaming, four half-close orderings and authority-form CONNECT tunnels complete. Real grpcurl 1.9.3 unary/server-streaming/error interop passes. EX-48/49 fixed. HTTP/2 remains opt-in until the Phase 13 hostile-peer gate (DEC-29). 649/649 tests green from a clean `-Pjmh` build. |
 | 13 — Security hardening & abuse resistance | done | `feature/core/http2` | Two-bucket Rapid Reset/stream/settings/ping/aggregate counters, control/write queue bounds, optional stream/byte/lifetime budgets, absolute header and idle-stream deadlines, and hostile-peer suite complete. Security review found+fixed EX-50/51. JMH counter: 38.083 ns/op, ~10^-4 B/op, no GC. 100k-CONTINUATION attack terminates in under 2 s with bounded retained heap. 663/663 tests green from a clean `-Pjmh` build. |
-| 14 — h2c prior knowledge + proxy support | not started | — | — |
+| 14 — h2c prior knowledge + proxy support | done | `feature/core/http2` | Independent TLS/h2c gates, pooled proxy-oriented h2 client with TLS ALPN and h2c, bidirectional h1/h2 trailer relay, shared four-direction hop-by-hop policy and certificate-backed 421 handling complete. Real grpcurl h2c interop passes. 670/670 tests green from a clean `-Pjmh` build. |
 | 15 — RFC 8441 extended CONNECT (WS over h2) | not started | — | — |
 | 16 — Compliance test suite | not started | — | — |
 | 17 — Benchmarks, allocation gates, tuning | not started | — | — |
@@ -2906,8 +2906,8 @@ speak h2 as a **client** so Pathway can proxy.
 `flash/docs/http2/CLEARTEXT-AND-PROXY.md`.
 
 ### DoD
-- [ ] gRPC over h2c works end to end.
-- [ ] Trailers survive a Flash→Flash proxy hop in both directions.
+- [x] gRPC over h2c works end to end.
+- [x] Trailers survive a Flash→Flash proxy hop in both directions.
 
 ---
 

@@ -253,7 +253,11 @@ class Http2ConnectionIntegrationTest {
     int port = freePort();
     app =
         FlashApp.create(
-            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .http2CleartextEnabled(true)
+                .build());
     app.get("/api/ping", (request, response) -> "pong");
     app.start();
 
@@ -314,7 +318,11 @@ class Http2ConnectionIntegrationTest {
     AtomicInteger calls = new AtomicInteger();
     app =
         FlashApp.create(
-            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .http2CleartextEnabled(true)
+                .build());
     app.get(
         "/queued",
         (request, response) -> {
@@ -380,7 +388,11 @@ class Http2ConnectionIntegrationTest {
     AtomicBoolean handlerEntered = new AtomicBoolean();
     app =
         FlashApp.create(
-            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .http2CleartextEnabled(true)
+                .build());
     app.get(
         "/",
         (request, response) -> {
@@ -436,7 +448,7 @@ class Http2ConnectionIntegrationTest {
             FlashConfiguration.builder()
                 .port(port)
                 .host("127.0.0.1")
-                .http2Enabled(true)
+                .http2CleartextEnabled(true)
                 .shutdownDrainTimeoutMs(5_000)
                 .build());
     app.start();
@@ -476,7 +488,11 @@ class Http2ConnectionIntegrationTest {
     int port = freePort();
     app =
         FlashApp.create(
-            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .http2CleartextEnabled(true)
+                .build());
     app.start();
 
     try (Socket first = new Socket("127.0.0.1", port)) {

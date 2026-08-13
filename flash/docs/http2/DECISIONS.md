@@ -982,23 +982,22 @@ window and pool byte capacity together; never raise credit independently of boun
 
 ---
 
-## DEC-29 — Keep HTTP/2 opt-in through the cleartext rollout boundary
+## DEC-29 — Keep TLS HTTP/2 opt-in until the compliance gate
 
 **Context.** Trailers and push streaming make the protocol feature-complete for ordinary and gRPC-
 shaped traffic, but the dedicated rate-based and composite abuse controls are deliberately owned
 by the following security phase.
 
-**Decision.** Keep `FlashConfiguration.http2Enabled` defaulting to `false`. Applications can
-enable the complete path explicitly. The Phase 13 hostile-peer suite is now green, but the same
-flag currently also admits cleartext prior-knowledge traffic; Phase 14 owns splitting that into a
-separate `http2CleartextEnabled` opt-in before the general protocol default can change safely.
+**Decision.** Keep `FlashConfiguration.http2Enabled` defaulting to `false`. Phase 14 separates
+cleartext behind its own `http2CleartextEnabled` opt-in, also defaulting to `false`. Passing the
+hostile-peer gate removes the security blocker, but changing the TLS default remains deferred
+until the complete external conformance gate is green.
 
 **Consequence.** Existing deployments do not silently expose a newly completed protocol before its
 adversarial gate. This is rollout sequencing, not an architectural separation: both protocols use
 the same public request/response, header, trailer and streaming APIs.
 
-**Revisit when.** At Phase 14 closure, after TLS HTTP/2 and cleartext h2c have independent rollout
-controls.
+**Revisit when.** At Phase 16 closure, after the external compliance matrix is green.
 
 ---
 
@@ -1020,5 +1019,26 @@ thread. A fixed control-intent pool and one-in-flight intent per live stream bou
 
 **Revisit when.** Production telemetry shows legitimate control-heavy traffic approaching the
 aggregate default; tune the threshold from evidence without splitting the defence by frame type.
+
+---
+
+## DEC-31 — Keep the upstream HTTP/2 client proxy-oriented and single-owner
+
+**Context.** A general-purpose HTTP client would introduce a second large public API, redirect,
+cookie, authentication and retry policy, while the immediate requirement is a reliable Flash
+reverse-proxy hop with trailers.
+
+**Decision.** Pool one reusable connection per origin and serialize exchanges on that connection.
+Reuse the core frame reader/writer and HPACK codec, but keep response assembly and ownership inside
+the client connection. Expose `HttpProxy.toHttp2` as the protocol-neutral adapter and one shared
+`HopByHopHeaders` policy for every conversion direction.
+
+**Consequence.** HPACK and socket state have one clear owner, upstream connections are reused, and
+trailer semantics cannot diverge by downstream protocol. Concurrent calls to one origin queue
+behind its active exchange rather than pretending this minimal client is a fully multiplexed
+general-purpose stack.
+
+**Revisit when.** Proxy production traces show per-origin serialization is a bottleneck; add a
+bounded pool or client-side multiplexing without changing the proxy-facing API.
 
 ---

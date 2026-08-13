@@ -1,6 +1,7 @@
 package dev.relism.flash.http2.hpack;
 
 import dev.relism.flash.bytes.ByteWriter;
+import dev.relism.fpr.core.ByteView;
 
 /**
  * Stateless HPACK encoder for response header blocks. It uses the RFC 7541 static table and literal
@@ -23,6 +24,19 @@ public final class HpackEncoder {
 
   public static void writeLiteral(ByteWriter out, byte[] name, byte[] value) {
     writeLiteral(out, name, 0, name.length, value, 0, value.length, false);
+  }
+
+  /** Writes a non-indexed literal directly from protocol-neutral byte views. */
+  public static void writeLiteral(ByteWriter out, ByteView name, ByteView value) {
+    HpackIntegers.encode(out, 0, 4, 0);
+    HpackIntegers.encode(out, 0, 7, name.length());
+    for (int i = 0; i < name.length(); i++) {
+      int octet = name.byteAt(i) & 0xff;
+      if (octet >= 'A' && octet <= 'Z') octet += 'a' - 'A';
+      out.writeByte((byte) octet);
+    }
+    HpackIntegers.encode(out, 0, 7, value.length());
+    for (int i = 0; i < value.length(); i++) out.writeByte(value.byteAt(i));
   }
 
   public static void writeLiteral(

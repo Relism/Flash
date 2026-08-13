@@ -88,12 +88,14 @@ public class FlashConfiguration {
    */
   @Builder.Default int shutdownDrainTimeoutMs = 15_000;
 
-  /**
-   * Whether this server negotiates HTTP/2. When enabled, plaintext listeners recognize h2c prior
-   * knowledge and TLS listeners advertise {@code h2} followed by HTTP/1.1 through ALPN. Disabled by
-   * default until the HTTP/2 request/response path is complete.
-   */
+  /** Whether TLS listeners advertise HTTP/2 through ALPN. */
   @Builder.Default boolean http2Enabled = false;
+
+  /**
+   * Whether plaintext listeners accept the HTTP/2 prior-knowledge preface. This is independent
+   * from TLS HTTP/2 and deliberately disabled by default.
+   */
+  @Builder.Default boolean http2CleartextEnabled = false;
 
   /**
    * Whether runtime-generated HTTP/2 header values use HPACK Huffman coding. Constants are always

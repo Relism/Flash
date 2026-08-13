@@ -134,17 +134,13 @@ public final class ConnectionRunner {
     }
   }
 
-  /**
-   * Decides h1 vs h2 for this connection, applying {@link FlashConfiguration#isHttp2Enabled()} to
-   * the plaintext (h2c) path — see {@link ProtocolNegotiator}'s Javadoc for why the flag is applied
-   * here rather than inside the negotiator itself.
-   */
+  /** Decides h1 vs h2 while keeping the TLS and cleartext rollout gates independent. */
   private NegotiatedProtocol negotiateProtocol(Socket socket, BufferedByteSource in)
       throws IOException {
     if (socket instanceof SSLSocket) {
       return ProtocolNegotiator.negotiate(socket, in); // ALPN — already resolved, no I/O
     }
-    if (!configuration.isHttp2Enabled()) {
+    if (!configuration.isHttp2CleartextEnabled()) {
       return NegotiatedProtocol.HTTP_1_1; // skip the h2c peek entirely when disabled
     }
     in.setDeadline(System.nanoTime() + configuration.getIdleKeepAliveTimeoutMs() * 1_000_000L);

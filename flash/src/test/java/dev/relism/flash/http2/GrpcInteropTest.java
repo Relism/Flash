@@ -29,8 +29,13 @@ class GrpcInteropTest {
   @Test
   void grpcurlCompletesUnaryStreamingAndErrorCalls(@TempDir Path directory) throws Exception {
     int port = freePort();
-    app = FlashApp.create(FlashConfiguration.builder()
-        .host("127.0.0.1").port(port).http2Enabled(true).build());
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .host("127.0.0.1")
+                .port(port)
+                .http2CleartextEnabled(true)
+                .build());
     app.post("/flash.test.Echo/Unary", (request, response) ->
         response.type("application/grpc")
             .body(request.body().bytes())

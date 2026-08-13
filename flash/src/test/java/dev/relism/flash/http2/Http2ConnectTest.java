@@ -29,8 +29,13 @@ class Http2ConnectTest {
   @Test
   void connectTunnelCanExchangeDataBeforeEitherSideCloses() throws Exception {
     int port = freePort();
-    app = FlashApp.create(FlashConfiguration.builder()
-        .host("127.0.0.1").port(port).http2Enabled(true).build());
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .host("127.0.0.1")
+                .port(port)
+                .http2CleartextEnabled(true)
+                .build());
     app.connect("tunnel", (request, response) ->
         response.type(ContentType.NONE).streaming(output -> {
           byte[] bytes = new byte[16];

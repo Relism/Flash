@@ -28,8 +28,13 @@ class Http2TrailersTest {
   @Test
   void requestTrailersReachHandlerAfterBodyEof() throws Exception {
     int port = freePort();
-    app = FlashApp.create(FlashConfiguration.builder()
-        .host("127.0.0.1").port(port).http2Enabled(true).build());
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .host("127.0.0.1")
+                .port(port)
+                .http2CleartextEnabled(true)
+                .build());
     app.post("/trailers", (request, response) -> {
       assertEquals("abc", new String(request.body().bytes(), StandardCharsets.US_ASCII));
       return request.trailers().first("grpc-status");
@@ -95,8 +100,13 @@ class Http2TrailersTest {
 
   private int startBlockingRoute() throws Exception {
     int port = freePort();
-    app = FlashApp.create(FlashConfiguration.builder()
-        .host("127.0.0.1").port(port).http2Enabled(true).build());
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .host("127.0.0.1")
+                .port(port)
+                .http2CleartextEnabled(true)
+                .build());
     app.post("/trailers", (request, response) -> request.body().bytes());
     app.start();
     return port;
