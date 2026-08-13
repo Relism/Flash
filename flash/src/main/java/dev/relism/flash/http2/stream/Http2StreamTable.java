@@ -16,10 +16,17 @@ public final class Http2StreamTable {
   private final Http2Stream[] values;
   private final int mask;
   private final int maxEntries;
+  private final int[] closedIds;
+  private final byte[] closedKinds;
   private int size;
   private Http2Stream free;
   private int created;
   private final DataBufferPool dataBuffers;
+  private int closedCursor;
+
+  public static final int CLOSED_UNKNOWN = 0;
+  public static final int CLOSED_NORMALLY = 1;
+  public static final int CLOSED_BY_RESET = 2;
 
   public Http2StreamTable(int maxEntries) {
     this(
@@ -36,6 +43,8 @@ public final class Http2StreamTable {
     mask = capacity - 1;
     this.maxEntries = maxEntries;
     this.dataBuffers = dataBuffers;
+    closedIds = new int[maxEntries * 2];
+    closedKinds = new byte[closedIds.length];
   }
 
   public synchronized Http2Stream get(int streamId) {
@@ -109,8 +118,20 @@ public final class Http2StreamTable {
   /** Atomically removes and recycles the matching generation of a pooled stream. */
   public synchronized boolean retire(Http2Stream stream, int streamId) {
     if (!removeIfSame(stream, streamId)) return false;
+    rememberClosed(streamId, CLOSED_NORMALLY);
     release(stream);
     return true;
+  }
+
+  public synchronized void rememberReset(int streamId) {
+    rememberClosed(streamId, CLOSED_BY_RESET);
+  }
+
+  public synchronized int closedKind(int streamId) {
+    for (int i = 0; i < closedIds.length; i++) {
+      if (closedIds[i] == streamId) return closedKinds[i];
+    }
+    return CLOSED_UNKNOWN;
   }
 
   public synchronized void forEach(StreamConsumer consumer) {
@@ -161,7 +182,16 @@ public final class Http2StreamTable {
   public synchronized void clear() {
     Arrays.fill(keys, 0);
     Arrays.fill(values, null);
+    Arrays.fill(closedIds, 0);
+    Arrays.fill(closedKinds, (byte) 0);
     size = 0;
+    closedCursor = 0;
+  }
+
+  private void rememberClosed(int streamId, int kind) {
+    closedIds[closedCursor] = streamId;
+    closedKinds[closedCursor] = (byte) kind;
+    closedCursor = (closedCursor + 1) % closedIds.length;
   }
 
   private int find(int streamId) {

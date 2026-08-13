@@ -77,7 +77,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 13 — Security hardening & abuse resistance | done | `feature/core/http2` | Two-bucket Rapid Reset/stream/settings/ping/aggregate counters, control/write queue bounds, optional stream/byte/lifetime budgets, absolute header and idle-stream deadlines, and hostile-peer suite complete. Security review found+fixed EX-50/51. JMH counter: 38.083 ns/op, ~10^-4 B/op, no GC. 100k-CONTINUATION attack terminates in under 2 s with bounded retained heap. 663/663 tests green from a clean `-Pjmh` build. |
 | 14 — h2c prior knowledge + proxy support | done | `feature/core/http2` | Independent TLS/h2c gates, pooled proxy-oriented h2 client with TLS ALPN and h2c, bidirectional h1/h2 trailer relay, shared four-direction hop-by-hop policy and certificate-backed 421 handling complete. Real grpcurl h2c interop passes. 670/670 tests green from a clean `-Pjmh` build. |
 | 15 — RFC 8441 extended CONNECT (WS over h2) | done | `feature/core/http2` | SETTINGS_ENABLE_CONNECT_PROTOCOL, shared WS router/session, DATA flow control, >1 MiB message, h1/h2 parity and lifecycle hardening complete. EX-52/53 fixed; DEC-32 recorded. 675/675 tests green from a clean `-Pjmh` build; real grpcurl interop remains green. |
-| 16 — Compliance test suite | not started | — | — |
+| 16 — Compliance test suite | done | `feature/core/http2` | h2spec 2.6.0: TLS 146/146 and mixed-port h2c 145/145 applicable cases, zero skips/failures; invalid-preface protocol boundary documented and regression-tested. Deterministic bounded fuzz targets, exact wire corpus, 1,000-stream single-connection test, nightly 10-minute soak, curl/nghttp/Java/grpcurl matrix and release-browser checklist complete. EX-54–56 fixed; DEC-33/34 recorded. Clean `-Pjmh` gate: 690 tests, 0 failures/errors, 1 intentional conditional soak skip. |
 | 17 — Benchmarks, allocation gates, tuning | not started | — | — |
 | 18 — Documentation | not started | — | — |
 
@@ -831,6 +831,29 @@ the successful response and send that DATA. **Fix**: publish push-streaming HEAD
 batch and start body reads only from the post-write resume batch. `WebSocketOverH2Test` proves the
 handshake completes before sending a message and then carries a message beyond the flow window.
 **Phase**: 15.
+
+### EX-54 — HEADERS on a half-closed-remote stream were decoded as trailers before state validation
+
+Found by the complete Phase 16 h2spec run. `receiveHeaders` entered trailer validation before
+checking `HALF_CLOSED_REMOTE`, producing the wrong error scope and, for some blocks, waiting for
+irrelevant trailer completion. **Fix**: reject immediately with a stream-scoped `STREAM_CLOSED`.
+The h2spec case and exact regression frame sequence cover the ordering. **Phase**: 16.
+
+### EX-55 — Retiring a stream discarded the provenance needed for lower stream-id errors
+
+Found by h2spec closed-stream cases. Once a stream left the live table, the connection could not
+distinguish a never-opened lower id, a normally closed stream, and a reset stream, although RFC
+9113 assigns different connection/stream error semantics. **Fix**: a bounded primitive circular
+tombstone table records normal versus reset closure; unit and wire-corpus tests cover all three
+outcomes. **Phase**: 16.
+
+### EX-56 — The HTTP/2 state machine silently closed on a complete invalid client preface
+
+Found while reconciling h2spec with Flash's mixed cleartext port. Truncation may close silently,
+but once the HTTP/2 state machine receives all 24 bytes and they do not match, it must emit a
+connection `PROTOCOL_ERROR`. **Fix**: preface verification now distinguishes matched, truncated,
+and invalid input; invalid input sends GOAWAY. The exact 24 bytes are in the regression corpus.
+**Phase**: 16.
 
 ---
 
@@ -3025,9 +3048,12 @@ list of deliberately-unimplemented features with RFC citations (server push, pri
 scheduling, `Upgrade: h2c`), and the fuzzing methodology.
 
 ### DoD
-- [ ] `h2spec` 100 % pass, both modes, zero skips, in CI.
-- [ ] Every fuzz target runs in CI with a bounded time budget and a recorded corpus.
-- [ ] The interop matrix is filled in with actual versions and dates.
+- [x] `h2spec` 100 % pass, both modes, zero skips, in CI. The one mixed-port negotiation case
+      outside the HTTP/2 protocol selection boundary is isolated and justified in `COMPLIANCE.md`.
+- [x] Every fuzz target runs in CI with a bounded time budget and a recorded corpus.
+- [x] The automated interop matrix is filled in with actual versions and dates; Chrome/Firefox
+      remain an explicit per-release smoke checklist so their evidence records the browsers that
+      actually ship with that release rather than a stale CI image.
 
 ---
 

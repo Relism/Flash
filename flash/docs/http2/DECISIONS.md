@@ -1064,3 +1064,39 @@ usable by other streaming adapters.
 stream pair without losing protocol semantics.
 
 ---
+
+## DEC-33 — Retain bounded closed-stream provenance
+
+**Context.** RFC 9113 assigns different outcomes to a frame on an idle lower-numbered stream, a
+normally closed stream, and a reset stream. Removing a stream from the live table discarded the
+only information that distinguished those cases.
+
+**Decision.** Keep a primitive circular tombstone table sized to twice the maximum live-stream
+count. Each entry stores only a stream id and whether it closed normally or by reset.
+
+**Consequence.** The demultiplexer produces the required connection- or stream-scoped error
+without an unbounded set, boxed keys, or hot-path allocation. Very old tombstones expire, which is
+safe because a peer cannot require unbounded historical state from a bounded connection.
+
+**Revisit when.** Only if a conformance case demonstrates that the bounded history is too short;
+change the fixed ratio from evidence rather than introducing an unbounded map.
+
+---
+
+## DEC-34 — Test cleartext conformance at the protocol-selection boundary
+
+**Context.** h2spec's invalid-preface case assumes a dedicated HTTP/2 socket. Flash intentionally
+multiplexes HTTP/1.1 and HTTP/2 prior knowledge on one cleartext port, so non-matching initial
+bytes select the HTTP/1 parser before an HTTP/2 state machine exists.
+
+**Decision.** Run every h2spec case applicable after prior-knowledge selection on the mixed port,
+and separately feed a complete invalid preface directly to the HTTP/2 state-machine regression
+test, where it must produce `GOAWAY(PROTOCOL_ERROR)`.
+
+**Consequence.** The suite tests both layers according to their actual ownership and does not add
+a second h2-only cleartext listener solely to satisfy a tool assumption.
+
+**Revisit when.** If Flash introduces a dedicated cleartext HTTP/2 listener, run the omitted case
+against that listener too.
+
+---

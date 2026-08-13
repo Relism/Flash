@@ -130,7 +130,13 @@ public final class Http2Connection implements ConnectionProtocol {
       Http2FrameWriter writer,
       BooleanSupplier stopped)
       throws IOException {
-    if (!verifyPreface(input)) return;
+    PrefaceResult preface = verifyPreface(input);
+    if (preface == PrefaceResult.TRUNCATED) return;
+    if (preface == PrefaceResult.INVALID) {
+      sendGoAway(writer, 0, Http2ErrorCode.PROTOCOL_ERROR, "invalid client preface");
+      writer.drain();
+      return;
+    }
     abuse.start();
 
     sendConstant(writer, Http2Preface.serverSettings());
@@ -194,20 +200,28 @@ public final class Http2Connection implements ConnectionProtocol {
     }
   }
 
-  private boolean verifyPreface(BufferedByteSource input) throws IOException {
+  private PrefaceResult verifyPreface(BufferedByteSource input) throws IOException {
     byte[] preface = scratch.prefaceBuffer();
     int read = 0;
     input.setDeadline(System.nanoTime() + Http2Limits.FRAME_READ_TIMEOUT_MS * 1_000_000L);
     try {
       while (read < preface.length) {
         int n = input.read(preface, read, preface.length - read);
-        if (n < 0) return false;
+        if (n < 0) return PrefaceResult.TRUNCATED;
         read += n;
       }
-      return Http2Preface.matchesClientPreface(preface);
+      return Http2Preface.matchesClientPreface(preface)
+          ? PrefaceResult.MATCHED
+          : PrefaceResult.INVALID;
     } finally {
       input.clearDeadline();
     }
+  }
+
+  private enum PrefaceResult {
+    MATCHED,
+    INVALID,
+    TRUNCATED
   }
 
   private void dispatch(FrameHeader frame, Http2FrameWriter writer) throws IOException {
@@ -236,6 +250,10 @@ public final class Http2Connection implements ConnectionProtocol {
     Http2Stream existing = streams.get(streamId);
     if (existing != null) {
       existing.touch();
+      if (existing.state() == Http2StreamState.HALF_CLOSED_REMOTE) {
+        throw new Http2StreamException(
+            streamId, Http2ErrorCode.STREAM_CLOSED, "stream is half-closed remotely");
+      }
       if (!FrameFlags.isEndStream(frame.flags())) {
         throw new Http2StreamException(
             streamId, Http2ErrorCode.PROTOCOL_ERROR, "trailers require END_STREAM");
@@ -246,7 +264,17 @@ public final class Http2Connection implements ConnectionProtocol {
       if (headerBlocks.accept(frame, existing.trailerBlock())) completeHeaders(writer, streamId);
       return;
     }
-    if (streamId <= highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+    if (streamId <= highestClientStreamId) {
+      int closedKind = streams.closedKind(streamId);
+      if (closedKind == Http2StreamTable.CLOSED_NORMALLY) {
+        throw Http2Exception.of(Http2ErrorCode.STREAM_CLOSED, "frame on a closed stream");
+      }
+      if (closedKind == Http2StreamTable.CLOSED_BY_RESET) {
+        throw new Http2StreamException(
+            streamId, Http2ErrorCode.STREAM_CLOSED, "stream was reset");
+      }
+      throw Http2Exception.PROTOCOL_ERROR;
+    }
     abuse.streamCreated();
     highestClientStreamId = streamId;
     pendingTrailers = false;
@@ -389,6 +417,7 @@ public final class Http2Connection implements ConnectionProtocol {
         stream.dispatched() || stream.state() == Http2StreamState.HALF_CLOSED_REMOTE;
     stream.transition(Http2StreamState.Event.RECV_RST);
     if (!streams.removeIfSame(stream, frame.streamId())) return;
+    streams.rememberReset(frame.streamId());
     if (releaseDeferred) {
       stream.cancel();
       if (stream.responseStarted() && !stream.responseInFlight()) streams.release(stream);
@@ -495,6 +524,7 @@ public final class Http2Connection implements ConnectionProtocol {
       if (!stream.idleExpired(now, streamIdleTimeoutNanos)) continue;
       int streamId = stream.id();
       if (!streams.removeIfSame(stream, streamId)) continue;
+      streams.rememberReset(streamId);
       sendRstStream(writer, streamId, Http2ErrorCode.CANCEL);
       if (stream.dispatched()) stream.cancel();
       else streams.release(stream);
@@ -542,6 +572,7 @@ public final class Http2Connection implements ConnectionProtocol {
     Http2Stream stream = streams.get(streamId);
     if (stream == null) return;
     if (!streams.removeIfSame(stream, streamId)) return;
+    streams.rememberReset(streamId);
     if (stream.dispatched()) stream.cancel();
     else streams.release(stream);
     if (pendingHeaderStream == stream) pendingHeaderStream = null;

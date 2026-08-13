@@ -32,8 +32,37 @@ jobs:
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
 
+      - name: Install h2spec 2.6.0
+        run: |
+          curl --fail --location --silent --show-error \
+            --output /tmp/h2spec.tar.gz \
+            https://github.com/summerwind/h2spec/releases/download/v2.6.0/h2spec_linux_amd64.tar.gz
+          echo "157ee0de702e01ad40e752dbf074b366027e550c8e7504f9450da2809e279318  /tmp/h2spec.tar.gz" \
+            | sha256sum --check
+          tar --extract --gzip --file /tmp/h2spec.tar.gz --directory /tmp
+
+      - name: Install nghttp client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes nghttp2-client
+
+      - name: Install grpcurl 1.9.3
+        run: |
+          curl --fail --location --silent --show-error \
+            --output /tmp/grpcurl.tgz \
+            https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/grpcurl_1.9.3_linux_x86_64.tar.gz
+          echo "a926b62a85787ccf73ef8736b3ae554f1242e39d92bb8767a79d6dd23b11d1d5  /tmp/grpcurl.tgz" \
+            | sha256sum --check
+          tar --extract --gzip --file /tmp/grpcurl.tgz --directory /tmp grpcurl
+
       - name: Build and test
-        run: mvn -B --settings .github/settings.xml clean verify
+        run: >-
+          mvn -B --settings .github/settings.xml
+          -Dh2spec.executable=/tmp/h2spec
+          -Dcurl.executable=/usr/bin/curl
+          -Dnghttp.executable=/usr/bin/nghttp
+          -Dgrpcurl.executable=/tmp/grpcurl
+          clean verify
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}

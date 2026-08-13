@@ -2,15 +2,18 @@ package dev.relism.flash.http2.frame;
 
 import dev.relism.flash.http2.Http2Exception;
 import dev.relism.flash.transport.BufferedByteSource;
+import dev.relism.flash.testing.FuzzMemory;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 /**
  * {@link Http2FrameReader} and asserts that only a typed, expected outcome ever results: a
@@ -30,8 +33,13 @@ class Http2FrameReaderFuzzTest {
 
     @Test
     void fuzz_10MillionRandomInputs_onlyTypedOutcomesEscape() {
+        assertTimeout(Duration.ofSeconds(30), this::runFuzzCases);
+    }
+
+    private void runFuzzCases() {
         Random rnd = new Random(0x4855_3244_5F46_5A32L);
         byte[] data = new byte[MAX_INPUT_LEN];
+        long baseline = FuzzMemory.snapshot();
 
         for (int trial = 0; trial < TRIALS; trial++) {
             int len = rnd.nextInt(MAX_INPUT_LEN + 1);
@@ -54,5 +62,6 @@ class Http2FrameReaderFuzzTest {
                 fail("unexpected RuntimeException at trial " + trial + " (len=" + len + "): " + e, e);
             }
         }
+        FuzzMemory.assertGrowthBelow(baseline, 8L * 1024 * 1024);
     }
 }

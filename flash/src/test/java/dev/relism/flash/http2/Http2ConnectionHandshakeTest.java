@@ -35,12 +35,47 @@ class Http2ConnectionHandshakeTest {
   }
 
   @Test
-  void mismatchedOrTruncatedPrefaceClosesWithoutSendingGoAway() throws Exception {
+  void mismatchedPrefaceSendsProtocolErrorButTruncatedPrefaceClosesSilently() throws Exception {
     byte[] mismatched = Http2TestFrames.PREFACE.clone();
     mismatched[10] ^= 1;
 
-    assertEquals(0, run(mismatched).output().length);
+    List<Http2TestFrames.WireFrame> frames = Http2TestFrames.parse(run(mismatched).output());
+    assertEquals(1, frames.size());
+    assertEquals(FrameType.GOAWAY.code(), frames.get(0).type());
+    assertEquals(
+        Http2ErrorCode.PROTOCOL_ERROR.code(), Http2TestFrames.readInt(frames.get(0).payload(), 4));
     assertEquals(0, run(java.util.Arrays.copyOf(Http2TestFrames.PREFACE, 12)).output().length);
+  }
+
+  @Test
+  void unopenedLowerStreamIdentifierProducesConnectionProtocolError() throws Exception {
+    byte[] request = {(byte) 0x82, (byte) 0x86, (byte) 0x84, (byte) 0x81};
+    byte[] streamThree =
+        Http2TestFrames.frame(
+            FrameType.HEADERS,
+            FrameFlags.END_HEADERS | FrameFlags.END_STREAM,
+            3,
+            request);
+    byte[] lowerStream =
+        Http2TestFrames.frame(
+            FrameType.HEADERS,
+            FrameFlags.END_HEADERS | FrameFlags.END_STREAM,
+            1,
+            request);
+
+    List<Http2TestFrames.WireFrame> frames =
+        Http2TestFrames.parse(
+            run(
+                    Http2TestFrames.concat(
+                        Http2TestFrames.PREFACE,
+                        Http2TestFrames.settings(),
+                        streamThree,
+                        lowerStream))
+                .output());
+    Http2TestFrames.WireFrame goAway = frames.get(frames.size() - 1);
+    assertEquals(FrameType.GOAWAY.code(), goAway.type());
+    assertEquals(
+        Http2ErrorCode.PROTOCOL_ERROR.code(), Http2TestFrames.readInt(goAway.payload(), 4));
   }
 
   @Test
