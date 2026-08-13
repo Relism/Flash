@@ -113,6 +113,7 @@ public final class ConnectionRunner {
               router,
               wsRouter,
               configuration,
+              executorService,
               stopped);
       if (negotiated == NegotiatedProtocol.HTTP_2) http2ProtocolFactory.get().run(ctx);
       else http1Protocol.run(ctx);

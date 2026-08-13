@@ -306,8 +306,7 @@ public final class Huffman {
 
   /**
    * Huffman-encodes {@code src[off, off + len)}, writing directly into {@code out}. Pads the final
-   * byte with the high-order bits of the EOS code (all 1s), per RFC 7541 §5.2. Built now ({@code
-   * EX} task 3) for use by the HPACK encoder.
+   * byte with the high-order bits of the EOS code (all 1s), per RFC 7541 §5.2.
    */
   public static void encode(ByteWriter out, byte[] src, int off, int len) {
     long accumulator = 0;

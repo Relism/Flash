@@ -19,6 +19,11 @@ import dev.relism.flash.models.ResponseSerializer;
  * connection write lock and exposes it as one {@link WriteIntent}.
  */
 public final class Http2ResponseWriter implements WriteIntent, ResponseSerializer.FieldConsumer {
+  @FunctionalInterface
+  public interface Completion {
+    void responseWriteCompleted();
+  }
+
   private static final int STATUS_NAME_LENGTH = 7;
   private static final int CONTENT_LENGTH_NAME_LENGTH = 14;
 
@@ -31,6 +36,7 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
   private int streamId;
   private long headerListSize;
   private long maxHeaderListSize;
+  private Completion completion;
 
   public Http2ResponseWriter() {
     this(1024, 2048);
@@ -40,6 +46,10 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     headerBlock = new ByteWriter(initialHeaderCapacity);
     output = new ByteWriter(initialOutputCapacity);
     frames = new FrameWriteBuffer(output);
+  }
+
+  public void completion(Completion completion) {
+    this.completion = completion;
   }
 
   /**
@@ -235,5 +245,10 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
   @Override
   public void setMpscNext(WriteIntent next) {
     this.next = next;
+  }
+
+  @Override
+  public void completed() {
+    if (completion != null) completion.responseWriteCompleted();
   }
 }

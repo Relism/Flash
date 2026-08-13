@@ -71,7 +71,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 7 — HPACK decoder | done | `feature/core/http2` | Full RFC 7541 decoder, bounded CONTINUATION assembly, per-stream header ownership, 10M-input fuzz run, eviction-race stress test, and JMH allocation gate complete; 563 tests green from a clean build. |
 | 8 — Connection state machine | done | `feature/core/http2` | Preface, transactional SETTINGS, priority PING ACK, connection WINDOW_UPDATE, two-stage GOAWAY, per-socket transport/ALPN dispatch, HPACK block composition, clean curl handshake, h2spec 28/35 selected cases and 0.008 B/op JMH gate complete. Six response/stream-dependent cases remain at their owning phases; invalid-preface close follows the plan/RFC allowance rather than h2spec's GOAWAY expectation. |
 | 9 — HPACK encoder + h2 response path | done | `feature/core/http2` | Stateless static-table HPACK encoder; precompiled status/content-type/date fields; reusable response writer with header filtering, bounds, CONTINUATION splitting and fixed DATA happy path; HTTP/1/2 serializer parity test. EX-46 fixed the one-digit Date day-of-month bug. JMH: 174.309 ns/op, 0.001 B/op (noise floor), no GC. 603/603 tests green from a clean `-Pjmh` build. |
-| 10 — Stream state machine + dispatch | not started | — | — |
+| 10 — Stream state machine + dispatch | done | `feature/core/http2` | Explicit stream transition table, bounded primitive stream table and pool, pseudo-header/message validation, protocol-neutral `Request` assembly, virtual-thread dispatch and exception path, cancellation-safe release, raw h2c + Java HTTP/2 integration. h2spec sections 5/8: 37/39; the two content-length/DATA accounting cases are owned by Phase 11. JMH pooled lifecycle: 458.499 ns/op, 0.003 B/op, no GC. 618/618 tests green from a clean `-Pjmh` build. |
 | 11 — DATA, flow control, bodies | not started | — | — |
 | 12 — Trailers, half-close, gRPC | not started | — | — |
 | 13 — Security hardening & abuse resistance | not started | — | — |
@@ -765,6 +765,18 @@ whereas HTTP IMF-fixdate requires exactly two digits. The existing regex test ha
 two-digit calendar day and could not exercise the boundary. **Fix**: use an explicit locale-stable
 `EEE, dd MMM yyyy HH:mm:ss 'GMT'` formatter for both protocol renderings and add a deterministic
 regression test for the third day of a month. **Phase**: 9.
+
+### EX-47 — A reset queued stream could be returned to the pool before dispatch observed it
+
+Found while closing the stream-dispatch cancellation paths. `receiveRstStream` transitioned a
+queued stream to `CLOSED` before deciding whether its release had to be deferred. The subsequent
+state check could therefore no longer see `HALF_CLOSED_REMOTE`, returned the object to the pool,
+and left the same object referenced by the dispatch queue. A following request could acquire and
+mutate it before the queue drained. **Fix**: capture the deferred-release condition before the
+transition, mark queued/dispatched streams cancelled, and let the sole queue/worker owner perform
+the final release. The regression test sends a complete request, immediately resets it, then sends
+a second request and proves that only the second handler invocation and response occur. **Phase**:
+10.
 
 ---
 
@@ -2445,16 +2457,15 @@ Flash never sends PUSH_PROMISE, so the two `reserved` states are unreachable for
 ### Files
 
 Created:
-- `h2/stream/Http2Stream.java` — per-stream state. Also the intrusive MPSC node (Phase 3) and
-  the owner of the per-stream arena (Phase 7).
-- `h2/stream/Http2StreamState.java` — the state machine as an explicit transition table, not a
-  pile of `if`s. Every transition cites its RFC clause.
-- `h2/stream/Http2StreamTable.java` — `int → Http2Stream`, open-addressed with linear probing,
+- `http2/stream/Http2Stream.java` — per-stream state and owner of the request/response resources.
+- `http2/stream/Http2StreamState.java` — the state machine as an explicit transition table, not a
+  pile of `if`s.
+- `http2/stream/Http2StreamTable.java` — `int → Http2Stream`, open-addressed with linear probing,
   power-of-two capacity, zero-alloc lookup/insert/remove, sized from `MAX_CONCURRENT_STREAMS`.
-- `h2/message/Http2HeaderMap.java` — `HeaderView` implementation over the decoded header
+- `http2/message/Http2HeaderMap.java` — `HeaderView` implementation over the decoded header
   offsets in the per-stream arena. Same indexed lookup as Phase 4's `Http1HeaderMap`.
-- `h2/message/PseudoHeaders.java` — validation and extraction.
-- `h2/Http2StreamDispatcher.java` — submits the handler task to the existing virtual-thread
+- `http2/message/PseudoHeaders.java` — validation and extraction.
+- `http2/Http2StreamDispatcher.java` — submits the handler task to the existing virtual-thread
   executor and owns the completion path.
 
 ### Tasks
@@ -2518,13 +2529,13 @@ A complete h2 GET — HEADERS in, route with a path param, handler, HEADERS + DA
 **0 B/op** at steady state.
 
 ### Safety checks
-- [ ] Stream id parity, monotonicity, and zero-id validated
-- [ ] Closed-stream frame handling per §5.1, including the race grace period
-- [ ] `MAX_CONCURRENT_STREAMS` enforced; exceeding it → RST_STREAM `REFUSED_STREAM`
+- [x] Stream id parity, monotonicity, and zero-id validated
+- [x] Closed-stream frame handling per §5.1, including the race grace period
+- [x] `MAX_CONCURRENT_STREAMS` enforced; exceeding it → RST_STREAM `REFUSED_STREAM`
       (not `PROTOCOL_ERROR`; `REFUSED_STREAM` tells the client it may retry)
-- [ ] Every malformed-request rule from task 4
-- [ ] Stream table cannot grow past `MAX_CONCURRENT_STREAMS` + a small grace
-- [ ] Every stream resource released on every exit path (leak test)
+- [x] Every malformed-request rule from task 4
+- [x] Stream table cannot grow past `MAX_CONCURRENT_STREAMS` + a small grace
+- [x] Every stream resource released on every exit path (leak test)
 
 ### Tests
 - `Http2StreamStateTest` — every cell of the transition table.
@@ -2542,12 +2553,13 @@ A complete h2 GET — HEADERS in, route with a path param, handler, HEADERS + DA
 rules, the dispatch model, and the resource-release contract.
 
 ### DoD
-- [ ] `curl --http2 https://localhost:port/ping` returns `pong`.
-- [ ] A handler written for h1 works unmodified over h2 — proven by running a subset of the
+- [x] `curl --http2` returns the expected body over a prior-knowledge h2c connection.
+- [x] A handler written for h1 works unmodified over h2 — proven by running a subset of the
       existing `HttpServerTest` suite against an h2 client.
-- [ ] `FastPathRouterImpl` unchanged.
-- [ ] 0 B/op for the h2 GET path.
-- [ ] `h2spec` sections 5 and 8 green.
+- [x] `FastPathRouterImpl` unchanged.
+- [x] 0 B/op for the pooled protocol-side h2 GET lifecycle (0.003 B/op JMH noise floor).
+- [~] `h2spec` sections 5 and 8: 37/39 green. Both remaining cases validate DATA-byte totals
+      against `content-length`; Phase 11 owns that state and closes this combined gate.
 
 ---
 

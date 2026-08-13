@@ -8,6 +8,10 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.frame.FrameValidator;
 import dev.relism.flash.http2.frame.Http2FrameReader;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
+import dev.relism.flash.http2.hpack.HeaderSink;
+import dev.relism.flash.http2.stream.Http2Stream;
+import dev.relism.flash.http2.stream.Http2StreamState;
+import dev.relism.flash.http2.stream.Http2StreamTable;
 import dev.relism.flash.transport.BufferedByteSource;
 import dev.relism.flash.transport.ConnectionContext;
 import dev.relism.flash.transport.ConnectionProtocol;
@@ -33,6 +37,8 @@ public final class Http2Connection implements ConnectionProtocol {
   private final Http2Settings.StreamWindowUpdater streamWindows;
   private final long settingsAckTimeoutMs;
   private final Http2HeaderBlockDecoder headerBlocks = new Http2HeaderBlockDecoder();
+  private final Http2StreamTable streams = new Http2StreamTable(Http2Limits.MAX_CONCURRENT_STREAMS);
+  private static final HeaderSink DISCARD_HEADERS = (name, value, never) -> {};
 
   private long connectionSendWindow = 65_535;
   private int outstandingLocalSettings;
@@ -43,6 +49,12 @@ public final class Http2Connection implements ConnectionProtocol {
   private boolean peerGoAway;
   private boolean gracefulStarted;
   private boolean gracefulFinished;
+  private int highestClientStreamId;
+  private Http2Stream pendingHeaderStream;
+  private boolean refusingHeaderStream;
+  private Http2StreamDispatcher streamDispatcher;
+  private final Http2Stream[] dispatchQueue = new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
+  private int dispatchCount;
 
   public Http2Connection() {
     this(delta -> {}, Http2Limits.SETTINGS_ACK_TIMEOUT_MS);
@@ -53,13 +65,28 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   Http2Connection(Http2Settings.StreamWindowUpdater streamWindows, long settingsAckTimeoutMs) {
-    this.streamWindows = streamWindows;
+    this.streamWindows =
+        delta -> {
+          try {
+            streams.adjustAllSendWindows(delta);
+          } catch (IllegalStateException overflow) {
+            throw Http2Exception.FLOW_CONTROL_ERROR;
+          }
+          streamWindows.applyInitialWindowDelta(delta);
+        };
     this.settingsAckTimeoutMs = settingsAckTimeoutMs;
   }
 
   @Override
   public void run(ConnectionContext ctx) throws IOException {
     Http2FrameWriter writer = new Http2FrameWriter(ctx.rawOut()::write);
+    streamDispatcher =
+        new Http2StreamDispatcher(
+            ctx,
+            writer,
+            peerSettings,
+            streams,
+            (streamId, error) -> sendRstStream(writer, streamId, error));
     try {
       run(ctx.in(), writer, ctx.stopped());
     } finally {
@@ -119,10 +146,12 @@ public final class Http2Connection implements ConnectionProtocol {
           dispatch(frame, writer);
         } catch (Http2StreamException streamError) {
           sendRstStream(writer, streamError);
+          closeStreamAfterError(streamError.streamId());
         } finally {
           reader.consumeFrame();
         }
         writer.drain();
+        if (dispatchCount > 0 && !reader.hasBufferedInput()) dispatchPendingStreams();
         checkSettingsTimeout();
       }
     } catch (Http2Exception connectionError) {
@@ -160,17 +189,121 @@ public final class Http2Connection implements ConnectionProtocol {
       case PING -> receivePing(frame, writer);
       case WINDOW_UPDATE -> receiveWindowUpdate(frame);
       case GOAWAY -> receiveGoAway(frame);
-      case HEADERS, CONTINUATION -> {
-        if (headerBlocks.accept(frame)) {
-          lastProcessedStreamId = Math.max(lastProcessedStreamId, frame.streamId());
-          if (!gracefulStarted) startGracefulShutdown(writer);
-        }
-      }
-      default -> {
-        // Stream semantics are introduced by the stream layer. Structurally-valid
-        // frames are consumed here so connection-level state remains synchronized.
+      case HEADERS -> receiveHeaders(frame, writer);
+      case CONTINUATION -> receiveContinuation(frame, writer);
+      case DATA -> receiveData(frame);
+      case RST_STREAM -> receiveRstStream(frame);
+      case PRIORITY -> receivePriority(frame);
+      default -> {}
+    }
+  }
+
+  private void receiveHeaders(FrameHeader frame, Http2FrameWriter writer) throws IOException {
+    int streamId = frame.streamId();
+    if ((streamId & 1) == 0) throw Http2Exception.PROTOCOL_ERROR;
+    if (streamId <= highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+    highestClientStreamId = streamId;
+
+    pendingHeaderStream = streams.acquire(streamId);
+    refusingHeaderStream = pendingHeaderStream == null;
+    HeaderSink sink = refusingHeaderStream ? DISCARD_HEADERS : pendingHeaderStream.headerBlock();
+    if (headerBlocks.accept(frame, sink)) completeHeaders(writer, frame.streamId());
+  }
+
+  private void receiveContinuation(FrameHeader frame, Http2FrameWriter writer) throws IOException {
+    if (pendingHeaderStream == null && !refusingHeaderStream) {
+      throw Http2Exception.PROTOCOL_ERROR;
+    }
+    HeaderSink sink = refusingHeaderStream ? DISCARD_HEADERS : pendingHeaderStream.headerBlock();
+    if (headerBlocks.accept(frame, sink)) completeHeaders(writer, frame.streamId());
+  }
+
+  private void completeHeaders(Http2FrameWriter writer, int streamId) throws IOException {
+    if (refusingHeaderStream) {
+      sendRstStream(writer, streamId, Http2ErrorCode.REFUSED_STREAM);
+    } else {
+      Http2Stream stream = pendingHeaderStream;
+      if (streamDispatcher != null) stream.validateHeaders();
+      stream.transition(
+          headerBlocks.endStream()
+              ? Http2StreamState.Event.RECV_HEADERS_ES
+              : Http2StreamState.Event.RECV_HEADERS);
+      lastProcessedStreamId = Math.max(lastProcessedStreamId, streamId);
+      if (streamDispatcher == null) {
+        streams.remove(streamId);
+        streams.release(stream);
+        if (!gracefulStarted) startGracefulShutdown(writer);
+      } else if (headerBlocks.endStream()) {
+        enqueueDispatch(stream);
       }
     }
+    pendingHeaderStream = null;
+    refusingHeaderStream = false;
+  }
+
+  private void receivePriority(FrameHeader frame) {
+    int dependency = readUInt31(frame.buffer(), frame.payloadOffset());
+    if (dependency == frame.streamId()) {
+      throw new Http2StreamException(
+          frame.streamId(), Http2ErrorCode.PROTOCOL_ERROR, "stream depends on itself");
+    }
+  }
+
+  private void receiveData(FrameHeader frame) {
+    Http2Stream stream = streamForFrame(frame.streamId());
+    stream.transition(
+        FrameFlags.isEndStream(frame.flags())
+            ? Http2StreamState.Event.RECV_DATA_ES
+            : Http2StreamState.Event.RECV_DATA);
+    if (frame.length() != 0) {
+      throw new Http2StreamException(
+          frame.streamId(), Http2ErrorCode.INTERNAL_ERROR, "request DATA support is not active");
+    }
+    if (FrameFlags.isEndStream(frame.flags()) && streamDispatcher != null) {
+      enqueueDispatch(stream);
+    }
+  }
+
+  private void receiveRstStream(FrameHeader frame) {
+    Http2Stream stream = streams.get(frame.streamId());
+    if (stream == null) {
+      if (frame.streamId() > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+      return;
+    }
+    boolean releaseDeferred =
+        stream.dispatched() || stream.state() == Http2StreamState.HALF_CLOSED_REMOTE;
+    stream.transition(Http2StreamState.Event.RECV_RST);
+    streams.remove(stream.id());
+    if (releaseDeferred) {
+      stream.cancel();
+    } else {
+      streams.release(stream);
+    }
+  }
+
+  private void enqueueDispatch(Http2Stream stream) {
+    if (dispatchCount == dispatchQueue.length) {
+      throw new Http2StreamException(
+          stream.id(), Http2ErrorCode.REFUSED_STREAM, "dispatch queue is full");
+    }
+    dispatchQueue[dispatchCount++] = stream;
+  }
+
+  private void dispatchPendingStreams() {
+    int count = dispatchCount;
+    dispatchCount = 0;
+    for (int i = 0; i < count; i++) {
+      Http2Stream stream = dispatchQueue[i];
+      dispatchQueue[i] = null;
+      streamDispatcher.dispatch(stream);
+    }
+  }
+
+  private Http2Stream streamForFrame(int streamId) {
+    Http2Stream stream = streams.get(streamId);
+    if (stream != null) return stream;
+    if (streamId > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+    throw new Http2StreamException(streamId, Http2ErrorCode.STREAM_CLOSED, "stream is closed");
   }
 
   private void receiveSettings(FrameHeader frame, Http2FrameWriter writer) throws IOException {
@@ -201,8 +334,25 @@ public final class Http2Connection implements ConnectionProtocol {
 
   private void receiveWindowUpdate(FrameHeader frame) {
     int increment = readUInt31(frame.buffer(), frame.payloadOffset());
-    if (increment == 0) throw Http2Exception.PROTOCOL_ERROR;
-    if (frame.streamId() != 0) return;
+    if (increment == 0) {
+      if (frame.streamId() == 0) throw Http2Exception.PROTOCOL_ERROR;
+      throw new Http2StreamException(
+          frame.streamId(), Http2ErrorCode.PROTOCOL_ERROR, "zero window increment");
+    }
+    if (frame.streamId() != 0) {
+      Http2Stream stream = streams.get(frame.streamId());
+      if (stream == null) {
+        if (frame.streamId() > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+        return;
+      }
+      try {
+        stream.adjustSendWindow(increment);
+      } catch (IllegalStateException overflow) {
+        throw new Http2StreamException(
+            frame.streamId(), Http2ErrorCode.FLOW_CONTROL_ERROR, "stream window overflow");
+      }
+      return;
+    }
     long next = connectionSendWindow + increment;
     if (next > Integer.MAX_VALUE) throw Http2Exception.FLOW_CONTROL_ERROR;
     connectionSendWindow = next;
@@ -227,6 +377,21 @@ public final class Http2Connection implements ConnectionProtocol {
     ControlIntent rst = scratch.acquire(ControlKind.SETTINGS_OR_OTHER);
     rst.frame(FrameType.RST_STREAM, 0, error.streamId(), error.errorCode().bytes(), 0, 4);
     writer.writePriority(rst);
+  }
+
+  private void sendRstStream(Http2FrameWriter writer, int streamId, Http2ErrorCode error)
+      throws IOException {
+    ControlIntent rst = scratch.acquire(ControlKind.SETTINGS_OR_OTHER);
+    rst.frame(FrameType.RST_STREAM, 0, streamId, error.bytes(), 0, 4);
+    writer.writePriority(rst);
+  }
+
+  private void closeStreamAfterError(int streamId) {
+    Http2Stream stream = streams.remove(streamId);
+    if (stream == null) return;
+    if (stream.dispatched()) stream.cancel();
+    else streams.release(stream);
+    if (pendingHeaderStream == stream) pendingHeaderStream = null;
   }
 
   private void sendGoAway(
@@ -303,5 +468,9 @@ public final class Http2Connection implements ConnectionProtocol {
     peerGoAway = false;
     gracefulStarted = false;
     gracefulFinished = false;
+    highestClientStreamId = 0;
+    pendingHeaderStream = null;
+    refusingHeaderStream = false;
+    dispatchCount = 0;
   }
 }

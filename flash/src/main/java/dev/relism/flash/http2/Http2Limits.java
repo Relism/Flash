@@ -24,7 +24,7 @@ public final class Http2Limits {
    * owns a per-stream HPACK arena and request/response state) against a peer that simply opens
    * streams and never closes them.
    */
-  public static final int MAX_CONCURRENT_STREAMS = 100;
+  public static final int MAX_CONCURRENT_STREAMS = 64;
 
   /**
    * The largest frame payload we accept without the peer first raising it via our own {@code

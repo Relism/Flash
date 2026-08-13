@@ -927,3 +927,27 @@ path remains allocation-free and avoids duplicating the response model.
 existing model internally without introducing a second public header abstraction.
 
 ---
+
+## DEC-27 — Drain already-buffered frames before dispatching completed streams
+
+**Context.** A client can write a burst of complete requests before the server schedules their
+handlers. Dispatching after every individual HEADERS frame lets a very fast handler close and
+release streams while the same inbound burst is still being decoded, making the advertised
+concurrency limit dependent on virtual-thread scheduling. Waiting a fixed interval would make the
+limit deterministic but would add latency to every ordinary request.
+
+**Decision.** Completed bodyless streams enter a fixed queue bounded by
+`MAX_CONCURRENT_STREAMS`. The demultiplexer continues only while its own frame reader already has
+bytes buffered; as soon as consuming the next frame would require network input, it drains the
+queue to the shared virtual-thread executor. The configured concurrent-stream limit is 64 and the
+primitive stream table has exactly the same bound.
+
+**Consequence.** One socket read's request burst is admitted and bounded as a unit, excess streams
+receive `REFUSED_STREAM`, and a single request is dispatched immediately without a timer. The demux
+still never executes application code or waits for a worker. h2spec's concurrency case passes and
+the lifecycle benchmark remains at the allocation noise floor.
+
+**Revisit when.** If production traces show a materially different batching pattern, tune the
+advertised limit or reader size from measurements; do not add a sleep-based dispatch delay.
+
+---

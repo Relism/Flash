@@ -7,8 +7,8 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.frame.Padding;
 import dev.relism.flash.http2.hpack.ContinuationAssembler;
 import dev.relism.flash.http2.hpack.HeaderListSizeException;
+import dev.relism.flash.http2.hpack.HeaderSink;
 import dev.relism.flash.http2.hpack.HpackDecoder;
-import dev.relism.flash.http2.hpack.HpackHeaderBlock;
 
 /** Composes frame fragment extraction, CONTINUATION assembly and HPACK decoding. */
 final class Http2HeaderBlockDecoder {
@@ -16,14 +16,14 @@ final class Http2HeaderBlockDecoder {
 
   private final ContinuationAssembler assembler = new ContinuationAssembler();
   private final HpackDecoder decoder = new HpackDecoder();
-  private final HpackHeaderBlock headers = new HpackHeaderBlock();
+  private boolean endStream;
 
   boolean insideHeaderBlock() {
     return assembler.isActive();
   }
 
   /** Accepts HEADERS or CONTINUATION and returns true when a complete block was decoded. */
-  boolean accept(FrameHeader frame) {
+  boolean accept(FrameHeader frame, HeaderSink sink) {
     if (assembler.isActive() && frame.type() != FrameType.CONTINUATION) {
       throw Http2Exception.PROTOCOL_ERROR;
     }
@@ -41,9 +41,8 @@ final class Http2HeaderBlockDecoder {
     }
     if (!assembler.isComplete()) return false;
 
-    headers.reset();
     try {
-      decoder.decode(assembler.buffer(), 0, assembler.length(), headers);
+      decoder.decode(assembler.buffer(), 0, assembler.length(), sink);
     } catch (HeaderListSizeException tooLarge) {
       int streamId = assembler.streamId();
       assembler.reset();
@@ -54,7 +53,12 @@ final class Http2HeaderBlockDecoder {
     return true;
   }
 
+  boolean endStream() {
+    return endStream;
+  }
+
   private void begin(FrameHeader frame) {
+    endStream = FrameFlags.isEndStream(frame.flags());
     long unpadded =
         Padding.unpad(
             frame.buffer(),
@@ -65,6 +69,15 @@ final class Http2HeaderBlockDecoder {
     int fragmentLength = Pairs.lo(unpadded);
     if (FrameFlags.hasPriority(frame.flags())) {
       if (fragmentLength < PRIORITY_FIELDS_LENGTH) throw Http2Exception.FRAME_SIZE_ERROR;
+      int dependency =
+          ((frame.buffer()[fragmentOffset] & 0x7f) << 24)
+              | ((frame.buffer()[fragmentOffset + 1] & 0xff) << 16)
+              | ((frame.buffer()[fragmentOffset + 2] & 0xff) << 8)
+              | (frame.buffer()[fragmentOffset + 3] & 0xff);
+      if (dependency == frame.streamId()) {
+        throw new Http2StreamException(
+            frame.streamId(), Http2ErrorCode.PROTOCOL_ERROR, "stream depends on itself");
+      }
       fragmentOffset += PRIORITY_FIELDS_LENGTH;
       fragmentLength -= PRIORITY_FIELDS_LENGTH;
     }

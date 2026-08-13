@@ -116,6 +116,11 @@ public final class Http2FrameReader {
     return totalRead != 0 && System.nanoTime() >= frameDeadlineNanos;
   }
 
+  /** Whether another frame may be consumed immediately without waiting for network input. */
+  public boolean hasBufferedInput() {
+    return totalRead != 0 || in.available() != 0;
+  }
+
   private static int decodeLength(byte[] buf, int off) {
     int b0 = buf[off] & 0xFF, b1 = buf[off + 1] & 0xFF, b2 = buf[off + 2] & 0xFF;
     return (b0 << 16) | (b1 << 8) | b2;

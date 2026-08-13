@@ -2,22 +2,32 @@ package dev.relism.flash.http2;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
+import dev.relism.flash.http2.hpack.HpackDecoder;
+import dev.relism.flash.http2.hpack.HpackEncoder;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import java.io.EOFException;
 import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +40,171 @@ class Http2ConnectionIntegrationTest {
   @AfterEach
   void stopApp() {
     if (app != null) app.stop().join();
+  }
+
+  @Test
+  void javaHttpClientUsesHttp2AgainstAnExistingParameterizedRoute(@TempDir Path directory)
+      throws Exception {
+    int port = freePort();
+    Path keystore =
+        TestKeystores.build(
+            directory,
+            "http2-route.p12",
+            "changeit",
+            TestKeystores.Entry.of("server", "localhost", "localhost"));
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder()
+                .port(port)
+                .host("127.0.0.1")
+                .tls(TlsConfig.keystore(keystore, "changeit"))
+                .http2Enabled(true)
+                .build());
+    app.get(
+        "/users/{id}", (request, response) -> request.param("id") + ":" + request.header("host"));
+    app.start();
+
+    HttpClient client =
+        HttpClient.newBuilder()
+            .sslContext(TestKeystores.trustAllClientContext())
+            .version(HttpClient.Version.HTTP_2)
+            .build();
+    HttpResponse<String> response =
+        client.send(
+            HttpRequest.newBuilder(URI.create("https://localhost:" + port + "/users/42"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString());
+
+    assertEquals(HttpClient.Version.HTTP_2, response.version());
+    assertEquals(200, response.statusCode());
+    assertEquals("42:localhost:" + port, response.body());
+  }
+
+  @Test
+  void bodylessGetRunsExistingRouteAndReturnsHeadersAndData() throws Exception {
+    int port = freePort();
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+    app.get("/api/ping", (request, response) -> "pong");
+    app.start();
+
+    ByteWriter block = new ByteWriter(64);
+    HpackEncoder.writeIndexed(block, 2);
+    HpackEncoder.writeIndexed(block, 6);
+    HpackEncoder.writeLiteralWithNameIndex(
+        block, 4, "/api/ping".getBytes(StandardCharsets.US_ASCII), false);
+    HpackEncoder.writeLiteralWithNameIndex(
+        block, 1, "localhost".getBytes(StandardCharsets.US_ASCII), false);
+
+    try (Socket socket = new Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(5_000);
+      socket
+          .getOutputStream()
+          .write(
+              Http2TestFrames.concat(
+                  Http2TestFrames.PREFACE,
+                  Http2TestFrames.settings(),
+                  Http2TestFrames.frame(FrameType.SETTINGS, FrameFlags.ACK, 0, new byte[0]),
+                  Http2TestFrames.frame(
+                      FrameType.HEADERS,
+                      FrameFlags.END_HEADERS | FrameFlags.END_STREAM,
+                      1,
+                      Arrays.copyOf(block.array(), block.length()))));
+      socket.getOutputStream().flush();
+
+      ByteWriter responseBlock = new ByteWriter(128);
+      byte[] body = null;
+      for (int i = 0; i < 10 && body == null; i++) {
+        Http2TestFrames.WireFrame frame = readFrame(socket.getInputStream());
+        if (frame.streamId() != 1) continue;
+        if (frame.type() == FrameType.HEADERS.code()
+            || frame.type() == FrameType.CONTINUATION.code()) {
+          responseBlock.writeBytes(frame.payload());
+        } else if (frame.type() == FrameType.DATA.code()) {
+          body = frame.payload();
+        }
+      }
+
+      List<String> fields = new ArrayList<>();
+      new HpackDecoder()
+          .decode(
+              responseBlock.array(),
+              0,
+              responseBlock.length(),
+              (name, value, never) -> fields.add(ascii(name) + "=" + ascii(value)));
+      assertTrue(fields.contains(":status=200"));
+      assertTrue(fields.contains("content-length=4"));
+      assertEquals("pong", new String(body, StandardCharsets.US_ASCII));
+    }
+  }
+
+  @Test
+  void resetQueuedStreamCannotReleaseOrReuseItBeforeDispatchObservesCancellation()
+      throws Exception {
+    int port = freePort();
+    AtomicInteger calls = new AtomicInteger();
+    app =
+        FlashApp.create(
+            FlashConfiguration.builder().port(port).host("127.0.0.1").http2Enabled(true).build());
+    app.get(
+        "/queued",
+        (request, response) -> {
+          calls.incrementAndGet();
+          return "ok";
+        });
+    app.start();
+
+    ByteWriter block = new ByteWriter(64);
+    HpackEncoder.writeIndexed(block, 2);
+    HpackEncoder.writeIndexed(block, 6);
+    HpackEncoder.writeLiteralWithNameIndex(
+        block, 4, "/queued".getBytes(StandardCharsets.US_ASCII), false);
+    HpackEncoder.writeLiteralWithNameIndex(
+        block, 1, "localhost".getBytes(StandardCharsets.US_ASCII), false);
+    byte[] headers = Arrays.copyOf(block.array(), block.length());
+    byte[] cancel = {0, 0, 0, 8};
+
+    try (Socket socket = new Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(5_000);
+      socket
+          .getOutputStream()
+          .write(
+              Http2TestFrames.concat(
+                  Http2TestFrames.PREFACE,
+                  Http2TestFrames.settings(),
+                  Http2TestFrames.frame(FrameType.SETTINGS, FrameFlags.ACK, 0, new byte[0]),
+                  Http2TestFrames.frame(
+                      FrameType.HEADERS,
+                      FrameFlags.END_HEADERS | FrameFlags.END_STREAM,
+                      1,
+                      headers),
+                  Http2TestFrames.frame(FrameType.RST_STREAM, 0, 1, cancel),
+                  Http2TestFrames.frame(
+                      FrameType.HEADERS,
+                      FrameFlags.END_HEADERS | FrameFlags.END_STREAM,
+                      3,
+                      headers)));
+      socket.getOutputStream().flush();
+
+      Http2TestFrames.WireFrame response = null;
+      for (int i = 0; i < 10; i++) {
+        Http2TestFrames.WireFrame frame = readFrame(socket.getInputStream());
+        assertFalse(
+            frame.streamId() == 1
+                && (frame.type() == FrameType.HEADERS.code()
+                    || frame.type() == FrameType.DATA.code()),
+            "a reset request must not produce a response");
+        if (frame.streamId() == 3 && frame.type() == FrameType.DATA.code()) {
+          response = frame;
+          break;
+        }
+      }
+      assertNotNull(response);
+      assertEquals("ok", new String(response.payload(), StandardCharsets.US_ASCII));
+      assertEquals(1, calls.get());
+    }
   }
 
   @Test
@@ -243,5 +418,11 @@ class Http2ConnectionIntegrationTest {
     try (ServerSocket socket = new ServerSocket(0)) {
       return socket.getLocalPort();
     }
+  }
+
+  private static String ascii(dev.relism.fpr.core.ByteView view) {
+    byte[] bytes = new byte[view.length()];
+    for (int i = 0; i < bytes.length; i++) bytes[i] = view.byteAt(i);
+    return new String(bytes, StandardCharsets.US_ASCII);
   }
 }
