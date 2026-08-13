@@ -68,7 +68,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 4 — Byte-layer foundations | done | `feature/core/http2` | `dev.relism.flash.bytes` package (`ByteScan`+SWAR, `ArrayBackedByteView`, `SegmentedByteView`, `PooledSlice`/`SlicePool`, `ByteWriter`, `Pairs`) built. `EX-04`/`EX-05`/`EX-09`/`EX-19`/`EX-25`/`EX-26`/`EX-33` done, plus `EX-06`'s router half (plan correction, `DEC-19`) removing `FastPathRouterImpl`/`FastPathWsRouterImpl`'s `ThreadLocal`s via an opaque per-connection scratch (`AbstractRouter#newScratch`) instead of extending `ConnectionScratch` (would have created a `routing`→`transport` package cycle). `AbstractRouter`/`AbstractWsRouter.route()` gained a `scratch` param — all call sites updated. Measured (`DEC-20`): SWAR scan 35.4% faster (kept), `EX-04`'s word-path 32.1% faster at the mechanism level (kept; today's router doesn't route through it — `MethodPathByteView` stays non-array-backed by design). Router matching itself is ≈0 B/op including parametric routes. Full h1 pipeline is 120.008 B/op, 100% attributable to `Request`/`RequestBody`/`RequestLine` construction — explicitly Phase 6 scope, not a Phase 4 regression. Two documented (non-hot-path) anonymous-`ByteView` fallbacks remain in `QueryParams`/`PathParams.view`. `BYTES.md` written. 395/395 tests green (both with and without `-Pjmh`). |
 | 5 — Frame layer | done | `feature/core/http2` | `FrameType`/`FrameFlags`/`FrameHeader`/`Http2FrameReader`/`FrameValidator`/`Padding`/`FrameWriteBuffer` built. All 10 frame types read/validated/written; per-type RFC error codes verified individually (`FrameValidatorTest`); fuzz-tested 10M random inputs (~14s, green). Zero-alloc contract measured, not asserted: read+validate+consume 0.002 B/op, write ≈10⁻⁴ B/op (`DEC-21`). Found+fixed `EX-37` (`BufferedByteSource`'s deadline mechanism NPE'd against a `null` socket — zero prior test coverage of `EX-07`'s own fix; added `BufferedByteSourceTest`). `FRAMES.md` written. 449/449 tests green. |
 | 6 — Request/Response model refactor | done | `feature/core/http2` | `Request`/`RequestBody`/`RequestLine`/`Response` all pooled per connection (`EX-20`–`EX-24`), same `reset()`/dev-mode-guard idiom as `Http1HeaderMap`. `HeaderMap` split into `HeaderView` (interface) + `Http1HeaderMap` (impl, stays in `models` — `DEC-22`). `Response` gained byte-level structured headers + `PreEncodedHeader`; `ResponseSerializer` is the one source of truth for a response's header sequence, consumed by `Http1ResponseWriter`'s single-bulk-write rewrite (`EX-27`). `ByteTemplate` fixed to O(1) slot lookup + a buffer-writing overload (`EX-28`). `Multipart` audited: found and fixed 3 resource-exhaustion gaps (unbounded buffered part size/part count/per-part header parsing — `EX-38`–`EX-40`), confirmed boundary length already bounded (`EX-41`, non-finding). Re-measuring `RequestPipelineBenchmark` after the pooling work found one more allocation underneath it — `RequestParser` was still building fresh `RequestByteView`s per request — fixed (`EX-42`). Zero-alloc contract closed: `parseAndRoute` 120.008 → 0.008 B/op (`DEC-20`/`DEC-23`). Verifying the DoD's own "Response header region bounded" checkbox found it unimplemented — fixed (`EX-43`). `MESSAGE-MODEL.md` written; README gained an "Object lifetime" section. 503/503 tests green. |
-| 7 — HPACK decoder | in progress | `feature/core/http2` | `HpackIntegers` and `Huffman` are implemented and tested; next: RFC 7541 static table. |
+| 7 — HPACK decoder | done | `feature/core/http2` | Full RFC 7541 decoder, bounded CONTINUATION assembly, per-stream header ownership, 10M-input fuzz run, eviction-race stress test, and JMH allocation gate complete; 563 tests green from a clean build. |
 | 8 — Connection state machine | not started | — | — |
 | 9 — HPACK encoder + h2 response path | not started | — | — |
 | 10 — Stream state machine + dispatch | not started | — | — |
@@ -739,6 +739,14 @@ total bytes via `checkHeaderRegionBudget()` after writing. Both throw `IllegalSt
 (an application-code misuse, not a wire-input rejection, so this deliberately does not go through
 `MalformedRequestException`'s HTTP-status-carrying path).
 **Phase**: 6.
+
+### EX-44 — Comment cleanup removed `Multipart.partCount` from compiled source
+Found during the Phase 7 clean build. The process-reference cleanup commit removed the complete
+field declaration because its trailing comment contained an `EX-nn` marker. Incremental builds
+initially reused the previously compiled class and hid the source-level failure. **Fix**: restored
+the counter without the process comment and audited every non-comment line removed by the cleanup
+commit. `MultipartTest`'s part-count limit coverage remains the regression test; phase closure now
+uses `mvn clean test` so stale classes cannot mask source damage. **Phase**: 7.
 
 ---
 
@@ -1977,16 +1985,19 @@ the continue flag):
 ### Files
 
 Created:
-- `h2/hpack/HpackIntegers.java` — prefix-coded integer decode/encode.
-- `h2/hpack/Huffman.java` — decode FSM + encode LUT, both built in a static initializer from
+- `http2/hpack/HpackIntegers.java` — prefix-coded integer decode/encode.
+- `http2/hpack/Huffman.java` — decode FSM + encode LUT, both built in a static initializer from
   the RFC's code table.
-- `h2/hpack/HpackStaticTable.java` — the 61 entries as `byte[][]`, plus a name→lowest-index
+- `http2/hpack/HpackStaticTable.java` — the 61 entries as `byte[][]`, plus a name→lowest-index
   lookup for the encoder (built at class init).
-- `h2/hpack/HpackDynamicTable.java` — ring buffer of entry descriptors + a byte arena.
-- `h2/hpack/HpackDecoder.java` — the state machine.
-- `h2/hpack/HeaderSink.java` — the callback the decoder emits into:
+- `http2/hpack/HpackDynamicTable.java` — ring buffer of entry descriptors + a byte arena.
+- `http2/hpack/HpackDecoder.java` — the state machine.
+- `http2/hpack/HeaderSink.java` — the callback the decoder emits into:
   `void accept(ByteView name, ByteView value, boolean neverIndexed)`. Implemented by
   `Http2HeaderMap` (Phase 10) and by tests.
+- `http2/hpack/HpackHeaderBlock.java` — reusable stream-owned storage for decoded fields.
+- `http2/hpack/ContinuationAssembler.java` — bounded contiguous header-block assembly.
+- `http2/hpack/HeaderListSizeException.java` — delayed stream-level oversize signal.
 
 ### Tasks
 
@@ -2071,16 +2082,16 @@ arena, the per-stream arena and the CONTINUATION assembly buffer are all per-con
 pooled.
 
 ### Safety checks
-- [ ] Prefix-integer overflow rejected (continuation octet limit)
-- [ ] Huffman padding validated (all ones, < 8 bits)
-- [ ] Huffman EOS in input rejected
-- [ ] Decoded string length bounded during decode, not after
-- [ ] Index 0 rejected; out-of-range index rejected
-- [ ] Dynamic Table Size Update position and magnitude validated
-- [ ] `MAX_HEADER_LIST_SIZE` enforced, **with full decode before rejection** so the table stays
+- [x] Prefix-integer overflow rejected (continuation octet limit)
+- [x] Huffman padding validated (all ones, < 8 bits)
+- [x] Huffman EOS in input rejected
+- [x] Decoded string length bounded during decode, not after
+- [x] Index 0 rejected; out-of-range index rejected
+- [x] Dynamic Table Size Update position and magnitude validated
+- [x] `MAX_HEADER_LIST_SIZE` enforced, **with full decode before rejection** so the table stays
       in sync
-- [ ] CONTINUATION frame count and total block size bounded
-- [ ] Dynamic table arena cannot be written past its bound
+- [x] CONTINUATION frame count and total block size bounded
+- [x] Dynamic table arena cannot be written past its bound
 
 ### Tests
 - `HpackIntegersTest` — every RFC 7541 Appendix C.1 vector, plus overflow cases.
@@ -2106,10 +2117,11 @@ eviction hazard with its worked example, and the explicit statement of what is c
 This document must contain the honest framing from `R3`.
 
 ### DoD
-- [ ] Every RFC 7541 Appendix C vector passes, including dynamic table state assertions.
-- [ ] Fuzz test green for 10 million inputs.
-- [ ] `HpackEvictionRaceTest` demonstrates the hazard and the fix.
-- [ ] 0 B/op decode.
+- [x] Every RFC 7541 Appendix C vector passes, including dynamic table state assertions.
+- [x] Fuzz test green for 10 million inputs (2.58 s on JDK 21.0.11; clean profiled build).
+- [x] `HpackEvictionRaceTest` demonstrates the hazard and the fix.
+- [x] Zero-allocation decode measured by JMH: 0.001 B/op (profiler noise floor), 102.725 ns/op.
+- [x] Clean suite green with the JMH profile enabled: 563 tests, 0 failures/errors/skips.
 
 ---
 

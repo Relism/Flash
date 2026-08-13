@@ -43,6 +43,7 @@ import java.util.*;
  * <p><b>Thread safety:</b> not thread-safe; one instance per request.
  */
 public final class Multipart {
+    private int partCount;
 
     private static final int BUF_CAP = 8192;
 

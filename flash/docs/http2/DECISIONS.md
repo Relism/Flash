@@ -865,3 +865,22 @@ a fourth per-request view (e.g. an h2 equivalent), extend this same pooled-`rese
 than reintroducing a fresh allocation.
 
 ---
+
+## DEC-24 — Compact the HPACK arena and copy decoded headers into stream-owned storage
+
+**Context.** Dynamic-table entries must be contiguous for cheap indexed lookup, but FIFO eviction
+leaves holes at the front of a bounded arena. Views into that arena also cannot outlive later
+decodes on a multiplexed connection.
+
+**Decision.** Compact live dynamic entries when the free tail cannot hold an insertion. Do not use
+`SegmentedByteView` for wrapped entries or CONTINUATION fragments. At the decoder boundary,
+`HpackHeaderBlock` copies fields into a reusable arena owned by the stream.
+
+**Consequence.** Compaction is occasionally O(table size), bounded by the advertised table size,
+while all ordinary lookups and consumer copies remain contiguous. Stream handlers never observe
+dynamic-table eviction or compaction. The JMH decode benchmark remains at the allocation noise
+floor (0.001 B/op).
+
+**Revisit when.** Profiling shows compaction is material under realistic dynamic-table churn.
+
+---
