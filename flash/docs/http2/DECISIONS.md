@@ -224,15 +224,59 @@ limitation.
 
 ## DEC-09 — The chosen `Http2FrameWriter` design, with its benchmark numbers
 
-**Status.** Not yet decided — this entry is a placeholder until Phase 3 runs its gate. Phase 3
-benchmarks three candidate writer designs ((a) plain `ReentrantLock.lock()` per frame,
-(b) `tryLock()` + intrusive MPSC, (c) a dedicated writer virtual thread fed by an MPSC queue)
-against the numeric gate criteria in the plan (0 B/op and <50 ns overhead at N=1; ≥60% of the
-N=1 per-thread aggregate throughput and <1 ms p999 at N=64; no carrier pinning). This entry is
-filled in with the winning design and the raw numbers when Phase 3 completes, or with the
-failure and the redesign taken if no candidate meets the gate.
+**Context.** Phase 3 is a GO/NO-GO gate: build and benchmark the connection-level serialized
+frame writer, the one genuinely novel architectural risk in this codebase's HTTP/2 work (see
+Part I's "one thread owns the socket" framing). Three candidate designs were built and compared
+against the plan's numeric gate criteria: (a) `plain_lock` — unconditional
+`ReentrantLock.lock()` per frame; (b) `trylock_mpsc` — `tryLock()` fast path with an intrusive
+Vyukov-style MPSC queue fallback; (c) `dedicated_thread` — every write handed off via the same
+MPSC queue to one dedicated, parked/unparked writer thread. A fourth harness,
+`raw_unsynchronized` (no coordination at all — unsafe, not a candidate), establishes the N=1
+baseline the 50 ns budget is measured against.
 
-**Revisit when.** N/A until Phase 3 lands.
+**Options.** (a), (b), (c) as above — full description, JMH methodology, and raw numbers in
+`flash/docs/http2/WRITER.md`.
+
+**Decision.** (b), `trylock_mpsc` — matching the plan's own proposed design. Measured against
+every gate criterion (JDK 21.0.11, JMH 1.37; see `WRITER.md` for the complete methodology
+including its two stated caveats — an in-memory counting sink rather than a real loopback
+socket, and one JMH "op" being a 4 000-write burst rather than a single write):
+
+| Criterion | Result | Verdict |
+|---|---|---|
+| N=1: 0 B/op | 0.0015 B/write differential vs. `raw_unsynchronized`, within measurement noise | PASS |
+| N=1: ≤50 ns overhead vs. raw unsynchronized | 42.6 ns point estimate, ≤47.9 ns at the 99.9% CI's worst case | PASS |
+| N=64: throughput ≥60% of N=1 per-thread rate | 65.5% | PASS |
+| N=64: p999 <1 ms | 11.8–14.2 µs | PASS |
+| No carrier pinning (`-Djdk.tracePinnedThreads=full`) | none observed | PASS |
+| Stress test green at every N ∈ {1,2,8,64,256}, 1000 iterations, incl. parallelism=1 | 10 000/10 000 | PASS |
+
+`plain_lock` was also measured for comparison (not merely asserted inferior): it retains only
+58.1% of its own N=1 throughput at N=64 (below the 60% bar `trylock_mpsc` clears) and its p999
+latency blows up to 1.6–2.0 ms under load — unfair blocking causing tail pile-up, exactly the
+failure mode a naive per-frame lock predicts. `dedicated_thread` has the best tail latency of the
+three (1.5–6.7 µs at N=64) but pays a ~3.3× throughput penalty at N=1, because every write —
+even a genuinely uncontended one — pays a full park/unpark handoff; there is no fast path for
+the dominant "one active writer" case. Neither alternative is a better shipped default than
+`trylock_mpsc`.
+
+**Consequence.** `Http2FrameWriter` ships exactly as designed in the plan: `tryLock()` fast path
+(one uncontended CAS on the overwhelmingly common single-writer case), intrusive MPSC fallback
+under genuine contention (the `WriteIntent` itself is the queue node — zero allocation to
+enqueue), `ReentrantLock` throughout (never `synchronized` — `EX-01`'s carrier-pinning fix
+generalized to the connection writer), and a scan-based write-timeout reaper
+(`Http2Limits.WRITE_TIMEOUT_MS`, 30 s) rather than a per-write `System.nanoTime()` deadline — an
+earlier revision recorded a per-write deadline and this phase's own benchmark is what caught it
+costing enough to threaten the 50 ns budget, which is itself part of why the reaper's
+consecutive-scan design (documented on `Http2FrameWriter.WriteTimeoutReaper`) exists. Phase 4 may
+proceed.
+
+**Revisit when.** Not expected to be revisited — the three-candidate comparison is unlikely to
+change qualitatively unless the JDK's virtual-thread scheduler or `ReentrantLock` implementation
+changes materially. If a future JDK's `synchronized` stops pinning carriers (JEP 491, JDK 24+),
+revisit whether `synchronized`'s simpler semantics become preferable now that its only drawback
+here is removed — but `ReentrantLock` still uniquely offers `tryLock()`, which this design's fast
+path depends on, so the revisit is not expected to change the outcome.
 
 ---
 
@@ -434,3 +478,109 @@ not one), the extraction happens at that point, with a real second shape driving
 instead of a speculative one.
 
 **Revisit when.** Phase 15, when RFC 8441's transport requirements are concrete.
+
+---
+
+## DEC-17 — `FrameWriterBenchmark` lives in `src/jmh/java`, a source root registered only inside the `jmh` profile, not in `src/test/java`
+
+**Context.** The Phase 3 JMH benchmark (`FrameWriterBenchmark`) was first placed directly in
+`src/test/java/dev/relism/flash/h2/frame/`, on the theory recorded in `flash/pom.xml`'s comment
+at the time: since the class carries only `@Benchmark`/JMH annotations and no JUnit annotations,
+Surefire's JUnit-Jupiter engine would simply not select it as a test, so a plain `mvn test` (no
+`-Pjmh`) would harmlessly ignore it. Verifying this assumption (`mvn -pl flash -am clean
+test-compile`, no profile) showed it is false: Surefire's `junit-jupiter` engine performs test
+*discovery* by loading every class under `target/test-classes`, regardless of whether it
+ultimately selects it as a test — and `FrameWriterBenchmark` cannot even compile without
+`jmh-core` on the classpath (it imports `org.openjdk.jmh.annotations.*` unconditionally), so with
+the `jmh` profile inactive the module's test-compile step failed outright: "package
+org.openjdk.jmh.annotations does not exist". A plain `mvn test` on `flash` — the command every
+other phase's DoD, and CI itself, uses to verify "still green" — was broken for the entire
+module, not merely silently skipping the benchmark as intended. This was caught only because
+this phase's resume step re-ran `mvn test` (via the maven-wrapper distribution under
+`~/.m2/wrapper/dists`, not a bare `mvn` on `PATH`) without `-Pjmh`, rather than re-running the
+`-Pjmh`-scoped command the prior session had been using — the same class of gap R10 exists to
+catch, just in the build graph rather than the source graph.
+
+**Options.**
+1. Keep the benchmark in `src/test/java`, and instead exclude it from the default Surefire test
+   set via `<excludes>` in the `maven-surefire-plugin` configuration, re-including it only when
+   `-Pjmh` is active. This still leaves it on the default `test-compile` classpath, so the
+   compile failure would remain — excludes only affect which already-compiled tests Surefire
+   *runs*, not what the compiler plugin *compiles*. Rejected: does not fix the actual failure.
+2. Move it to its own source root, `src/jmh/java`, and register that root as a test-source
+   directory (`build-helper-maven-plugin`'s `add-test-source` goal) only inside the `jmh`
+   profile's `<build>`. With the profile inactive, the file is not handed to the compiler at
+   all, under any goal — not `test-compile`, not IDE indexing driven by the effective POM.
+   This is also what the plan itself already suggested (Phase 3's Files list: `flash/src/jmh/
+   java/dev/relism/flash/h2/FrameWriterBenchmark.java (or a flash-bench submodule...)`) — the
+   prior session's placement in `src/test/java` was itself a deviation from the plan's own
+   suggested layout, not a considered alternative.
+3. A separate `flash-bench` submodule, depending on `flash` and always pulling in JMH. The
+   plan's own text offers this as the other option, rejected for the same reason a `jmh` profile
+   was chosen over it in the first place: a whole extra module (its own `pom.xml`, its own
+   `groupId:artifactId`, its own place in the reactor) for one benchmark class is disproportionate
+   machinery, and it does not obviously fix the underlying problem either — `mvn test` from the
+   repo root still touches every reactor module and would still need the module's own default
+   build to not require JMH.
+
+**Decision.** Option 2 — matching the plan's original suggestion, which is exactly what should
+have been done the first time.
+
+**Consequence.** `mvn -pl flash -am test` (no profile) compiles and runs the ordinary unit/stress
+tests only, exactly as every other phase's DoD assumes, and never touches JMH. `mvn -Pjmh -pl
+flash test-compile` (or any goal at `generate-test-sources` or later, with the profile active)
+additionally compiles `src/jmh/java` into `target/test-classes`, exactly where
+`FrameWriterBenchmark`'s own Javadoc's run instructions already expected it, so that Javadoc
+needed no change. `build-helper-maven-plugin` (`${build.helper.plugin.version}`, `3.6.0`) is a
+new build-time-only dependency of the `flash` module, added to the root `pom.xml`'s
+`<properties>` alongside `jmh.version`, consistent with how every other plugin version in this
+reactor is centralized. No production code changed; this is a build-graph correction only.
+
+**Revisit when.** Not expected to be revisited.
+
+---
+
+## DEC-18 — Phase 17 gains a second, explicitly non-gating category of benchmark: application-level, real-`HttpServer`, showcase/literature-only
+
+**Context.** Raised while wrapping up Phase 3, after reviewing `FrameWriterBenchmark`'s results
+with the project owner. Phase 3's benchmark is deliberately narrow — it exercises only
+`Http2FrameWriter` against an in-memory `CountingSink`, isolating the writer's own lock/queue
+cost from network variance (see `WRITER.md`'s stated caveats). That narrowness is correct for a
+GO/NO-GO *component* gate, but it means nothing in the plan yet produces end-to-end, real-
+`HttpServer` numbers — realistic traffic shapes, or deliberately extreme ones (thousands of
+streams on one connection, pathological header blocks, slow/bursty clients, mixed h1+h2 on one
+listener) — of the kind that make a project's performance claims concrete rather than asserted.
+The project owner wants exactly this: **benchmark-driven development** as an ongoing practice,
+not only a one-time gate, with results available for showcase and literature purposes
+(illustrating real behavior under real and extreme conditions) independent of whether they pass
+or fail anything.
+
+**Options.**
+1. Fold this into Phase 17's existing JMH suite (task 1) and its allocation/latency gates (tasks
+   2–3), i.e. make these new benchmarks part of the same pass/fail pipeline as the rest of
+   Phase 17.
+2. Add it as a distinct, explicitly non-gating task within Phase 17 — same `src/jmh` source root
+   as the Phase 3 writer benchmark, same JMH tooling, but no threshold, no CI wiring, output
+   meant to be read by a human (or quoted in a doc/blog post), not consumed by a pass/fail check.
+
+**Decision.** Option 2, recorded now as a scoped goal for Phase 17 (Phase 17's own Tasks list,
+new task 8) — **not implemented as part of Phase 3 or this decision**. Phase 4 begins immediately
+after this entry with a clean, unrelated scope.
+
+**Consequence.** Phase 17, when it lands, produces two categories of benchmark under `src/jmh`,
+and both must stay distinguishable at a glance (by class name, by package, or by a doc-comment
+banner — decided when Phase 17 is actually implemented): (a) the gating suite — allocation-rate
+and latency-regression checks that fail CI, matching this phase's existing tasks 1–3, run against
+narrow, isolated scenarios exactly like `FrameWriterBenchmark`; and (b) the showcase suite —
+real, end-to-end `HttpServer`/h2-connection scenarios, including deliberately extreme ones, that
+only print results and never gate anything. Keeping (b) non-gating is deliberate: an "extreme
+case" benchmark (e.g. 10 000 streams on one connection) is valuable precisely because it shows
+*how* the system behaves under stress, including graceful degradation — turning that into a
+pass/fail threshold would either be meaningless (no natural "correct" number for a pathological
+case) or would quietly narrow what counts as an "extreme case" down to whatever currently passes.
+
+**Revisit when.** Phase 17 is actually started — at that point this entry's task 8 becomes
+concrete work with its own scenario list, harness design, and output format, rather than a
+recorded intention.
+
+---

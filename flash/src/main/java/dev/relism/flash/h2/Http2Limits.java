@@ -145,4 +145,15 @@ public final class Http2Limits {
      * {@code FlashConfiguration.idleKeepAliveTimeoutMs}.
      */
     public static final long STREAM_IDLE_TIMEOUT_MS = 60_000;
+
+    /**
+     * Maximum time, in milliseconds, {@code Http2FrameWriter} may spend blocked inside a single
+     * socket write. A blocking write is unavoidable when the kernel send buffer is full and the
+     * peer is not reading (that peer holds the connection's single writer lock for the duration
+     * — see {@code WRITER.md}), but it must not be unbounded: a peer that simply stops reading
+     * would otherwise let a single stalled connection wedge the writer forever. Enforced via a
+     * background reaper interrupting the blocked thread past the deadline, not
+     * {@code Socket#setSoTimeout} — that option bounds reads, not writes.
+     */
+    public static final long WRITE_TIMEOUT_MS = 30_000;
 }
