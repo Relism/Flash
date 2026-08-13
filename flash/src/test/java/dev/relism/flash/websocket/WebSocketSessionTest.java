@@ -1,7 +1,7 @@
 package dev.relism.flash.websocket;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.fpr.core.ByteView;
@@ -25,7 +25,7 @@ class WebSocketSessionTest {
 
     @Test
     void request_returnsWhatWasPassedToConstructor() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/chat"), null, viewOf("HTTP/1.1"), new HeaderMap());
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/chat"), null, viewOf("HTTP/1.1"), new Http1HeaderMap());
         Request req = new Request(line, new byte[0]);
         WebSocketSession session = new WebSocketSession(
                 new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), 64, req, false);

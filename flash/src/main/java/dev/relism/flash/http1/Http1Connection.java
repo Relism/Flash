@@ -44,6 +44,9 @@ public final class Http1Connection implements ConnectionProtocol {
         Object routeScratch   = ctx.router().newScratch();
         Object wsRouteScratch = ctx.wsRouter().newScratch();
 
+        // EX-21: one Response per connection, repositioned (never reallocated) per request.
+        Response pooledResponse = new Response(200, ContentType.TEXT_PLAIN);
+
         while (!ctx.stopped().getAsBoolean()) {
             // EX-07: wait for the next request to begin, bounded by the generous
             // idle-keep-alive timeout — sitting idle between keep-alive requests is normal, not
@@ -106,7 +109,7 @@ public final class Http1Connection implements ConnectionProtocol {
             in.setDeadline(System.nanoTime() + ctx.configuration().getBodyReadTimeoutMs() * 1_000_000L);
 
             boolean keepAlive = Http1KeepAlive.isKeepAlive(request);
-            Response response = new Response(200, ContentType.TEXT_PLAIN);
+            Response response = pooledResponse.reset(200, ContentType.TEXT_PLAIN);
 
             RequestHandler handler = ctx.router().route(request, routeScratch);
             if (handler == null) handler = ctx.router().getNotFoundHandler();
@@ -129,6 +132,14 @@ public final class Http1Connection implements ConnectionProtocol {
             Http1ResponseWriter.writeResponse(out, response, request.method(), actuallyKeepAlive,
                     ctx.configuration().isSendDate(), ctx.scratch());
             request.drain();
+            // EX-22/EX-21: these instances are about to be repositioned over the next request (or
+            // dropped, if the connection closes) — poison them in dev mode so any reference the
+            // handler improperly retained (a captured field, an async callback) fails loudly on
+            // its next access instead of silently reading whatever comes next. Only the pooled
+            // Response is recycled: if the handler returned a different instance, that object was
+            // never pooled in the first place and owes nothing back to this connection.
+            request.recycle();
+            if (response == pooledResponse) pooledResponse.recycle();
             in.clearDeadline();
             if (!actuallyKeepAlive) break;
         }

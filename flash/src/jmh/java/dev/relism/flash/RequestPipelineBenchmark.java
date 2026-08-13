@@ -25,15 +25,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Phase 4's zero-alloc contract: "an h1 {@code GET /users/{id}} request that reads three headers
+ * The h1 zero-alloc contract: "an h1 {@code GET /users/{id}} request that reads three headers
  * and one path param must be 0 B/op end to end except for the user-facing {@code String}s the
- * handler explicitly asks for." This benchmark measures the actual current number with
- * {@code -prof gc} — see {@code DECISIONS.md}, {@code DEC-20}, for the honest result and why it
- * is not literally 0 B/op yet: {@code Request}/{@code RequestBody}/{@code RequestLine} are still
- * allocated per request ({@code EX-21}/{@code EX-22}, explicitly Phase 6 scope, not Phase 4's).
- * The two benchmark methods below isolate that cost from Phase 4's own scope (header lookups,
- * path-param extraction, query decoding) by comparing a route with no header/param access against
- * one that performs exactly the access the DoD text describes.
+ * handler explicitly asks for." This benchmark measures the actual number with {@code -prof gc}.
+ * At Phase 4 ({@code DEC-20}) {@code parseAndRoute} measured 120.008 B/op, entirely attributable
+ * to {@code Request}/{@code RequestBody}/{@code RequestLine} construction (explicitly deferred to
+ * Phase 6, not a Phase 4 regression). Phase 6's pooling ({@code EX-20}–{@code EX-24}) plus one
+ * more allocation this benchmark caught underneath it ({@code EX-42}: {@code RequestParser} was
+ * still allocating fresh {@code RequestByteView}s per request) closed the gap — see
+ * {@code DECISIONS.md}, {@code DEC-23}, for the full before/after numbers. {@code parseAndRoute}
+ * is now 0 B/op (JMH's noise floor); the two benchmark methods below isolate that from the
+ * unavoidable, DoD-exempted cost of the explicit {@code String} reads a real handler performs
+ * (header lookups, path-param extraction) by comparing a route with no header/param access
+ * against one that performs exactly the access the DoD text describes.
  *
  * <p>Uses a hand-rolled repeating {@link InputStream} (never allocates, cycles the same request
  * bytes indefinitely) rather than a fresh {@code ByteArrayInputStream}/{@code BufferedByteSource}

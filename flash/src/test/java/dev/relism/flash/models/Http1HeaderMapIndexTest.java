@@ -8,25 +8,25 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code EX-09}: dedicated correctness coverage for {@link HeaderMap}'s per-{@code reset()}
+ * {@code EX-09}: dedicated correctness coverage for {@link Http1HeaderMap}'s per-{@code reset()}
  * index — duplicate names, case variation, zero headers, and growth past the initial index
  * capacity up to {@code Http1Limits.MAX_HEADER_COUNT}. {@link HeaderMapTest} already covers the
  * ordinary lookup/forEach contract; this class targets the index machinery specifically.
  */
-class HeaderMapIndexTest {
+class Http1HeaderMapIndexTest {
 
-    private static HeaderMap parse(String... headers) {
+    private static Http1HeaderMap parse(String... headers) {
         StringBuilder sb = new StringBuilder();
         for (String h : headers) sb.append(h).append("\r\n");
         byte[] buffer = sb.toString().getBytes(StandardCharsets.UTF_8);
-        HeaderMap map = new HeaderMap();
+        Http1HeaderMap map = new Http1HeaderMap();
         map.reset(buffer, 0, buffer.length);
         return map;
     }
 
     @Test
     void zeroHeaders_everyLookupIsEmpty() {
-        HeaderMap map = parse();
+        Http1HeaderMap map = parse();
         assertNull(map.first("Host"));
         assertTrue(map.all("Host").isEmpty());
         assertTrue(map.all().isEmpty());
@@ -36,14 +36,14 @@ class HeaderMapIndexTest {
 
     @Test
     void duplicateHeaderNames_firstReturnsTheFirstOne_allReturnsAllInOrder() {
-        HeaderMap map = parse("X-Trace: a", "X-Trace: b", "X-Trace: c");
+        Http1HeaderMap map = parse("X-Trace: a", "X-Trace: b", "X-Trace: c");
         assertEquals("a", map.first("X-Trace"));
         assertEquals(List.of("a", "b", "c"), map.all("X-Trace"));
     }
 
     @Test
     void caseVariation_indexHashAndCompareBothIgnoreCase() {
-        HeaderMap map = parse("X-Custom-Header: value1");
+        Http1HeaderMap map = parse("X-Custom-Header: value1");
         assertEquals("value1", map.first("x-custom-header"));
         assertEquals("value1", map.first("X-CUSTOM-HEADER"));
         assertEquals("value1", map.first("X-cUsToM-hEaDeR"));
@@ -52,7 +52,7 @@ class HeaderMapIndexTest {
     @Test
     void similarButDistinctNames_doNotCollideInTheIndex() {
         // Names sharing a hash-prefix-adjacent shape must still resolve independently.
-        HeaderMap map = parse("Accept: a", "Accept-Encoding: b", "Accept-Language: c");
+        Http1HeaderMap map = parse("Accept: a", "Accept-Encoding: b", "Accept-Language: c");
         assertEquals("a", map.first("Accept"));
         assertEquals("b", map.first("Accept-Encoding"));
         assertEquals("c", map.first("Accept-Language"));
@@ -63,7 +63,7 @@ class HeaderMapIndexTest {
         int n = dev.relism.flash.http.Http1Limits.MAX_HEADER_COUNT;
         String[] headers = new String[n];
         for (int i = 0; i < n; i++) headers[i] = "X-Header-" + i + ": value-" + i;
-        HeaderMap map = parse(headers);
+        Http1HeaderMap map = parse(headers);
 
         assertEquals("value-0", map.first("X-Header-0"));
         assertEquals("value-" + (n - 1), map.first("X-Header-" + (n - 1)));
@@ -73,7 +73,7 @@ class HeaderMapIndexTest {
 
     @Test
     void reset_rebuildsIndexFromScratch_noStaleEntriesFromPreviousRequest() {
-        HeaderMap map = parse("Host: first-request");
+        Http1HeaderMap map = parse("Host: first-request");
         assertEquals("first-request", map.first("Host"));
         assertNull(map.first("X-Only-In-Second"));
 
@@ -88,7 +88,7 @@ class HeaderMapIndexTest {
     void repeatedResetsAcrossVaryingHeaderCounts_shrinkAndGrowSafely() {
         // A connection whose successive keep-alive requests have very different header counts
         // must never see stale entries from a larger previous request bleed into a smaller one.
-        HeaderMap map = new HeaderMap();
+        Http1HeaderMap map = new Http1HeaderMap();
         for (int round = 0; round < 5; round++) {
             int n = (round % 2 == 0) ? 20 : 2;
             String[] headers = new String[n];
@@ -109,7 +109,7 @@ class HeaderMapIndexTest {
         // re-trigger index growth (Arrays.copyOf inside ensureIndexCapacity) after the first
         // reset() has already sized the arrays for this header count — asserted by identity: the
         // backing array references must be the exact same objects before and after 100k lookups.
-        HeaderMap map = parse("A: 1", "B: 2", "C: 3", "D: 4");
+        Http1HeaderMap map = parse("A: 1", "B: 2", "C: 3", "D: 4");
         int[] namesBefore = arrayFieldValue(map, "nameOffsets");
 
         for (int i = 0; i < 100_000; i++) {
@@ -124,11 +124,11 @@ class HeaderMapIndexTest {
 
     @Test
     void view_poolWraparound_aliasesAnEarlierReturnedView() {
-        // EX-05's documented hazard, demonstrated through the actual public API: HeaderMap's
+        // EX-05's documented hazard, demonstrated through the actual public API: Http1HeaderMap's
         // view() pool is sized 4 (VIEW_POOL_SIZE); a 5th call in the same request wraps around
         // and silently repositions the object the 1st call returned.
         dev.relism.fpr.core.ByteView v1 = null;
-        HeaderMap map = parse("A: 1", "B: 2", "C: 3", "D: 4", "E: 5");
+        Http1HeaderMap map = parse("A: 1", "B: 2", "C: 3", "D: 4", "E: 5");
         for (String name : new String[]{"A", "B", "C", "D"}) {
             dev.relism.fpr.core.ByteView v = map.view(name);
             if (v1 == null) v1 = v;
@@ -139,9 +139,9 @@ class HeaderMapIndexTest {
         assertEquals('5', v1.byteAt(0)); // v1 is now silently "E"'s value, not "A"'s
     }
 
-    private static int[] arrayFieldValue(HeaderMap map, String fieldName) {
+    private static int[] arrayFieldValue(Http1HeaderMap map, String fieldName) {
         try {
-            var field = HeaderMap.class.getDeclaredField(fieldName);
+            var field = Http1HeaderMap.class.getDeclaredField(fieldName);
             field.setAccessible(true);
             return (int[]) field.get(map);
         } catch (ReflectiveOperationException e) {

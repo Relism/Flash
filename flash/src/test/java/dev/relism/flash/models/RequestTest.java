@@ -26,7 +26,7 @@ class RequestTest {
 
     @Test
     void request_creationAndAccessors() {
-        HeaderMap headers = new HeaderMap();
+        Http1HeaderMap headers = new Http1HeaderMap();
         RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/path"), viewOf("q=1"), viewOf("HTTP/1.1"), headers);
         byte[] body = "body".getBytes(StandardCharsets.UTF_8);
 
@@ -43,7 +43,7 @@ class RequestTest {
     @Test
     void header_delegatesToRequestLine() {
         byte[] buffer = "Host: localhost\r\n".getBytes(StandardCharsets.UTF_8);
-        HeaderMap headers = new HeaderMap();
+        Http1HeaderMap headers = new Http1HeaderMap();
         headers.reset(buffer, 0, buffer.length);
         RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), headers);
         Request r = new Request(line, new byte[0]);
@@ -57,7 +57,7 @@ class RequestTest {
 
     @Test
     void param_lazyGet() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap());
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new Http1HeaderMap());
         Request r = new Request(line, new byte[0]);
 
         assertNull(r.param("id"));
@@ -70,7 +70,7 @@ class RequestTest {
 
     @Test
     void query_lazyGet_fromQueryString() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), viewOf("a=1&b=2&b=3"), viewOf("HTTP/1.1"), new HeaderMap());
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), viewOf("a=1&b=2&b=3"), viewOf("HTTP/1.1"), new Http1HeaderMap());
         Request r = new Request(line, new byte[0]);
 
         assertEquals("1", r.query("a"));
@@ -80,7 +80,7 @@ class RequestTest {
 
     @Test
     void query_lazyGet_nullQueryString() {
-        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new HeaderMap());
+        RequestLine line = new RequestLine(HttpMethod.GET, viewOf("/"), null, viewOf("HTTP/1.1"), new Http1HeaderMap());
         Request r = new Request(line, new byte[0]);
 
         assertNull(r.query("a"));

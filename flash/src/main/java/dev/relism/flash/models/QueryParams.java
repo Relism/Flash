@@ -42,7 +42,7 @@ public class QueryParams {
      * Returns a view over the first raw (not percent-decoded) value of {@code name}, or
      * {@code null}. {@code EX-05}: drawn from a small internal {@link SlicePool} when
      * {@link #raw} is array-backed (always true for h1 today) instead of allocated per call —
-     * same reuse-window contract as {@link HeaderMap#view}: valid until either the request ends
+     * same reuse-window contract as {@link Http1HeaderMap#view}: valid until either the request ends
      * or {@link #view} is called {@value #VIEW_POOL_SIZE} more times on this instance, whichever
      * comes first. Falls back to a fresh (allocating) view when {@link #raw} is not array-backed
      * — never exercised on the real request path (see {@link ArrayBackedByteView}'s Javadoc).

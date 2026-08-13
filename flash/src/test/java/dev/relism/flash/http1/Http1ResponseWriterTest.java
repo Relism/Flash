@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -132,5 +133,53 @@ class Http1ResponseWriterTest {
         Response response = new Response(200, "x", ContentType.TEXT_PLAIN);
         String raw = write(response, HttpMethod.GET, false, false);
         assertTrue(raw.contains("Connection: close\r\n"), raw);
+    }
+
+    // --- EX-27: one bulk write for a small fixed body -----------------------------
+
+    /** Counts calls to {@code write(byte[], int, int)} — the only overload {@link Http1ResponseWriter} uses. */
+    private static final class CountingOutputStream extends java.io.OutputStream {
+        final ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        int arrayWriteCalls;
+
+        @Override public void write(int b) { sink.write(b); }
+
+        @Override
+        public void write(byte[] b, int off, int len) {
+            arrayWriteCalls++;
+            sink.write(b, off, len);
+        }
+    }
+
+    @Test
+    void smallFixedBody_isWrittenInExactlyOneCall() throws IOException {
+        CountingOutputStream out = new CountingOutputStream();
+        Response response = new Response(200, "hello world", ContentType.TEXT_PLAIN);
+        Http1ResponseWriter.writeResponse(out, response, HttpMethod.GET, true, false, scratch());
+
+        assertEquals(1, out.arrayWriteCalls, "head + small body must leave in a single write() call");
+        assertTrue(out.sink.toString(StandardCharsets.UTF_8).endsWith("hello world"));
+    }
+
+    @Test
+    void bodyAboveInlineThreshold_isWrittenInTwoCalls() throws IOException {
+        CountingOutputStream out = new CountingOutputStream();
+        byte[] bigBody = new byte[dev.relism.flash.http.Http1Limits.INLINE_BODY_THRESHOLD + 1];
+        Arrays.fill(bigBody, (byte) 'x');
+        Response response = new Response(200, bigBody, ContentType.BINARY);
+        Http1ResponseWriter.writeResponse(out, response, HttpMethod.GET, true, false, scratch());
+
+        assertEquals(2, out.arrayWriteCalls, "head and an over-threshold body are written separately");
+        assertTrue(out.sink.toString(StandardCharsets.UTF_8).endsWith("x".repeat(bigBody.length)));
+    }
+
+    @Test
+    void headResponse_stillOneCall_noBodyBytes() throws IOException {
+        CountingOutputStream out = new CountingOutputStream();
+        Response response = new Response(200, "hello world", ContentType.TEXT_PLAIN);
+        Http1ResponseWriter.writeResponse(out, response, HttpMethod.HEAD, true, false, scratch());
+
+        assertEquals(1, out.arrayWriteCalls);
+        assertFalse(out.sink.toString(StandardCharsets.UTF_8).contains("hello world"));
     }
 }

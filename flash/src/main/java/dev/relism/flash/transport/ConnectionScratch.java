@@ -1,5 +1,7 @@
 package dev.relism.flash.transport;
 
+import dev.relism.flash.bytes.ByteWriter;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -36,14 +38,19 @@ public final class ConnectionScratch {
     /** Matches the relay-buffer size the {@code ThreadLocal} it replaces used. */
     public static final int RELAY_BUFFER_SIZE = 8192;
 
-    /** Large enough for the decimal digits of any {@code long}, including a sign. */
-    public static final int DECIMAL_BUFFER_SIZE = 20;
-
-    /** Scratch for {@code Http1ResponseWriter}'s decimal (status code / Content-Length) encoding. */
-    public final byte[] decimalBuffer = new byte[DECIMAL_BUFFER_SIZE];
+    /** Initial capacity for {@link #responseHead}; grows on demand like any {@link ByteWriter}. */
+    public static final int RESPONSE_HEAD_INITIAL_SIZE = 1024;
 
     /** Scratch for relaying a streaming or chunked response body without allocating per response. */
     public final byte[] relayBuffer = new byte[RELAY_BUFFER_SIZE];
+
+    /**
+     * {@code EX-27}: the scratch {@code Http1ResponseWriter} serializes a whole response head
+     * (status line, {@code Content-Type}, {@code Date}, custom headers, {@code Content-Length}/
+     * {@code Connection}, and — for small fixed bodies — the body itself) into before issuing a
+     * single bulk {@code write()}, instead of ~10 small {@code OutputStream.write} calls.
+     */
+    public final ByteWriter responseHead = new ByteWriter(RESPONSE_HEAD_INITIAL_SIZE);
 
     /** Scratch for the WebSocket handshake's {@code Sec-WebSocket-Accept} SHA-1 digest. */
     public final MessageDigest sha1;
@@ -60,9 +67,9 @@ public final class ConnectionScratch {
     /** Called by {@link ScratchPool} before handing a reused instance to a new connection. */
     void reset() {
         sha1.reset();
-        // decimalBuffer/relayBuffer need no clearing: every reader of either only ever reads
-        // back exactly the region the immediately preceding writer just wrote (writeLong fills
-        // from the end backward and reports its own start position; relay() reports its own
-        // fill length), so stale bytes from a previous connection are never observed.
+        responseHead.reset();
+        // relayBuffer needs no clearing: every reader only ever reads back exactly the region
+        // the immediately preceding relay() call reports it filled, so stale bytes from a
+        // previous connection are never observed.
     }
 }

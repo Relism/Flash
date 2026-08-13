@@ -94,6 +94,13 @@ class ByteWriterTest {
     }
 
     @Test
+    void writeAscii_preservesCase() {
+        ByteWriter w = new ByteWriter(4);
+        w.writeAscii("Content-TYPE");
+        assertEquals("Content-TYPE", asString(w));
+    }
+
+    @Test
     void writeUInt16_bigEndian() {
         ByteWriter w = new ByteWriter(4);
         w.writeUInt16(0x1234);

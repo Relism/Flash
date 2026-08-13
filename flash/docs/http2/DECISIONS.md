@@ -765,3 +765,103 @@ or `FrameWriteBuffer` are ever modified in a way that could plausibly affect the
 profile.
 
 ---
+
+## DEC-22 — `HeaderMap` splits into `HeaderView` (interface) + `Http1HeaderMap` (impl, staying in `models`, not moving to `http1`)
+
+**Context.** Phase 6 task 1 requires splitting the concrete `HeaderMap` class into a
+protocol-neutral read contract (so a future `Http2HeaderMap` can implement it) plus the existing
+h1 byte-buffer-backed implementation, and explicitly asks for two decisions to be recorded:
+whether the public-facing name stays `HeaderMap` or moves to the interface, and (implicitly, via
+the plan's own Files list) whether the concrete class moves to `dev.relism.flash.http1`.
+
+**Decision 1 — naming.** Checked whether `HeaderMap` is actually part of `Request`'s public
+surface first, since the task's hard constraint is "the public API of `Request` must not
+change": `Request`'s own methods (`header`, `headers`, `param`, `query`) return `String`/
+`List<String>`, never a `HeaderMap`/`HeaderView` — the only exposure is the transitive,
+Javadoc'd-as-"Internal" `Request.getRequestLine().getHeaders()` path. Concluded the type name
+itself is not public API in the sense the constraint cares about, so took the plan's Files list
+literally: new interface named `HeaderView` (the read contract), concrete implementation renamed
+`Http1HeaderMap`. `RequestLine.headers` (and its Lombok-generated `getHeaders()`) is now typed
+`HeaderView`.
+
+**Decision 2 — package placement.** The plan's Files list suggests `http1/Http1HeaderMap.java`.
+Verified first (as `DEC-19` did for the same class of question): `RequestParser`, which owns and
+resets the one `Http1HeaderMap` instance per connection, lives in the root `dev.relism.flash`
+package, not `http1`. `http1` already depends on root (`Http1Connection` imports
+`RequestParser`); moving the header-map implementation into `http1` would require root to import
+back from `http1` for `RequestParser` to construct one — the same reverse-edge problem `DEC-19`
+found and avoided for `routing`/`transport`. Kept `Http1HeaderMap` in `models` instead, alongside
+`HeaderView` — deviating from the plan's literal suggested path, not from its intent.
+
+**Consequence.** `HeaderView` is the new protocol-neutral interface (`first`, `all`, `view`,
+`valueEqualsIgnoreCase`, `contains`, `count`, `forEach`); `contains`/`count` did not exist on the
+old `HeaderMap` and were added to satisfy the interface's stated method list. `Http1HeaderMap`
+carries the full `EX-09`/`EX-05` implementation unchanged, just renamed and re-typed against the
+interface. Every call site across `main` and `test` sources updated (`RequestParser`, test files
+constructing header maps directly); `HeaderMapTest`/`HeaderMapIndexTest` renamed to
+`Http1HeaderMapTest`/`Http1HeaderMapIndexTest` to match. 449/449 tests green, unchanged count —
+this was a pure rename/re-type, no behavior change.
+
+**Revisit when.** Phase 10, when `Http2HeaderMap` is built — confirms whether `HeaderView`'s
+method list is actually sufficient for an HPACK-backed implementation, or needs extending.
+
+---
+
+## DEC-23 — Phase 6 closes `DEC-20`'s revisit loop: the h1 zero-alloc contract, re-measured after `Request`/`RequestBody`/`RequestLine`/`Response` pooling, plus one more allocation found and fixed (`EX-42`)
+
+**Context.** `DEC-20` (Phase 4) measured `RequestPipelineBenchmark.parseAndRoute` at 120.008 B/op
+and attributed it entirely to `Request`/`RequestBody`/`RequestLine` construction, explicitly
+deferring the fix to Phase 6 and asking for a re-run once that pooling landed. Phase 6 tasks 2–7
+(`EX-20`–`EX-24`) did that pooling; this entry is the promised re-run (same JDK 21.0.11, JMH 1.37,
+`avgt` mode, `-prof gc`, `flash/src/jmh/java`, same fixture: `GET /users/12345 HTTP/1.1` with
+`Host`/`Accept`/`Authorization`).
+
+**First re-run, after `EX-20`–`EX-24` alone:**
+
+| | ns/op | B/op |
+|---|---|---|
+| `parseAndRoute` | 1194.105 ± 944.469 | 48.008 |
+| `parseRouteAndExtractThreeFields` | 1324.679 ± 296.883 | 232.009 |
+
+Down from 120.008 to 48.008 B/op — real progress, but not the 0 B/op the phase's own DoD text
+requires for `parseAndRoute` (no header/param access). Investigated rather than accepted: reading
+`RequestParser.parse` line by line turned up three `new FastPathViews.RequestByteView(...)`
+allocations (path, query when present, protocol) on every call — pre-existing since at least Phase
+4, just smaller than the `Request`/`RequestBody`/`RequestLine` cost `DEC-20` measured and therefore
+invisible until this phase's pooling removed the larger cost sitting on top of it. Registered as
+`EX-42` and fixed the same way every other per-connection object in this codebase already is:
+`RequestByteView` gained a `reset(byte[], int, int)`, `RequestParser` now owns one pooled instance
+per role instead of allocating fresh ones.
+
+**Second re-run, after `EX-42`:**
+
+| | ns/op | B/op |
+|---|---|---|
+| `parseAndRoute` | 1111.260 ± 104.692 | 0.008 |
+| `parseRouteAndExtractThreeFields` | 1301.840 ± 228.068 | 184.009 |
+
+`parseAndRoute` — 0.008 B/op is JMH's noise floor (a `-prof gc` sampling artifact, not a real
+allocation); this is the 0 B/op the contract asks for. `parseRouteAndExtractThreeFields` dropped
+from 232.009 to 184.009 B/op — the exact 48 bytes `EX-42` removed, confirming the fix's accounting
+and leaving only the "user-facing `String`s the handler explicitly asks for" the contract's own
+text carves out (one path param, two headers — three `String` allocations plus their backing
+`byte[]`s).
+
+**Decision.** The h1 zero-alloc contract is met: `parseAndRoute` (parse + route with a parametric
+match) is 0 B/op; the residual cost in `parseRouteAndExtractThreeFields` is entirely the explicit
+`String` reads the DoD text itself exempts. `DEC-20`'s revisit item is closed.
+
+**Consequence.** `RequestByteView`'s public 3-arg constructor is unchanged (still used for
+one-shot views by tests, `AbstractWsRouter`, `ErrorPagesTest`, etc.) — only `RequestParser`'s three
+call sites moved to the pooled `reset()` path. `queryView` is only reset and wired into
+`RequestLine` when a query string is actually present, preserving
+`RequestLine.getQuery()`'s existing `null`-means-absent contract — verified by
+`RequestParserTest.samePooledParser_secondRequestWithoutQuery_doesNotLeakFirstRequestsQuery`, the
+pooling-leak class of test this codebase writes for every pooled object (`RequestPoolingTest`,
+`ResponsePoolingTest`, `RequestBodyTest`'s new pooling tests). 500/500 tests green.
+
+**Revisit when.** Never expected to — this closes the loop `DEC-20` opened. If a future phase adds
+a fourth per-request view (e.g. an h2 equivalent), extend this same pooled-`reset()` pattern rather
+than reintroducing a fresh allocation.
+
+---

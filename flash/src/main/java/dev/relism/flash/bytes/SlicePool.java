@@ -3,10 +3,10 @@ package dev.relism.flash.bytes;
 /**
  * A small, fixed-size ring of {@link PooledSlice} instances — one per {@code ConnectionScratch}-
  * held call site that used to allocate a fresh {@code ByteView} per call ({@code EX-05}:
- * {@code HeaderMap.view}, {@code QueryParams.view}, {@code PathParams.view}).
+ * {@code Http1HeaderMap.view}, {@code QueryParams.view}, {@code PathParams.view}).
  *
  * <h3>Why a ring, not a single reused slice</h3>
- * A single reused slice (the shape {@code HeaderMap.forEach} already uses for its two
+ * A single reused slice (the shape {@code Http1HeaderMap.forEach} already uses for its two
  * {@code nameSlice}/{@code valueSlice} fields) is correct only when the caller is guaranteed to
  * finish with one slice before the next is produced — true for a single {@code forEach} callback
  * invocation, false for {@code view()}: a handler might reasonably call
@@ -18,7 +18,7 @@ package dev.relism.flash.bytes;
  * is called {@code size} more times on the same pool (at which point the ring has wrapped around
  * and repositioned that same slot for a new caller) — whichever comes first. This must be
  * restated precisely on every method that hands out a slice from a pool (see
- * {@code HeaderMap.view}'s Javadoc for the canonical wording); it is a real, testable hazard, not
+ * {@code Http1HeaderMap.view}'s Javadoc for the canonical wording); it is a real, testable hazard, not
  * a hypothetical one — see {@code SlicePoolTest#wraparoundAliasesThePreviouslyReturnedSlice} for
  * a demonstration.
  */

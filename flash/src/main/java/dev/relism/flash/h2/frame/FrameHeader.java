@@ -9,7 +9,7 @@ package dev.relism.flash.h2.frame;
  * <h3>Lifetime contract</h3>
  * Valid only until the next {@link Http2FrameReader#readFrame()}/{@code consumeFrame()} call on
  * the same reader — same "do not retain past the handler" rule the rest of this codebase's
- * buffer-backed flyweights (`HeaderMap`, `WebSocketFrame`) already document. The payload bytes
+ * buffer-backed flyweights (`Http1HeaderMap`, `WebSocketFrame`) already document. The payload bytes
  * are also transient: whatever layer needs to retain a DATA frame's payload past this window
  * must copy it out (R3 — the connection read buffer is shared, single-threaded, and reused).
  *

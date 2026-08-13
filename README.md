@@ -260,6 +260,46 @@ that got the request this far has already completed, never a forced handshake.
 `WebSocketSession` mirrors this exactly (`isSecure()`, `sslSession()`) by delegating to the
 upgrading `Request` — no separate TLS state is tracked for WS.
 
+## Object lifetime
+
+`Request` and `Response` are **pooled per connection**, not allocated per request: one instance is
+created per connection and repositioned (`reset()`) over each new request/response in turn — the
+same idiom Java NIO buffers use, applied to the whole request/response model
+(`flash/docs/http2/MESSAGE-MODEL.md` has the full design record). This is what makes a warm h1
+request/response cycle 0 B/op.
+
+**Do not retain a `Request` or `Response` past the handler that received it.** A reference kept in
+a field, a captured closure, a `CompletableFuture` continuation, or a background thread and read
+*after* the handler returns will observe whatever the *next* request on that connection
+repositioned the same instance to — not the request you thought you had:
+
+```java
+// WRONG — captures `req`, reads it after the handler has returned
+app.get("/slow", (req, res) -> {
+    CompletableFuture.runAsync(() -> log(req.header("X-Trace-Id"))); // may log the NEXT request's header
+    return "ok";
+});
+```
+
+Copy out whatever you need before returning or handing work off asynchronously — every accessor
+that returns a `String` (`header`, `param`, `query`, `path`, …) gives you an independent heap copy
+that's safe to keep as long as you like:
+
+```java
+app.get("/slow", (req, res) -> {
+    String traceId = req.header("X-Trace-Id");             // copy now, safe to retain
+    CompletableFuture.runAsync(() -> log(traceId));
+    return "ok";
+});
+```
+
+Run with `-Dflash.env=dev` and a use-after-return access throws `IllegalStateException` immediately
+at the offending call site instead of silently reading the wrong request's data — turn this on in
+tests and local development. It's a no-op in production beyond a single `boolean` field read.
+
+`req.body()`/`RequestBody` follows the same rule — materialise (`.bytes()`) or fully consume
+(`.stream()`) it inside the handler; don't stash the `RequestBody` itself for later.
+
 ## Architecture
 
 ```

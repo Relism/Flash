@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
  *
  * <h3>Lifetime and thread-safety contract</h3>
  * Not thread-safe — exactly one writer at a time, matching every other per-connection scratch
- * object in this codebase ({@code ConnectionScratch}, {@code HeaderMap}). {@link #reset()}
+ * object in this codebase ({@code ConnectionScratch}, {@code Http1HeaderMap}). {@link #reset()}
  * repositions this writer to the start of its backing array for the next message; the backing
  * array itself is never shrunk back down, only grown — the same amortized-to-zero-allocation
  * growth policy {@code RequestParser}'s read buffer already uses.
@@ -120,6 +120,21 @@ public final class ByteWriter {
             char c = s.charAt(i);
             if (c >= 'A' && c <= 'Z') c += 32;
             buf[len++] = (byte) c;
+        }
+    }
+
+    /**
+     * Writes {@code s}'s ASCII bytes, case preserved. {@code s} must be ASCII-only. Unlike
+     * {@code new String(...).getBytes(UTF_8)}, writes each character directly into this
+     * writer's buffer — no intermediate {@code byte[]} ({@code EX-20}: this is what lets
+     * {@code Response.header(String, String)} avoid the {@code StringBuilder}+concat+
+     * {@code getBytes} allocation chain it used to pay per call).
+     */
+    public void writeAscii(String s) {
+        int n = s.length();
+        ensure(n);
+        for (int i = 0; i < n; i++) {
+            buf[len++] = (byte) s.charAt(i);
         }
     }
 

@@ -21,12 +21,12 @@ import java.nio.charset.StandardCharsets;
  * actual param count, that path uses {@link #reset}, which — unlike the constructor — takes the
  * live count explicitly rather than inferring it from array length. Both this constructor and
  * {@link #reset} are {@code public} rather than package-private (matching
- * {@link HeaderMap#reset}'s own precedent for a reusable buffer-backed object): the router
+ * {@link Http1HeaderMap#reset}'s own precedent for a reusable buffer-backed object): the router
  * implementation that owns the reusable instance lives in a different package
  * ({@code dev.relism.flash.routing.routers.fastpathrouter}), and {@code PathParams.inject}'s
  * own doc explains why this codebase prefers a small public surface here over a cross-package
  * friend-access workaround. A {@code PathParams} obtained this way has the same "do not retain
- * past the handler" lifetime contract as {@link HeaderMap}'s buffer-backed views: the next
+ * past the handler" lifetime contract as {@link Http1HeaderMap}'s buffer-backed views: the next
  * request on the same connection repositions the same arrays.
  */
 public class PathParams {
@@ -99,7 +99,7 @@ public class PathParams {
     /**
      * Returns a zero-copy view over path param {@code name}, or {@code null}. {@code EX-05}:
      * drawn from a small internal {@link SlicePool} when {@link #source} is array-backed (always
-     * true for h1 today) — same reuse-window contract as {@link HeaderMap#view}. Falls back to a
+     * true for h1 today) — same reuse-window contract as {@link Http1HeaderMap#view}. Falls back to a
      * fresh (allocating) view otherwise — never exercised on the real request path.
      */
     ByteView view(String name) {

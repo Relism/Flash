@@ -15,8 +15,9 @@ class ScratchPoolTest {
         ConnectionScratch scratch = pool.acquire();
         assertNotNull(scratch);
         assertNotNull(scratch.sha1);
-        assertEquals(ConnectionScratch.DECIMAL_BUFFER_SIZE, scratch.decimalBuffer.length);
         assertEquals(ConnectionScratch.RELAY_BUFFER_SIZE, scratch.relayBuffer.length);
+        assertNotNull(scratch.responseHead);
+        assertEquals(0, scratch.responseHead.length());
     }
 
     @Test

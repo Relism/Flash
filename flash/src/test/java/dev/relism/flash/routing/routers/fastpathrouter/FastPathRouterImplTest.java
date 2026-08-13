@@ -1,7 +1,7 @@
 package dev.relism.flash.routing.routers.fastpathrouter;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.RequestLine;
@@ -23,7 +23,7 @@ class FastPathRouterImplTest {
         RequestLine line = new RequestLine(
                 method, pathView, null,
                 new FastPathViews.RequestByteView("HTTP/1.1".getBytes(StandardCharsets.UTF_8), 0, 8),
-                new HeaderMap()
+                new Http1HeaderMap()
         );
         return new Request(line, new byte[0]);
     }

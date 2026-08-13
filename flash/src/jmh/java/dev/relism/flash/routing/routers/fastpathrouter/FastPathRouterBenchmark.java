@@ -85,7 +85,7 @@ public class FastPathRouterBenchmark {
         dev.relism.flash.models.RequestLine line = new dev.relism.flash.models.RequestLine(
                 method, pathView, null,
                 new FastPathViews.RequestByteView("HTTP/1.1".getBytes(StandardCharsets.UTF_8), 0, 8),
-                new dev.relism.flash.models.HeaderMap()
+                new dev.relism.flash.models.Http1HeaderMap()
         );
         return new Request(line, new byte[0]);
     }

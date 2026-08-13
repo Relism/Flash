@@ -134,4 +134,35 @@ class ResponseTest {
     void getHeaders_emptyWhenNoneAdded() {
         assertTrue(new Response(200, new byte[0], ContentType.TEXT_PLAIN).getHeaders().isEmpty());
     }
+
+    // --- EX-43: response header budget (Phase 6 zero-alloc DoD) ---
+
+    @Test
+    void header_exceedingMaxCount_throws() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        for (int i = 0; i < dev.relism.flash.http.Http1Limits.MAX_RESPONSE_HEADER_COUNT; i++) {
+            r.header("X-" + i, "v");
+        }
+        assertThrows(IllegalStateException.class, () -> r.header("one-too-many", "v"));
+    }
+
+    @Test
+    void header_exceedingMaxRegionBytes_throws() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        String bigValue = "v".repeat(1024);
+        assertThrows(IllegalStateException.class, () -> {
+            // Each call adds ~1024 bytes; comfortably crosses MAX_RESPONSE_HEADER_BYTES well
+            // before MAX_RESPONSE_HEADER_COUNT would trigger first.
+            for (int i = 0; i < dev.relism.flash.http.Http1Limits.MAX_RESPONSE_HEADER_COUNT; i++) {
+                r.header("X-" + i, bigValue);
+            }
+        });
+    }
+
+    @Test
+    void header_withinBudget_stillWorksNormally() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        r.header("X-Foo", "bar");
+        assertEquals(1, r.getHeaders().size());
+    }
 }

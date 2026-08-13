@@ -3,7 +3,7 @@ package dev.relism.flash.bytes;
 /**
  * The allocation-free idiom for returning two {@code int}s from a method without an object:
  * pack both into one {@code long}, unpack at the call site. Already used, hand-rolled, in four
- * places ({@code HeaderMap.findFirst}, {@code QueryParams.findFirst}, and others) before this
+ * places ({@code Http1HeaderMap.findFirst}, {@code QueryParams.findFirst}, and others) before this
  * class existed — this is the single named home for the shifts so they are not duplicated (and
  * potentially inconsistently duplicated — e.g. one copy masking with {@code 0xFFFFFFFFL} and
  * another forgetting to) five times over.

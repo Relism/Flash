@@ -4,8 +4,9 @@ import dev.relism.flash.bytes.ByteScan;
 import dev.relism.flash.exceptions.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
+import dev.relism.flash.models.RequestBody;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
 import dev.relism.flash.transport.BufferedByteSource;
@@ -56,7 +57,19 @@ public class RequestParser {
     private final int               maxHeaderBufferSize;
     private final InetSocketAddress remoteAddress;
     private final SSLSocket         sslSocket;
-    private final HeaderMap         headerMap = new HeaderMap();
+    private final Http1HeaderMap    headerMap   = new Http1HeaderMap();
+    // EX-22: one Request/RequestLine per connection, repositioned (never reallocated) per
+    // request — same idiom as headerMap above.
+    private final RequestLine       requestLine = new RequestLine();
+    private final Request           request     = new Request();
+    private final RequestBody       requestBody = new RequestBody();
+    // EX-42: one pooled RequestByteView per role, repositioned (never reallocated) per request —
+    // closes the last per-request allocation left after EX-20..EX-24 pooled Request/RequestBody/
+    // RequestLine/Response themselves. queryView is only reset and used when a query string is
+    // actually present; RequestLine.getQuery() must keep returning null otherwise (see reset()).
+    private final FastPathViews.RequestByteView pathView     = new FastPathViews.RequestByteView(null, 0, 0);
+    private final FastPathViews.RequestByteView queryView    = new FastPathViews.RequestByteView(null, 0, 0);
+    private final FastPathViews.RequestByteView protocolView = new FastPathViews.RequestByteView(null, 0, 0);
     private byte[] buffer;
 
     // Unconsumed bytes belonging to the NEXT request.
@@ -154,11 +167,8 @@ public class RequestParser {
         if (pathEnd == -1) throw new MalformedRequestException(400, "Invalid request line (path)");
 
         int queryMark = ByteScan.indexOf(buffer, pathStart, pathEnd, (byte) '?');
-        FastPathViews.RequestByteView pathView = new FastPathViews.RequestByteView(buffer, pathStart,
-                queryMark != -1 ? queryMark - pathStart : pathEnd - pathStart);
-        FastPathViews.RequestByteView queryView = queryMark != -1
-                ? new FastPathViews.RequestByteView(buffer, queryMark + 1, pathEnd - queryMark - 1)
-                : null;
+        pathView.reset(buffer, pathStart, queryMark != -1 ? queryMark - pathStart : pathEnd - pathStart);
+        if (queryMark != -1) queryView.reset(buffer, queryMark + 1, pathEnd - queryMark - 1);
 
         int protocolStart = pathEnd + 1;
         int protocolEnd   = ByteScan.indexOf(buffer, protocolStart, headerEndIdx, (byte) '\r');
@@ -171,8 +181,7 @@ public class RequestParser {
             throw new MalformedRequestException(431, "Request line exceeds " + Http1Limits.MAX_REQUEST_LINE_LENGTH + " bytes");
         }
 
-        FastPathViews.RequestByteView protocolView =
-                new FastPathViews.RequestByteView(buffer, protocolStart, protocolEnd - protocolStart);
+        protocolView.reset(buffer, protocolStart, protocolEnd - protocolStart);
 
         // ── Headers ──────────────────────────────────────────────────────────
 
@@ -290,14 +299,18 @@ public class RequestParser {
             preBufLen = (int) contentLength;
         }
 
-        RequestLine requestLine = new RequestLine(method, pathView, queryView, protocolView, headerMap);
+        requestLine.reset(method, pathView, queryMark != -1 ? queryView : null, protocolView, headerMap);
 
+        // EX-22: requestBody is this connection's single pooled instance (see its own class
+        // Javadoc) -- reset() repositions it for the fixed-length/empty case (contentLength == 0
+        // is handled by the same call: preBufLen is already forced to 0 for it above) or the
+        // chunked case, never reallocated.
         if (isChunked) {
-            return Request.forParsed(requestLine,
-                    new ChunkedInputStream(in, buffer, bodyStart, preBufLen),
-                    -1L, null, 0, 0, remoteAddress, sslSocket);
+            requestBody.reset(new ChunkedInputStream(in, buffer, bodyStart, preBufLen), -1L, null, 0, 0);
+        } else {
+            requestBody.reset(in, contentLength, buffer, bodyStart, preBufLen);
         }
-        return Request.forParsed(requestLine, in, contentLength, buffer, bodyStart, preBufLen, remoteAddress, sslSocket);
+        return Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
     }
 
     /**

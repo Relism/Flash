@@ -1,6 +1,8 @@
 package dev.relism.flash.http1;
 
+import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.http.DateHeader;
+import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.models.Response;
@@ -16,9 +18,18 @@ import java.nio.charset.StandardCharsets;
  * serialization — routing, handler dispatch, and the request loop live in
  * {@link Http1Connection}.
  *
- * <p>Zero-allocation: the decimal encoding of the status code / {@code Content-Length} and the
- * relay buffer used for streaming bodies both come from the connection's {@link ConnectionScratch}
- * ({@code EX-06}) instead of a per-call allocation or a {@code ThreadLocal}.
+ * <h3>{@code EX-27}: one bulk write, not ~10 small ones</h3>
+ * The status line, {@code Content-Type}, {@code Date}, every custom header, and
+ * {@code Content-Length}/{@code Connection} are all serialized into
+ * {@link ConnectionScratch#responseHead} (a reused {@link ByteWriter}) before a single
+ * {@code OutputStream.write} call — not one small {@code write} per field, and no
+ * {@link java.io.BufferedOutputStream} coalescing them at the stream layer (this class removes
+ * the need for one entirely on the h1 response path). A body at or below
+ * {@link Http1Limits#INLINE_BODY_THRESHOLD} is copied into the same scratch buffer and goes out
+ * in that same syscall; a larger body is written separately right after, since copying it into
+ * the head buffer first would cost an extra full-body memcpy the syscall it saves does not pay
+ * for. Streaming/chunked bodies write the head, then relay their own bytes as they arrive — by
+ * definition unknown or too large to fold into one buffer up front.
  */
 public final class Http1ResponseWriter {
 
@@ -52,62 +63,76 @@ public final class Http1ResponseWriter {
         boolean noContentAllowed = statusCode == 204 || statusCode == 304 || (statusCode >= 100 && statusCode < 200);
         boolean suppressBody     = noContentAllowed || method == HttpMethod.HEAD;
 
-        out.write(HTTP_1_1);
+        ByteWriter head = scratch.responseHead;
+        head.reset();
+        head.writeBytes(HTTP_1_1);
         byte[] statusBytes = response.getStatusBytes();
-        if (statusBytes != null) out.write(statusBytes);
-        else writeStatusPhrase(out, statusCode, scratch);
-        out.write(CRLF);
+        if (statusBytes != null) head.writeBytes(statusBytes);
+        else writeStatusPhrase(head, statusCode);
+        head.writeBytes(CRLF);
 
         // EX-15: a Content-Type of ContentType.NONE (empty byte[]) used to still emit the line
         // "Content-Type: \r\n" — a header with no value. Skip the line entirely instead.
         byte[] contentType = response.getContentType();
         if (contentType != null && contentType.length > 0) {
-            out.write(CONTENT_TYPE);
-            out.write(contentType);
-            out.write(CRLF);
+            head.writeBytes(CONTENT_TYPE);
+            head.writeBytes(contentType);
+            head.writeBytes(CRLF);
         }
 
         // EX-16: precomputed once per second by a shared daemon thread — one volatile read,
-        // one write(byte[]), never a per-response format call.
-        if (sendDate) out.write(DateHeader.bytes());
+        // one write into the scratch, never a per-response format call.
+        if (sendDate) head.writeBytes(DateHeader.bytes());
 
-        response.writeHeaders(out);
+        response.writeHeadersInto(head);
 
         if (response.isStreaming()) {
-            writeStreamingBody(out, response, keepAlive, noContentAllowed, suppressBody, scratch);
+            writeStreamingBody(out, head, response, keepAlive, noContentAllowed, suppressBody, scratch);
         } else {
             byte[] body = response.getBody();
             int len = body != null ? body.length : 0;
             if (!noContentAllowed) {
-                out.write(CONTENT_LENGTH);
-                writeLong(out, len, scratch);
-                out.write(CRLF);
+                head.writeBytes(CONTENT_LENGTH);
+                head.writeDecimal(len);
+                head.writeBytes(CRLF);
             }
-            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
-            out.write(CRLF);
+            head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            head.writeBytes(CRLF);
+
             // EX-14: HEAD reports the Content-Length GET would have (above) but never writes
             // the body itself.
-            if (body != null && !suppressBody) out.write(body);
+            boolean writeBody = body != null && !suppressBody;
+            if (writeBody && len <= Http1Limits.INLINE_BODY_THRESHOLD) {
+                // EX-27: small body folded into the same scratch buffer — head + body leave in
+                // one syscall.
+                head.writeBytes(body);
+                out.write(head.array(), 0, head.length());
+            } else {
+                out.write(head.array(), 0, head.length());
+                if (writeBody) out.write(body);
+            }
         }
         out.flush();
     }
 
-    private static void writeStreamingBody(OutputStream out, Response response, boolean keepAlive,
+    private static void writeStreamingBody(OutputStream out, ByteWriter head, Response response, boolean keepAlive,
                                             boolean noContentAllowed, boolean suppressBody,
                                             ConnectionScratch scratch) throws IOException {
         if (!response.isChunked()) {
             if (!noContentAllowed) {
-                out.write(CONTENT_LENGTH);
-                writeLong(out, response.getStreamLength(), scratch);
-                out.write(CRLF);
+                head.writeBytes(CONTENT_LENGTH);
+                head.writeDecimal(response.getStreamLength());
+                head.writeBytes(CRLF);
             }
-            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
-            out.write(CRLF);
+            head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            head.writeBytes(CRLF);
+            out.write(head.array(), 0, head.length());
             if (!suppressBody) relay(response.getStream(), out, scratch);
         } else {
-            out.write(TRANSFER_CHUNKED);
-            out.write(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
-            out.write(CRLF);
+            head.writeBytes(TRANSFER_CHUNKED);
+            head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
+            head.writeBytes(CRLF);
+            out.write(head.array(), 0, head.length());
             // A HEAD response still declares the Transfer-Encoding GET would have used (RFC
             // 9110 §9.3.2) but writes zero body bytes — not even the final-chunk marker, since
             // there is no chunk framing at all for a message with no body.
@@ -125,21 +150,10 @@ public final class Http1ResponseWriter {
         while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
     }
 
-    private static void writeStatusPhrase(OutputStream out, int statusCode, ConnectionScratch scratch) throws IOException {
+    private static void writeStatusPhrase(ByteWriter head, int statusCode) {
         byte[] phrase = HttpStatus.bytesForCode(statusCode);
-        if (phrase != null) out.write(phrase);
-        else { writeLong(out, statusCode, scratch); out.write(UNKNOWN_STATUS_SUFFIX); }
-    }
-
-    private static void writeLong(OutputStream out, long value, ConnectionScratch scratch) throws IOException {
-        if (value == 0) { out.write('0'); return; }
-        byte[] buf = scratch.decimalBuffer;
-        int pos = buf.length;
-        boolean neg = value < 0;
-        if (neg) value = -value;
-        do { buf[--pos] = (byte) ('0' + value % 10); value /= 10; } while (value > 0);
-        if (neg) buf[--pos] = '-';
-        out.write(buf, pos, buf.length - pos);
+        if (phrase != null) head.writeBytes(phrase);
+        else { head.writeDecimal(statusCode); head.writeBytes(UNKNOWN_STATUS_SUFFIX); }
     }
 
     private static void writeChunked(OutputStream out, InputStream stream, ConnectionScratch scratch) throws IOException {

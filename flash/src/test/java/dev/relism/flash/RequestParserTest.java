@@ -56,6 +56,32 @@ class RequestParserTest {
         assertEquals("2",     r.query("page"));
     }
 
+    // --- EX-42: pooled RequestByteViews (path/query/protocol) don't leak across requests ---
+
+    @Test
+    void samePooledParser_secondRequestWithoutQuery_doesNotLeakFirstRequestsQuery() throws IOException {
+        RequestParser parser = new RequestParser();
+        byte[] first = req("GET /search?token=super-secret HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
+        Request r1 = parser.parse(source(first));
+        assertEquals("token=super-secret", r1.getRequestLine().getQuery().toString());
+
+        byte[] second = req("GET /health HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
+        Request r2 = parser.parse(source(second));
+        assertNull(r2.getRequestLine().getQuery(), "the second request must not see the first request's leftover query view");
+        assertEquals("/health", r2.getRequestLine().getPath().toString());
+    }
+
+    @Test
+    void samePooledParser_secondRequest_seesOnlyItsOwnPathAndProtocol() throws IOException {
+        RequestParser parser = new RequestParser();
+        Request r1 = parser.parse(source(req("GET /first HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8)));
+        assertEquals("/first", r1.getRequestLine().getPath().toString());
+
+        Request r2 = parser.parse(source(req("POST /second HTTP/1.0", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8)));
+        assertEquals("/second", r2.getRequestLine().getPath().toString());
+        assertEquals("HTTP/1.0", r2.getRequestLine().getProtocol().toString());
+    }
+
     // --- headers ---
 
     @Test

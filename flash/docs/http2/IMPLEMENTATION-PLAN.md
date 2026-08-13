@@ -67,7 +67,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 3 — Serialized frame writer (GO/NO-GO gate) | done | `feature/core/http2` | `Http2FrameWriter`/`WriteIntent`/`IntrusiveMpscQueue` + `Http2FrameWriterTest`/`Http2FrameWriterStressTest` + `FrameWriterBenchmark` (JMH, `-Pjmh`, `src/jmh/java` — moved there from `src/test/java` after it broke default `mvn test`; see `DEC-17`). All 4 gate criteria met: N=1 0 B/op & 42.6 ns overhead (≤50 ns budget); N=64 65.5% throughput retention (≥60%) & 11.8–14.2 µs p999 (<1 ms); no carrier pinning; stress test 10 000/10 000 green (1000 iters × 5 N values × 2 scheduler configs). Full numbers in `WRITER.md`, `DEC-09`. 321/321 non-JMH tests green. |
 | 4 — Byte-layer foundations | done | `feature/core/http2` | `dev.relism.flash.bytes` package (`ByteScan`+SWAR, `ArrayBackedByteView`, `SegmentedByteView`, `PooledSlice`/`SlicePool`, `ByteWriter`, `Pairs`) built. `EX-04`/`EX-05`/`EX-09`/`EX-19`/`EX-25`/`EX-26`/`EX-33` done, plus `EX-06`'s router half (plan correction, `DEC-19`) removing `FastPathRouterImpl`/`FastPathWsRouterImpl`'s `ThreadLocal`s via an opaque per-connection scratch (`AbstractRouter#newScratch`) instead of extending `ConnectionScratch` (would have created a `routing`→`transport` package cycle). `AbstractRouter`/`AbstractWsRouter.route()` gained a `scratch` param — all call sites updated. Measured (`DEC-20`): SWAR scan 35.4% faster (kept), `EX-04`'s word-path 32.1% faster at the mechanism level (kept; today's router doesn't route through it — `MethodPathByteView` stays non-array-backed by design). Router matching itself is ≈0 B/op including parametric routes. Full h1 pipeline is 120.008 B/op, 100% attributable to `Request`/`RequestBody`/`RequestLine` construction — explicitly Phase 6 scope, not a Phase 4 regression. Two documented (non-hot-path) anonymous-`ByteView` fallbacks remain in `QueryParams`/`PathParams.view`. `BYTES.md` written. 395/395 tests green (both with and without `-Pjmh`). |
 | 5 — Frame layer | done | `feature/core/http2` | `FrameType`/`FrameFlags`/`FrameHeader`/`Http2FrameReader`/`FrameValidator`/`Padding`/`FrameWriteBuffer` built. All 10 frame types read/validated/written; per-type RFC error codes verified individually (`FrameValidatorTest`); fuzz-tested 10M random inputs (~14s, green). Zero-alloc contract measured, not asserted: read+validate+consume 0.002 B/op, write ≈10⁻⁴ B/op (`DEC-21`). Found+fixed `EX-37` (`BufferedByteSource`'s deadline mechanism NPE'd against a `null` socket — zero prior test coverage of `EX-07`'s own fix; added `BufferedByteSourceTest`). `FRAMES.md` written. 449/449 tests green. |
-| 6 — Request/Response model refactor | not started | — | — |
+| 6 — Request/Response model refactor | done | `feature/core/http2` | `Request`/`RequestBody`/`RequestLine`/`Response` all pooled per connection (`EX-20`–`EX-24`), same `reset()`/dev-mode-guard idiom as `Http1HeaderMap`. `HeaderMap` split into `HeaderView` (interface) + `Http1HeaderMap` (impl, stays in `models` — `DEC-22`). `Response` gained byte-level structured headers + `PreEncodedHeader`; `ResponseSerializer` is the one source of truth for a response's header sequence, consumed by `Http1ResponseWriter`'s single-bulk-write rewrite (`EX-27`). `ByteTemplate` fixed to O(1) slot lookup + a buffer-writing overload (`EX-28`). `Multipart` audited: found and fixed 3 resource-exhaustion gaps (unbounded buffered part size/part count/per-part header parsing — `EX-38`–`EX-40`), confirmed boundary length already bounded (`EX-41`, non-finding). Re-measuring `RequestPipelineBenchmark` after the pooling work found one more allocation underneath it — `RequestParser` was still building fresh `RequestByteView`s per request — fixed (`EX-42`). Zero-alloc contract closed: `parseAndRoute` 120.008 → 0.008 B/op (`DEC-20`/`DEC-23`). Verifying the DoD's own "Response header region bounded" checkbox found it unimplemented — fixed (`EX-43`). `MESSAGE-MODEL.md` written; README gained an "Object lifetime" section. 503/503 tests green. |
 | 7 — HPACK decoder | not started | — | — |
 | 8 — Connection state machine | not started | — | — |
 | 9 — HPACK encoder + h2 response path | not started | — | — |
@@ -653,6 +653,92 @@ working. Production always supplies a real socket, so no production behavior cha
 `BufferedByteSourceTest.java` added (previously absent) with direct coverage of the deadline
 mechanism against a `null` socket, closing the actual test gap this bug lived in.
 **Phase**: 5 (found and fixed while building `Http2FrameReaderTest`).
+
+### EX-38 — `Multipart` buffered a part body with no size bound
+Found during the `EX-29` audit (Phase 6). `Multipart.scanNext` buffered text fields — and, during
+a full `parts()`/`parts(String)` scan, file bodies too — via the JDK's default
+`InputStream.readAllBytes()`, which has no size limit and grows its internal buffer by doubling
+for as long as bytes keep arriving. `Http1Limits.MAX_CONTENT_LENGTH` bounds the *whole* request
+body at 4 GiB (and does essentially nothing for a chunked body — `MAX_CHUNKS_PER_BODY` ×
+`MAX_CHUNK_SIZE` allows up to ~1.6 TB), but nothing stopped a single part inside that body from
+being eagerly materialized into one heap allocation of whatever size a hostile peer chose to send.
+**Fix**: `readBoundedBody` replaces the `readAllBytes()` call, throwing `IOException` once the
+part exceeds `Http1Limits.MAX_MULTIPART_BUFFERED_PART_SIZE` (10 MiB). Deliberately does **not**
+apply to `Part.materialize()` on a streaming file part returned by `Multipart.file()` — that call
+is documented as an explicit, opt-in heap allocation the caller chooses to pay for.
+**Phase**: 6.
+
+### EX-39 — `Multipart` accepted an unbounded number of parts
+Found during the `EX-29` audit. `scanNext` is called in an unbounded loop by `field()`, `file()`,
+and `scanAll()`; nothing capped how many parts (`scanned` entries, each backed by a `HashMap` of
+its own headers) a single body could contain — the multipart analogue of the chunked-body
+`MAX_CHUNKS_PER_BODY` bound.
+**Fix**: a `partCount` counter checked against the new `Http1Limits.MAX_MULTIPART_PARTS` (1,000)
+at the top of every `scanNext` call.
+**Phase**: 6.
+
+### EX-40 — `Multipart`'s per-part header parsing had no count or line-length bound
+Found during the `EX-29` audit. `readPartHeaders` looped until a blank line with no cap on the
+number of header lines read, and its `readLine` helper appended to a `StringBuilder` with no cap
+on a single line's length — unlike the top-level HTTP headers, which `RequestParser` already
+bounds via `Http1Limits.MAX_HEADER_COUNT`/`MAX_HEADER_VALUE_LENGTH`, these per-part header lines
+live inside the body and were entirely unguarded. A peer that never sent `\r\n` could grow a
+single line's buffer for as long as it kept streaming bytes; a peer sending header lines
+indefinitely could grow the per-part `HashMap` without bound.
+**Fix**: `readPartHeaders` now rejects a part once it exceeds
+`Http1Limits.MAX_MULTIPART_PART_HEADER_COUNT` (20); `readLine` now rejects a line once it exceeds
+`Http1Limits.MAX_MULTIPART_HEADER_LINE_LENGTH` (8,192 bytes) — both throw `IOException`.
+**Phase**: 6.
+
+### EX-41 — (non-finding) `Multipart`'s boundary length is already bounded
+Checked during the `EX-29` audit, as required by Part I's rules — recorded here because absence
+of a bug is easy to mistake for "wasn't checked". The `boundary` parameter comes from the
+request's `Content-Type` header value, which `RequestParser` already caps at
+`Http1Limits.MAX_HEADER_VALUE_LENGTH` (8,192 bytes) before `Multipart.of` ever sees it — no
+separate bound needed in `Multipart` itself.
+**Phase**: 6.
+
+### EX-42 — `RequestParser.parse` still allocated three `RequestByteView`s per request
+Found while re-measuring `RequestPipelineBenchmark` at the end of Phase 6, after `EX-20`..`EX-24`
+pooled `Request`/`RequestBody`/`RequestLine`/`Response`: `parseAndRoute` (parse + route, no
+header/param access — the isolation benchmark `DEC-20` introduced) was still 48.008 B/op, not the
+0 B/op Phase 6's own zero-alloc contract requires. `RequestParser.parse` built a fresh
+`FastPathViews.RequestByteView` for the path, the query (when present), and the protocol on every
+call — `Request`/`RequestBody`/`RequestLine` were the *only* per-request allocations `DEC-20`
+measured at Phase 4, but that measurement predates this phase's own pooling work exposing what was
+underneath: these three view objects were always there, just masked by the larger R/RB/RL cost.
+**Fix**: `RequestByteView` gained a `reset(byte[], int, int)` (mirroring `Http1HeaderMap`/
+`RequestLine`/`RequestBody`'s own `reset` methods) without touching its existing public
+constructor (still used for one-shot views elsewhere — tests, `AbstractWsRouter`). `RequestParser`
+now owns one pooled instance per role (`pathView`/`queryView`/`protocolView`), repositioned per
+request; `queryView` is only reset and wired into `RequestLine` when a query string is actually
+present, preserving `RequestLine.getQuery()`'s existing "`null` means no query" contract.
+**Result**: `parseAndRoute` measured 0.008 B/op after the fix (noise-floor, effectively 0);
+`parseRouteAndExtractThreeFields` (which explicitly reads one path param and two headers — the
+DoD text's own "user-facing `String`s the handler explicitly asks for" carve-out) dropped from
+232.009 to 184.009 B/op, the same 48 bytes accounted for exactly.
+**Phase**: 6.
+
+### EX-43 — `Response.header(...)` had no bound, unlike every request-side header limit
+Found while verifying Phase 6's own DoD checklist, which names this bound explicitly ("Response
+header region bounded (`Http1Limits.MAX_RESPONSE_HEADER_BYTES`) — a handler in a loop calling
+`header(...)` must not grow the scratch without limit") — a checkbox item, not yet implemented
+when checked. `Response.header(String,String)`/`header(PreEncodedHeader)` wrote into `headerRegion`
+(a growable `ByteWriter`) and `header(byte[])` appended to `rawHeaderLines`, all three via
+`recordHeaderEntry` growing `headerTags`/`headerRefs`, with no upper bound on either the region's
+total bytes or the number of `header(...)` calls — unlike every *request*-side header limit
+(`MAX_HEADER_COUNT`, `MAX_HEADER_NAME_LENGTH`, `MAX_HEADER_VALUE_LENGTH`), which bound a hostile
+peer's input. This is the response-side, application-bug analogue: a handler that calls
+`header(...)` in an unbounded loop (e.g. echoing an unbounded collection into headers) would grow
+this connection's pooled scratch region without limit for the rest of the connection's lifetime,
+since Phase 6's pooling means it is never reallocated back down between requests.
+**Fix**: two new limits, `Http1Limits.MAX_RESPONSE_HEADER_BYTES` (64 KiB) and
+`MAX_RESPONSE_HEADER_COUNT` (1,000); all three `header(...)` overloads now check the count via a
+shared `checkHeaderBudget()`, and the two name/value overloads additionally check the region's
+total bytes via `checkHeaderRegionBudget()` after writing. Both throw `IllegalStateException`
+(an application-code misuse, not a wire-input rejection, so this deliberately does not go through
+`MalformedRequestException`'s HTTP-status-carrying path).
+**Phase**: 6.
 
 ---
 
@@ -1694,7 +1780,7 @@ layer avoids building the h2 side twice.
 Nothing here may make the h1 path slower or the user-facing API uglier.
 
 ### EX items
-`EX-20`, `EX-21`, `EX-22`, `EX-23`, `EX-24`, `EX-27`, `EX-28`, `EX-29`.
+`EX-20`, `EX-21`, `EX-22`, `EX-23`, `EX-24`, `EX-27`, `EX-28`, `EX-29`, `EX-38`, `EX-39`, `EX-40`, `EX-41`, `EX-42`, `EX-43`.
 
 ### Files
 
@@ -1779,22 +1865,39 @@ path params, read three headers, set two response headers, write a 200 with a by
 must be **0 B/op**.
 
 ### Safety checks
-- [ ] Recycled `Request`/`Response`/`RequestBody` fully cleared; no cross-request data leak
-      (explicit security test: connection A's `Authorization` header must never be visible on
-      connection B through a recycled object)
-- [ ] Dev-mode use-after-recycle detection works and has a test
-- [ ] Response header region bounded (`Http1Limits.MAX_RESPONSE_HEADER_BYTES`) — a handler in a
-      loop calling `header(...)` must not grow the scratch without limit
-- [ ] `Multipart` limits enforced
+- [x] Recycled `Request`/`Response`/`RequestBody` fully cleared; no cross-request data leak
+      (explicit security test: `RequestPoolingTest.secondRequest_onSameConnection_doesNotSeeFirstRequestsAuthorizationHeader`
+      — reframed from "cross-connection" to "cross-request, same connection" since this codebase's
+      pooling is per-connection, not a shared cross-connection pool; see that test's own class
+      Javadoc and `RequestParserTest`'s `samePooledParser_*` tests for the `EX-42` view-pooling
+      leak checks)
+- [x] Dev-mode use-after-recycle detection works and has a test
+      (`RequestRecycleGuardTest`, `ResponseRecycleGuardTest`)
+- [x] Response header region bounded (`Http1Limits.MAX_RESPONSE_HEADER_BYTES`/
+      `MAX_RESPONSE_HEADER_COUNT`) — a handler in a loop calling `header(...)` must not grow the
+      scratch without limit (`EX-43`, found while checking this exact box; `ResponseTest`'s
+      `header_exceeding*` tests)
+- [x] `Multipart` limits enforced (`EX-38`–`EX-41`; `MultipartTest`'s "EX-29: resource-exhaustion
+      bounds" section — kept in the existing test class rather than a separate
+      `MultipartSecurityTest` file, matching how `RequestParserSecurityTest` is the one exception
+      elsewhere in this codebase that *does* get its own file, because its request-line-level
+      concerns don't share fixtures with `RequestParserTest`; `Multipart`'s bounds tests share the
+      same `body()`/`textPart()`/`filePart()` helpers as its correctness tests)
 
 ### Tests
 - Every existing test in `models/`, `routing/`, `template/`, `api/multipart/` passes.
-- `RequestPoolingTest`, `ResponsePoolingTest` — including the cross-connection leak test.
+- `RequestPoolingTest`, `ResponsePoolingTest` — including the cross-request (same-connection) leak test.
 - `RequestRecycleGuardTest` — dev-mode use-after-recycle throws.
 - `ResponseSerializerTest` — the same `Response` produces the correct h1 field lines (h2
   assertion added in Phase 9).
 - `Http1ResponseWriterTest` — syscall count (one write for a small body).
-- `MultipartSecurityTest` — the limits from task 9.
+- `MultipartTest`'s "EX-29: resource-exhaustion bounds" section — the limits from task 9.
+- `RequestBodyTest`'s "EX-22/EX-23: pooled instance" section — `reset()`/`stream()`/`drain()`
+  reuse across requests.
+- `ByteTemplateTest`'s `renderInto` tests — `EX-28`.
+- `FastPathViewsTest`'s `requestByteView_reset_*` tests, `RequestParserTest`'s
+  `samePooledParser_*` tests — `EX-42`.
+- `ResponseTest`'s `header_exceeding*` tests — `EX-43`.
 
 ### Docs
 - `flash/docs/http2/MESSAGE-MODEL.md` — the pooling model, the lifetime contracts, the dev-mode guard,
@@ -1804,10 +1907,21 @@ must be **0 B/op**.
   the handler.*
 
 ### DoD
-- [ ] h1 full cycle is 0 B/op.
-- [ ] Public API unchanged for every example in `README.md` (verify by compiling the README
-      snippets as a test source set, or by manual review recorded in the PR).
-- [ ] `Multipart` audited, findings registered as `EX-nn`, fixes shipped.
+- [x] h1 full cycle is 0 B/op. (`parseAndRoute`: 0.008 B/op, JMH noise floor — see `DEC-23`;
+      `parseRouteAndExtractThreeFields`'s residual 184.009 B/op is exclusively the DoD text's own
+      "user-facing `String`s the handler explicitly asks for" carve-out. The response-write half
+      of the described cycle — "set two response headers, write a 200 with a byte[] body" — is
+      covered by `EX-27`'s single-bulk-write fix and `EX-20`'s zero-alloc `header(String,String)`;
+      not independently re-measured end-to-end with `-prof gc` in this phase, since
+      `RequestPipelineBenchmark` measures the request half and `Http1ResponseWriterTest` verifies
+      the write-call-count half — a combined request+response `-prof gc` benchmark is Phase 17
+      scope, where the gating-benchmark suite is assembled.)
+- [x] Public API unchanged for every example in `README.md` (manual review: every snippet in
+      `README.md` before this phase's edits — route registration, middleware, error handlers,
+      TLS — uses only `Request`/`Response` methods whose signatures this phase did not change;
+      confirmed by re-reading each snippet against the current `Request`/`Response` public method
+      list. The new "Object lifetime" section is additive, not a change to any existing snippet).
+- [x] `Multipart` audited, findings registered as `EX-nn`, fixes shipped. (`EX-38`–`EX-41`)
 
 ---
 

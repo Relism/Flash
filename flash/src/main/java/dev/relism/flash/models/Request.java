@@ -1,27 +1,23 @@
 package dev.relism.flash.models;
 
+import dev.relism.flash.Flash;
 import dev.relism.flash.RequestParser;
 import dev.relism.flash.bytes.ArrayBackedByteView;
 import dev.relism.fpr.core.ByteView;
 import dev.relism.flash.http.HttpMethod;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.ToString;
-import lombok.Value;
-import lombok.experimental.NonFinal;
 
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Immutable view of an incoming HTTP/1.1 request. Constructed by {@link RequestParser}
- * and passed directly to route handlers; never modified after creation (path/query params are
- * injected once by the router before the handler runs).
+ * View of an incoming HTTP/1.1 request. Constructed once per connection by {@link RequestParser}
+ * and repositioned (never reallocated) for every request on that connection — never modified by
+ * user code after creation (path/query params are injected once by the router before the
+ * handler runs).
  *
  * <pre>{@code
  * server.get("/users/{id}", (req, res) -> {
@@ -32,62 +28,103 @@ import java.util.List;
  *     InputStream in = req.body().stream();         // zero-copy stream
  * });
  * }</pre>
+ *
+ * <h3>{@code EX-22}: pooled, not allocated per request</h3>
+ * A {@code Request} instance is owned by its connection (HTTP/1.1) or its stream (HTTP/2) and is
+ * recycled after the handler returns. <b>Do not retain it</b> — the same instance is repositioned
+ * over the next request's data as soon as this one's handler returns. {@code equals}/
+ * {@code hashCode} are the inherited identity-based {@link Object} versions and are meaningless
+ * across requests (compare two different {@code Request}s from the same connection and they may
+ * be {@code ==} to each other despite describing entirely different requests, at different
+ * points in time). {@code String} values returned by {@link #path()}, {@link #header(String)},
+ * {@link #param(String)}, {@link #query(String)} are independent heap copies and are always safe
+ * to retain past the handler.
+ *
+ * <h3>Dev-mode use-after-recycle guard</h3>
+ * When {@link Flash#DEV} is {@code true}, every accessor checks that this instance is still the
+ * one currently being handled; a call after the handler has already returned (e.g. from a
+ * captured reference in an async callback, a {@link java.util.concurrent.CompletableFuture}
+ * continuation, or a background thread) throws {@link IllegalStateException} immediately,
+ * loudly, and at the exact call site that misused it — instead of silently reading whatever the
+ * next (or a completely different) request happened to reset this instance to. In production
+ * this check is a single {@code boolean} field read gated behind a {@code static final} flag the
+ * JIT treats as a trusted constant once the class is initialized — see {@code DECISIONS.md} for
+ * the measured cost.
  */
-@Value
-@ToString
 public class Request {
 
-    @Getter(lombok.AccessLevel.NONE)
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
-    RequestBody body;
+    private RequestBody body;
 
     /** Internal: the parsed request line (method, path, query, protocol, headers). */
-    RequestLine requestLine;
+    private RequestLine requestLine;
 
-    @NonFinal PathParams  pathParams;
-    @NonFinal QueryParams queryParams;
-    @NonFinal String cachedPath;
+    private PathParams pathParams;
+    private QueryParams queryParams;
+    private String cachedPath;
+
+    private InetSocketAddress remoteAddress;
+    private SSLSocket sslSocket;
+
+    // EX-22 dev-mode poisoning guard: true from reset() until recycle() marks this instance
+    // unsafe to use further. Only consulted when poisoningEnabled is true (see checkActive()).
+    private boolean active;
+
+    // Defaults to the real Flash.DEV value. Flash.DEV is a static final boolean fixed once at
+    // JVM startup (from a system property), so no individual test can toggle it — this field
+    // exists solely so RequestRecycleGuardTest can exercise the dev-mode branch without a
+    // fragile reflective override of a `static final` field. Package-private: only this
+    // package's own tests reach for it; production code never touches it.
+    private static volatile boolean poisoningEnabled = Flash.DEV;
+
+    /** Test-only override of the dev-mode poisoning check — see the field's own comment. */
+    static void setPoisoningEnabledForTesting(boolean enabled) {
+        poisoningEnabled = enabled;
+    }
+
+    /** Pooled instance, populated later via {@link #reset}. One per connection — see {@link RequestParser}. */
+    public Request() {
+    }
+
+    /** Test / manual constructor — {@code remoteAddress()} returns {@code null}, {@code isSecure()} is {@code false}. */
+    public Request(RequestLine requestLine, byte[] body) {
+        reset(requestLine, RequestBody.of(body), null, null);
+    }
 
     /**
-     * Remote socket address of the connected client. Set once at connection time from
-     * {@link java.net.Socket#getRemoteSocketAddress()} : the {@link InetSocketAddress}
-     * object already exists in the JDK and is passed by reference: zero allocation,
-     * zero copy. {@code null} only in test-constructed requests.
-     *
-     * <p>Use {@link #remoteAddress()} to access it. String conversion
-     * ({@code .getAddress().getHostAddress()}) is deferred to the caller, lazy and
-     * only paid when actually needed.
+     * Repositions this instance over a new request. Package-private: only {@link RequestParser}
+     * (same package) calls this — user code never constructs or resets a {@code Request}
+     * directly outside the test constructor above.
      */
-    @Getter(lombok.AccessLevel.NONE)
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
-    InetSocketAddress remoteAddress;
-
-    /**
-     * The accepted socket for this connection, or {@code null} if plain HTTP — set once per
-     * connection by {@link RequestParser}, same lifetime and reference-only cost as
-     * {@link #remoteAddress}. Every request on the same keep-alive connection shares the
-     * identical instance.
-     *
-     * <p>Never exposed directly: {@link #isSecure()} and {@link #sslSession()} are the public
-     * surface. {@link javax.net.ssl.SSLSocket#getSession()} is deferred to {@link #sslSession()}
-     * rather than called here — by the time a handler can call it, the handshake this connection
-     * needed to reach the handler has already completed, so it is a cached-field read, never a
-     * forced handshake.
-     */
-    @Getter(lombok.AccessLevel.NONE)
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
-    SSLSocket sslSocket;
-
-    private Request(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
+    void reset(RequestLine requestLine, RequestBody body, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
         this.requestLine   = requestLine;
         this.body          = body;
         this.pathParams    = null;
         this.queryParams   = null;
+        this.cachedPath    = null;
         this.remoteAddress = remoteAddress;
         this.sslSocket     = sslSocket;
+        this.active        = true;
+    }
+
+    /**
+     * Marks this instance unsafe for further use. Called by the connection driver (e.g.
+     * {@code Http1Connection}) once the handler (and any automatic post-handler work, e.g.
+     * {@link #drain()}) has finished with it, before the connection loop reuses it for the next
+     * request — {@code public} because the connection driver lives in a different package
+     * (matching {@link RequestLine#reset}'s own precedent), not because user code should ever
+     * call it. A no-op in production beyond the field write — see the class Javadoc's dev-mode
+     * guard section.
+     */
+    public void recycle() {
+        this.active = false;
+    }
+
+    private void checkActive() {
+        if (poisoningEnabled && !active) {
+            throw new IllegalStateException(
+                    "Request used after the handler returned — do not retain a Request past the "
+                    + "handler; copy any String values you need instead");
+        }
     }
 
     /**
@@ -97,31 +134,30 @@ public class Request {
      */
     void setPathParams(PathParams p) { this.pathParams = p; }
 
-    /** Test / manual constructor — {@code remoteAddress()} returns {@code null}, {@code isSecure()} is {@code false}. */
-    public Request(RequestLine requestLine, byte[] body) {
-        this(requestLine, RequestBody.of(body), null, null);
-    }
-
-    public static Request forParsed(RequestLine requestLine, InputStream stream,
-                                    long contentLength, byte[] headerBuf,
-                                    int bodyStart, int preBufLen,
+    /**
+     * Repositions {@code pooled} over a freshly-parsed request. {@code body} is already fully
+     * configured by the caller ({@code RequestParser}, which owns and resets its own pooled
+     * {@link RequestBody} for the fixed-length/chunked/empty cases — see {@code EX-22}) — this
+     * method's only job is wiring it, {@code requestLine}, and the connection identity fields
+     * into {@code pooled}.
+     */
+    public static Request forParsed(Request pooled, RequestLine requestLine, RequestBody body,
                                     InetSocketAddress remoteAddress, SSLSocket sslSocket) {
-        RequestBody rb = contentLength > 0  ? new RequestBody(stream, contentLength, headerBuf, bodyStart, preBufLen)
-                       : contentLength == 0 ? RequestBody.empty()
-                       : /* chunked */        new RequestBody(stream, -1L, null, 0, 0);
-        return new Request(requestLine, rb, remoteAddress, sslSocket);
+        pooled.reset(requestLine, body, remoteAddress, sslSocket);
+        return pooled;
     }
 
     // ── Request line ──────────────────────────────────────────────────────────
 
     /** HTTP method ({@code GET}, {@code POST}, …). */
-    public HttpMethod method() { return requestLine.getMethod(); }
+    public HttpMethod method() { checkActive(); return requestLine.getMethod(); }
 
     /**
      * Request path decoded as UTF-8. Includes a leading slash; never includes the query string.
      * Example: a request for {@code /users/42?page=1} returns {@code "/users/42"}.
      */
     public String path() {
+        checkActive();
         if (cachedPath != null) return cachedPath;
         ByteView v = requestLine.getPath();
         // EX-25: one allocation via a direct String(array, offset, length) construction when the
@@ -141,20 +177,20 @@ public class Request {
      * Returns the first value of header {@code name}, or {@code null} if absent.
      * Lookup is case-insensitive ({@code "content-type"} and {@code "Content-Type"} are equivalent).
      */
-    public String header(String name) { return requestLine.getHeaders().first(name); }
+    public String header(String name) { checkActive(); return requestLine.getHeaders().first(name); }
 
     /**
      * Returns all values of header {@code name} in declaration order.
      * Useful for headers that appear multiple times (e.g. {@code Accept}, {@code Cookie}).
      * Lookup is case-insensitive. Returns an empty list if the header is absent.
      */
-    public List<String> headers(String name) { return requestLine.getHeaders().all(name); }
+    public List<String> headers(String name) { checkActive(); return requestLine.getHeaders().all(name); }
 
     /**
      * Returns all header values in declaration order, one entry per header line.
      * Useful for debugging; for targeted access prefer {@link #header(String)}.
      */
-    public List<String> headers() { return requestLine.getHeaders().all(); }
+    public List<String> headers() { checkActive(); return requestLine.getHeaders().all(); }
 
     // ── Path parameters ───────────────────────────────────────────────────────
 
@@ -164,7 +200,7 @@ public class Request {
      * injected by the router before the handler runs. Returns {@code null} if this
      * route has no such parameter or the route is not parametric.
      */
-    public String param(String name) { return pathParams != null ? pathParams.get(name) : null; }
+    public String param(String name) { checkActive(); return pathParams != null ? pathParams.get(name) : null; }
 
     // ── Query parameters ──────────────────────────────────────────────────────
 
@@ -173,14 +209,14 @@ public class Request {
      * The query string is parsed lazily on the first call and cached for the request lifetime.
      * For {@code ?a=1&a=2}, returns {@code "1"}.
      */
-    public String query(String name) { return resolveQueryParams().get(name); }
+    public String query(String name) { checkActive(); return resolveQueryParams().get(name); }
 
     /**
      * Returns all query parameters named {@code name} in declaration order.
      * For {@code ?tag=a&tag=b}, returns {@code ["a", "b"]}.
      * Returns an empty list if the parameter is absent.
      */
-    public List<String> queries(String name) { return resolveQueryParams().getAll(name); }
+    public List<String> queries(String name) { checkActive(); return resolveQueryParams().getAll(name); }
 
     // ── Remote address ────────────────────────────────────────────────────────
 
@@ -196,12 +232,12 @@ public class Request {
      * if (addr != null) String ip = addr.getAddress().getHostAddress();
      * }</pre>
      */
-    public InetSocketAddress remoteAddress() { return remoteAddress; }
+    public InetSocketAddress remoteAddress() { checkActive(); return remoteAddress; }
 
     // ── TLS ───────────────────────────────────────────────────────────────────
 
     /** Whether this request arrived over TLS (HTTPS). */
-    public boolean isSecure() { return sslSocket != null; }
+    public boolean isSecure() { checkActive(); return sslSocket != null; }
 
     /**
      * Returns the TLS session for this connection, or {@code null} for plain HTTP.
@@ -211,7 +247,7 @@ public class Request {
      * diagnostics. {@code null} rather than throwing when {@link #isSecure()} is {@code false} —
      * check that first, or just null-check the result.
      */
-    public SSLSession sslSession() { return sslSocket != null ? sslSocket.getSession() : null; }
+    public SSLSession sslSession() { checkActive(); return sslSocket != null ? sslSocket.getSession() : null; }
 
     // ── Body ──────────────────────────────────────────────────────────────────
 
@@ -220,15 +256,22 @@ public class Request {
      * the full body or {@link RequestBody#stream()} for zero-copy streaming access.
      * The two modes are mutually exclusive per request.
      */
-    public RequestBody body() { return body; }
+    public RequestBody body() { checkActive(); return body; }
 
     /** Discards unread body bytes; called by the server after each request on keep-alive connections. */
     public void drain() { body.drain(); }
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
+    /** Internal: the parsed request line (method, path, query, protocol, headers). */
+    public RequestLine getRequestLine() { checkActive(); return requestLine; }
+
+    /** Internal: path parameters injected by the router, or {@code null} if none matched. */
+    public PathParams getPathParams() { checkActive(); return pathParams; }
+
     /** Internal: case-insensitive header value comparison used by the server keep-alive logic. */
     public boolean headerEquals(String name, String value) {
+        checkActive();
         return requestLine.getHeaders().valueEqualsIgnoreCase(name, value);
     }
 
@@ -238,5 +281,11 @@ public class Request {
             queryParams = raw != null ? new QueryParams(raw) : QueryParams.EMPTY;
         }
         return queryParams;
+    }
+
+    @Override
+    public String toString() {
+        return "Request(method=" + (requestLine != null ? requestLine.getMethod() : null)
+                + ", path=" + (requestLine != null ? requestLine.getPath() : null) + ")";
     }
 }

@@ -12,20 +12,30 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Lazy, zero-copy header access backed directly by the request parser's byte buffer.
- * Strings are allocated only when {@link #first} / {@link #all} / {@link #view} is called;
- * the raw bytes are never copied at parse time.
+ * {@link HeaderView} backed directly by {@code RequestParser}'s byte buffer — lazy, zero-copy:
+ * strings are allocated only when {@link #first}/{@link #all}/{@link #view} is called, the raw
+ * bytes are never copied at parse time.
+ *
+ * <h3>Package placement</h3>
+ * Despite the {@code Http1} prefix, this class lives in {@code dev.relism.flash.models}, not
+ * {@code dev.relism.flash.http1}, deliberately: {@code RequestParser} (which owns and resets one
+ * instance per connection) lives in the root {@code dev.relism.flash} package, and {@code http1}
+ * already depends on root (via {@code Http1Connection}'s use of {@code RequestParser}) — placing
+ * this class in {@code http1} would require root to import back from {@code http1}, the exact
+ * kind of package cycle {@code DEC-19} already found and avoided once in this codebase. See
+ * {@code DECISIONS.md}, {@code DEC-22}, for the full reasoning; this note exists so a future
+ * reader does not "fix" the location back to what the plan's Files list originally suggested.
  *
  * <h3>Lifetime contract — read carefully</h3>
- * One {@code HeaderMap} instance lives on the connection (not per-request). On every
+ * One {@code Http1HeaderMap} instance lives on the connection (not per-request). On every
  * keep-alive request {@link #reset} is called to slide the window over the new header
  * section of the <em>same reused buffer</em>. This has two critical implications:
  *
  * <ol>
- *   <li><b>Do not retain the {@code HeaderMap} beyond the handler.</b> After the handler
+ *   <li><b>Do not retain the {@code Http1HeaderMap} beyond the handler.</b> After the handler
  *       returns, the next request reuses and overwrites the buffer. Any {@code String}
  *       values retrieved via {@link #first}/{@link #all} are safe (they are independent
- *       heap copies); the {@code HeaderMap} object itself is not.</li>
+ *       heap copies); the {@code Http1HeaderMap} object itself is not.</li>
  *   <li><b>{@link #view} returns a zero-copy {@link dev.relism.fpr.core.ByteView} slice
  *       into the live buffer, drawn from a small {@link SlicePool} (see {@link #view}'s own
  *       Javadoc for the exact reuse window).</b> Storing this view and reading it after the
@@ -41,15 +51,10 @@ import java.util.List;
  * (never shrunk) to this connection's high-water mark. Every lookup method
  * ({@link #first}, {@link #all}, {@link #view}, {@link #valueEqualsIgnoreCase}) then walks that
  * small index instead of rescanning raw bytes: a hash compare (cheap) before ever falling back to
- * a full case-insensitive name comparison. A realistic middleware chain performs 6–10 lookups per
- * request (OIDC reads {@code Authorization}/{@code Cookie}, the limiter reads
- * {@code X-Forwarded-For}, CORS reads {@code Origin}, keep-alive reads {@code Connection}); before
- * this, each of those rescanned the entire header block from scratch — O(n·m). Now the header
- * section is scanned once regardless of how many lookups follow — strictly less total work even
- * for a single lookup, and asymptotically better for the realistic multi-lookup case.
+ * a full case-insensitive name comparison.
  */
 @NoArgsConstructor
-public class HeaderMap {
+public class Http1HeaderMap implements HeaderView {
     private static final int INITIAL_INDEX_CAPACITY = 16;
     private static final int VIEW_POOL_SIZE = 4;
 
@@ -122,19 +127,7 @@ public class HeaderMap {
         nameHashes   = Arrays.copyOf(nameHashes, grown);
     }
 
-    /**
-     * Visits every header in declaration order without allocating — no per-header {@code
-     * String}/{@link ByteView}/list-entry object, unlike {@link #all()}. {@code name}/{@code
-     * value} are the same two {@link ByteView} instances on every call, repositioned in place;
-     * they are valid only for the duration of that single {@link HeaderConsumer#accept} call —
-     * same "do not retain past the handler" rule as {@link #view}, just per-invocation instead
-     * of per-request. Prefer a non-capturing or field-reusing {@link HeaderConsumer} (see its
-     * javadoc) if the call site itself needs to stay allocation-free too.
-     *
-     * <p>Exists for callers that must handle an open-ended set of header names — e.g. a reverse
-     * proxy forwarding whatever the client sent — where {@link #first}/{@link #all}'s per-name
-     * lookup isn't usable because the set of names isn't known upfront.
-     */
+    @Override
     public void forEach(HeaderConsumer consumer) {
         if (buffer == null) return;
         if (nameSlice == null) {
@@ -150,18 +143,6 @@ public class HeaderMap {
         }
     }
 
-    /**
-     * Callback for {@link #forEach}. Implement with a reusable, field-holding instance (reset
-     * before each {@code forEach} call) rather than a capturing lambda if the call site itself
-     * needs to be allocation-free too — a capturing lambda is its own per-call allocation, same
-     * as anywhere else on a hot path (see {@code docs/CODE-STYLE.md} in the Pathway project for
-     * the idiom this mirrors).
-     */
-    @FunctionalInterface
-    public interface HeaderConsumer {
-        void accept(ByteView name, ByteView value);
-    }
-
     /** Mutable zero-copy slice into {@link #buffer} — see {@link #forEach}. */
     private final class Slice implements ByteView {
         int start;
@@ -171,14 +152,14 @@ public class HeaderMap {
         @Override public byte byteAt(int i) { return buffer[start + i]; }
     }
 
-    /** Returns the first value of header {@code name} (case-insensitive), or {@code null}. */
+    @Override
     public String first(String name) {
         int i = indexOfHeader(name);
         if (i < 0) return null;
         return new String(buffer, valueOffsets[i], valueLengths[i], StandardCharsets.UTF_8);
     }
 
-    /** Returns all values of header {@code name} in declaration order, or an empty list. */
+    @Override
     public List<String> all(String name) {
         if (buffer == null) return List.of();
         List<String> result = null;
@@ -192,7 +173,7 @@ public class HeaderMap {
         return result != null ? result : List.of();
     }
 
-    /** Returns all header values in declaration order. */
+    @Override
     public List<String> all() {
         if (buffer == null) return List.of();
         List<String> result = new ArrayList<>(headerCount);
@@ -202,11 +183,21 @@ public class HeaderMap {
         return result;
     }
 
-    /** Case-insensitive comparison of the first value of {@code name} against {@code value}. */
+    @Override
     public boolean valueEqualsIgnoreCase(String name, String value) {
         int i = indexOfHeader(name);
         if (i < 0) return false;
         return ByteScan.equalsIgnoreCaseAscii(buffer, valueOffsets[i], valueOffsets[i] + valueLengths[i], value);
+    }
+
+    @Override
+    public boolean contains(String name) {
+        return indexOfHeader(name) >= 0;
+    }
+
+    @Override
+    public int count() {
+        return headerCount;
     }
 
     /**
@@ -215,11 +206,12 @@ public class HeaderMap {
      * <h3>{@code EX-05}: pooled, not allocated per call</h3>
      * The returned view is drawn from a small internal {@link SlicePool} rather than allocated
      * fresh. It stays valid until either the request ends, or {@link #view} is called
-     * {@value #VIEW_POOL_SIZE} more times on this same {@code HeaderMap} — whichever comes
+     * {@value #VIEW_POOL_SIZE} more times on this same {@code Http1HeaderMap} — whichever comes
      * first — at which point the ring wraps around and silently repositions the same instance
      * over different bytes. A handler that needs more than {@value #VIEW_POOL_SIZE} views alive
      * at once should copy the earlier ones to {@code String}/{@code byte[]} before requesting more.
      */
+    @Override
     public ByteView view(String name) {
         int i = indexOfHeader(name);
         if (i < 0) return null;

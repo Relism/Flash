@@ -10,9 +10,9 @@ import java.io.*;
  *       Safe to call multiple times; the second call returns the cached array. Throws for
  *       bodies larger than 2 GB.</li>
  *   <li>{@link #stream()} — returns a bounded {@link InputStream} without upfront allocation.
- *       For fixed-length bodies this is a view into the already-buffered header bytes stitched
- *       to the socket; for chunked bodies it is the raw {@link dev.relism.ChunkedInputStream}
- *       that de-chunks on the fly.</li>
+ *       For fixed-length bodies this is a reused, repositioned view (see {@code EX-23} below)
+ *       into the already-buffered header bytes stitched to the socket; for chunked bodies it is
+ *       the raw {@link dev.relism.ChunkedInputStream} that de-chunks on the fly.</li>
  * </ul>
  *
  * <p><b>Mutual exclusivity:</b> calling both {@code bytes()} and {@code stream()} on the same
@@ -20,37 +20,68 @@ import java.io.*;
  *
  * <p><b>Keep-alive:</b> unread body bytes are discarded by {@link Request#drain()} after the
  * handler returns so the socket is correctly positioned for the next pipelined request.
+ *
+ * <h3>{@code EX-22}: pooled, not allocated per request</h3>
+ * One instance per connection (owned by {@code RequestParser}, repositioned via {@link #reset}
+ * for every request), the same treatment {@link Request}/{@link RequestLine} get. The {@link
+ * #of(byte[])} factory below remains for test/manual construction and returns a freestanding,
+ * unpooled instance — exactly like {@link Request}'s own manual constructor.
+ *
+ * <h3>{@code EX-23}/{@code EX-24}: the reusable bounded stream and drain buffer</h3>
+ * {@link #stream()} used to allocate a {@link SequenceInputStream}, a {@link ByteArrayInputStream}
+ * and an anonymous bounded {@link InputStream} on every call. It now hands out one persistent
+ * {@link BoundedBufferedInputStream}, repositioned per request instead of reallocated.
+ * {@link #drain()}'s chunked-body path used to call {@code InputStream.transferTo}, which
+ * allocates a fresh 8 KiB {@code byte[]} internally on every call (the JDK default
+ * implementation); it now drains through a lazily-created, persistent buffer instead.
  */
-public final class RequestBody {
-    private static final byte[] EMPTY_BYTES = new byte[0];
-
-    private final InputStream socket;
-    private final long        contentLength;
-    private final byte[]      preBuf;
-    private final int         preBufOff;
-    private final int         preBufLen;
+public class RequestBody {
+    private InputStream socket;
+    private long        contentLength;
+    private byte[]      preBuf;
+    private int         preBufOff;
+    private int         preBufLen;
 
     private byte[] resolved;
     private long   socketConsumed;
 
+    // EX-23: created once, repositioned per request via reset()'s call into boundedStream.reset(...).
+    private BoundedBufferedInputStream boundedStream;
+
+    // EX-24: created lazily on first chunked-body drain(), then reused for the life of the connection.
+    private byte[] drainBuffer;
+
+    /** Pooled instance, populated later via {@link #reset}. One per connection — see {@code RequestParser}. */
+    public RequestBody() {
+    }
+
     RequestBody(InputStream socket, long contentLength, byte[] preBuf, int preBufOff, int preBufLen) {
+        reset(socket, contentLength, preBuf, preBufOff, preBufLen);
+    }
+
+    /** Pre-resolved body: test payloads and empty body — skips all I/O. Always a freestanding, unpooled instance. */
+    private RequestBody(byte[] preResolved) {
+        reset(null, preResolved.length, null, 0, 0);
+        this.resolved = preResolved;
+    }
+
+    /**
+     * Repositions this instance over a new request. {@code public} because {@code RequestParser}
+     * (a different package) owns and resets its own pooled instance directly — matching
+     * {@link RequestLine#reset}'s precedent — not because user code should ever call it.
+     */
+    public void reset(InputStream socket, long contentLength, byte[] preBuf, int preBufOff, int preBufLen) {
         this.socket        = socket;
         this.contentLength = contentLength;
         this.preBuf        = preBuf;
         this.preBufOff     = preBufOff;
         this.preBufLen     = preBufLen;
+        this.resolved       = null;
+        this.socketConsumed = 0;
     }
-
-    /** Pre-resolved body: test payloads and empty body — skips all I/O. */
-    private RequestBody(byte[] preResolved) {
-        this(null, preResolved.length, null, 0, 0);
-        this.resolved = preResolved;
-    }
-
-    private static final RequestBody EMPTY = new RequestBody(EMPTY_BYTES);
 
     static RequestBody of(byte[] bytes) { return new RequestBody(bytes); }
-    static RequestBody empty()          { return EMPTY; }
+    static RequestBody empty()          { return new RequestBody(new byte[0]); }
 
     /** {@code true} if the body has zero bytes ({@code Content-Length: 0} or no body). */
     public boolean isEmpty() { return contentLength == 0; }
@@ -96,54 +127,92 @@ public final class RequestBody {
     /**
      * Returns a bounded {@link InputStream} over the body without upfront allocation.
      *
-     * <p>For fixed-length bodies: a {@link SequenceInputStream} of any already-buffered header
-     * bytes followed by a bounded view of the socket stream — zero heap beyond those small
-     * pre-buffered bytes.
+     * <p>For fixed-length bodies: a reused {@link BoundedBufferedInputStream} (see the class
+     * Javadoc, {@code EX-23}) serving any already-buffered header bytes followed by a bounded
+     * view of the socket stream — zero allocation on a warm connection.
      *
      * <p>For chunked bodies: the raw {@link dev.relism.ChunkedInputStream} that de-chunks on
      * the fly; EOF signals the end of the logical body and leaves the socket positioned for
      * the next keep-alive request.
      *
      * <p>If {@link #bytes()} was called first, returns a fresh {@link java.io.ByteArrayInputStream}
-     * over the cached array.
+     * over the cached array — a rare dual-access pattern, not the hot path {@code EX-23} targets.
      */
     public InputStream stream() {
         if (resolved != null) return new ByteArrayInputStream(resolved);
         if (contentLength < 0) return socket; // ChunkedInputStream — EOF signals end of body
+        if (boundedStream == null) boundedStream = new BoundedBufferedInputStream();
         int  fromBuf    = (int) Math.min(preBufLen, contentLength);
         long fromSocket = contentLength - fromBuf;
-        InputStream bufPart = new ByteArrayInputStream(preBuf, preBufOff, fromBuf);
-        return fromSocket == 0 ? bufPart : new SequenceInputStream(bufPart, bounded(socket, fromSocket));
+        boundedStream.reset(preBuf, preBufOff, fromBuf, fromSocket);
+        return boundedStream;
     }
 
     /** Discards unread body bytes to reposition the socket for the next keep-alive request. */
     void drain() {
         if (isEmpty() || resolved != null) return;
         if (contentLength < 0) {
-            try { socket.transferTo(OutputStream.nullOutputStream()); } catch (IOException ignored) {}
+            // EX-24: InputStream.transferTo's default implementation allocates a fresh 8 KiB
+            // byte[] on every call — replaced with a buffer this instance allocates once
+            // (lazily, only if a chunked body is ever actually drained) and reuses thereafter.
+            if (drainBuffer == null) drainBuffer = new byte[8192];
+            try {
+                while (socket.read(drainBuffer) > 0) { /* discard */ }
+            } catch (IOException ignored) {
+            }
             return;
         }
         long remaining = (contentLength - preBufLen) - socketConsumed;
         if (remaining > 0) try { socket.skipNBytes(remaining); } catch (IOException ignored) {}
     }
 
-    private InputStream bounded(InputStream src, long limit) {
-        return new InputStream() {
-            private long left = limit;
+    /**
+     * {@code EX-23}: a reused, repositionable {@link InputStream} that serves bytes first from a
+     * caller-owned pre-buffered array, then from the socket, bounded overall to a fixed length —
+     * replacing the {@code SequenceInputStream}+{@code ByteArrayInputStream}+anonymous-bounded-
+     * stream trio that used to be allocated fresh on every {@link #stream()} call. One instance
+     * lives on the owning {@link RequestBody} for the whole connection; {@link #reset} repositions
+     * it for each new request.
+     */
+    private final class BoundedBufferedInputStream extends InputStream {
+        private byte[] preBuf;
+        private int    preBufPos;
+        private int    preBufRemaining;
+        private long   socketRemaining;
 
-            @Override public int read() throws IOException {
-                if (left == 0) return -1;
-                int b = src.read();
-                if (b >= 0) { left--; socketConsumed++; }
-                return b;
+        void reset(byte[] preBuf, int preBufOff, int preBufLen, long socketRemaining) {
+            this.preBuf          = preBuf;
+            this.preBufPos       = preBufOff;
+            this.preBufRemaining = preBufLen;
+            this.socketRemaining = socketRemaining;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (preBufRemaining > 0) {
+                preBufRemaining--;
+                return preBuf[preBufPos++] & 0xFF;
             }
+            if (socketRemaining == 0) return -1;
+            int b = socket.read();
+            if (b >= 0) { socketRemaining--; socketConsumed++; }
+            return b;
+        }
 
-            @Override public int read(byte[] buf, int off, int len) throws IOException {
-                if (left == 0) return -1;
-                int n = src.read(buf, off, (int) Math.min(len, left));
-                if (n > 0) { left -= n; socketConsumed += n; }
+        @Override
+        public int read(byte[] dst, int off, int len) throws IOException {
+            if (len == 0) return 0;
+            if (preBufRemaining > 0) {
+                int n = Math.min(len, preBufRemaining);
+                System.arraycopy(preBuf, preBufPos, dst, off, n);
+                preBufPos += n;
+                preBufRemaining -= n;
                 return n;
             }
-        };
+            if (socketRemaining == 0) return -1;
+            int n = socket.read(dst, off, (int) Math.min(len, socketRemaining));
+            if (n > 0) { socketRemaining -= n; socketConsumed += n; }
+            return n;
+        }
     }
 }

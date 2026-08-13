@@ -41,12 +41,28 @@ public final class FastPathViews {
         return (long) LONG_VIEW_LE.get(array, pos);
     }
 
+    /**
+     * {@code EX-42}: not immutable — {@link #reset} repositions an existing instance over new
+     * bounds instead of requiring a fresh allocation. {@code RequestParser} owns one pooled
+     * instance per role (path/query/protocol) per connection and calls {@link #reset} on it for
+     * every request, the same "do not retain past the handler" pooling contract every other
+     * per-connection object in this codebase already follows ({@code Http1HeaderMap},
+     * {@code RequestLine}, {@code Request}, {@code RequestBody}). The public constructor remains
+     * for one-shot, non-pooled use (tests, other call sites that build a single fixed view).
+     */
     public static final class RequestByteView implements ArrayBackedByteView {
-        private final byte[] buffer;
-        private final int start;
-        private final int length;
+        private byte[] buffer;
+        private int start;
+        private int length;
 
         public RequestByteView(byte[] buffer, int start, int length) {
+            this.buffer = buffer;
+            this.start = start;
+            this.length = length;
+        }
+
+        /** Repositions this instance over new bounds. Zero allocation. */
+        public void reset(byte[] buffer, int start, int length) {
             this.buffer = buffer;
             this.start = start;
             this.length = length;
