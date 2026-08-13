@@ -39,8 +39,10 @@ class Http2SettingsTest {
   }
 
   @Test
-  void validatesEnablePushInitialWindowAndFrameSize() {
+  void validatesBooleanSettingsInitialWindowAndFrameSize() {
     assertCode(Http2ErrorCode.PROTOCOL_ERROR, payload(Http2Settings.ENABLE_PUSH, 2));
+    assertCode(
+        Http2ErrorCode.PROTOCOL_ERROR, payload(Http2Settings.ENABLE_CONNECT_PROTOCOL, 2));
     assertCode(
         Http2ErrorCode.FLOW_CONTROL_ERROR, payload(Http2Settings.INITIAL_WINDOW_SIZE, 0x8000_0000));
     assertCode(Http2ErrorCode.PROTOCOL_ERROR, payload(Http2Settings.MAX_FRAME_SIZE, 16_383));

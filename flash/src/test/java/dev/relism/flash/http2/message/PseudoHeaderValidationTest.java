@@ -43,6 +43,28 @@ class PseudoHeaderValidationTest {
   }
 
   @Test
+  void validatesExtendedConnectShape() {
+    assertDoesNotThrow(
+        () ->
+            validate(
+                ":method", "CONNECT",
+                ":protocol", "websocket",
+                ":scheme", "https",
+                ":path", "/chat",
+                ":authority", "example.com"));
+    rejects(
+        ":method", "GET",
+        ":protocol", "websocket",
+        ":scheme", "https",
+        ":path", "/chat",
+        ":authority", "example.com");
+    rejects(
+        ":method", "CONNECT",
+        ":protocol", "websocket",
+        ":authority", "example.com");
+  }
+
+  @Test
   void rejectsUppercaseForbiddenAndInvalidTeFields() {
     rejects(validWith("X-Test", "1"));
     rejects(validWith("connection", "close"));

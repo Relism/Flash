@@ -11,6 +11,7 @@ public final class Http2Settings {
   public static final int INITIAL_WINDOW_SIZE = 0x4;
   public static final int MAX_FRAME_SIZE = 0x5;
   public static final int MAX_HEADER_LIST_SIZE = 0x6;
+  public static final int ENABLE_CONNECT_PROTOCOL = 0x8;
 
   public static final int DEFAULT_HEADER_TABLE_SIZE = 4_096;
   public static final int DEFAULT_INITIAL_WINDOW_SIZE = 65_535;
@@ -78,7 +79,7 @@ public final class Http2Settings {
 
   private static void validate(int id, long value) {
     switch (id) {
-      case ENABLE_PUSH -> {
+      case ENABLE_PUSH, ENABLE_CONNECT_PROTOCOL -> {
         if (value > 1) throw Http2Exception.PROTOCOL_ERROR;
       }
       case INITIAL_WINDOW_SIZE -> {

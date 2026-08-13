@@ -1,5 +1,6 @@
 package dev.relism.flash.http2;
 
+import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
@@ -11,7 +12,11 @@ import dev.relism.flash.http2.stream.Http2StreamTable;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.Response;
+import dev.relism.flash.models.ResponseStreamOutputStream;
 import dev.relism.flash.transport.ConnectionContext;
+import dev.relism.flash.websocket.WebSocketHandler;
+import dev.relism.flash.websocket.WebSocketLoop;
+import dev.relism.flash.websocket.WebSocketSession;
 import java.io.IOException;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.extern.slf4j.Slf4j;
@@ -103,10 +108,29 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       Request request = stream.assembleRequest(context.remoteAddress(), context.sslSocket());
       Response pooled = stream.resetResponse();
       Response response = pooled;
-      Object routeScratch = stream.routeScratch(context.router());
       if (!Http2Authority.isServed(request.header("host"), request.sslSession())) {
         response.status(HttpStatus.MISDIRECTED_REQUEST);
+        if (stream.websocketConnect()) response.type(ContentType.NONE).streaming(output -> {});
+      } else if (stream.websocketConnect()) {
+        WebSocketHandler handler =
+            context.wsRouter().route(request, stream.wsRouteScratch(context.wsRouter()));
+        response.type(ContentType.NONE);
+        if (handler == null) {
+          response.status(HttpStatus.NOT_FOUND).streaming(output -> {});
+        } else {
+          response.streaming(
+              output ->
+                  WebSocketLoop.run(
+                      new WebSocketSession(
+                          request.body().stream(),
+                          new ResponseStreamOutputStream(output),
+                          context.configuration().getWsFrameBufferSize(),
+                          request,
+                          false),
+                      handler));
+        }
       } else {
+        Object routeScratch = stream.routeScratch(context.router());
         RequestHandler handler = context.router().route(request, routeScratch);
         if (handler == null) handler = context.router().getNotFoundHandler();
         try {

@@ -182,12 +182,26 @@ app.onException((ex, req, res) -> {
 | `h2MaxConnectionLifetimeMs` | `0` | Optional connection lifetime; `0` disables it. |
 | `h2StreamIdleTimeoutMs` | `60000` | Inactive open-stream deadline. |
 
+## WebSockets over HTTP/2
+
+The same `ws(path, handler)` route serves WebSockets over HTTP/1.1 and HTTP/2. When HTTP/2 is
+enabled, Flash advertises RFC 8441 extended CONNECT support and carries WebSocket frames inside
+flow-controlled DATA frames. No alternate handler, route, or session API is required:
+
+```java
+app.ws("/live", handler);
+```
+
+HTTP/1.1 clients use the ordinary `101 Switching Protocols` upgrade. HTTP/2 clients use an
+extended CONNECT and receive status `200`; Flash applies the same RFC 6455 framing, masking,
+fragmentation, close, and callback behavior on both transports. Client support for negotiating
+WebSockets over HTTP/2 varies, so clients without RFC 8441 support continue to use HTTP/1.1.
+
 ## TLS
 
-HTTPS and WSS are a transport-layer concern only: once a listener is bound, the accepted
-`Socket` is either plain or an `SSLSocket` indistinguishably from `HttpServer`'s point of view
-onward — the request parser, router, and WebSocket upgrade never branch on it. WSS is therefore
-not a separate feature; it's a WebSocket upgrade running over whatever transport it was handed.
+HTTPS and WSS are a transport-layer concern only. Once a listener is bound, the accepted socket
+is plain or TLS; the selected HTTP connection implementation then performs either the HTTP/1.1
+upgrade or the HTTP/2 extended CONNECT. WSS does not require a separate route or handler API.
 
 ### Quick start
 

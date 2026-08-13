@@ -17,6 +17,7 @@ import dev.relism.flash.models.RequestBody;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.AbstractRouter;
+import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.fpr.core.ByteView;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -60,6 +61,7 @@ public final class Http2Stream
   private int emptyDataFrames;
   private Http2StreamTable owner;
   private Object routeScratch;
+  private Object wsRouteScratch;
   private volatile boolean dispatched;
   private volatile boolean cancelled;
   private boolean headersValidated;
@@ -135,9 +137,11 @@ public final class Http2Stream
       throw new Http2StreamException(
           id, Http2ErrorCode.PROTOCOL_ERROR, "unsupported request method");
     }
+    if (pseudoHeaders.websocket()) method = HttpMethod.GET;
     requestLine.reset(method, path, question < 0 ? null : query, protocol, headers);
     requestBody.reset(http2Body, http2Body.declaredLength(), null, 0, 0);
-    Request assembled = Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+    Request assembled =
+        Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
     assembled.setTrailers(trailers);
     return assembled;
   }
@@ -277,6 +281,15 @@ public final class Http2Stream
   public Object routeScratch(AbstractRouter router) {
     if (routeScratch == null) routeScratch = router.newScratch();
     return routeScratch;
+  }
+
+  public Object wsRouteScratch(AbstractWsRouter router) {
+    if (wsRouteScratch == null) wsRouteScratch = router.newScratch();
+    return wsRouteScratch;
+  }
+
+  public boolean websocketConnect() {
+    return pseudoHeaders.websocket();
   }
 
   public void markDispatched() {

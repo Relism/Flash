@@ -76,7 +76,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 12 — Trailers, half-close, gRPC | done | `feature/core/http2` | Protocol-neutral request/response trailers, bounded push streaming, four half-close orderings and authority-form CONNECT tunnels complete. Real grpcurl 1.9.3 unary/server-streaming/error interop passes. EX-48/49 fixed. HTTP/2 remains opt-in until the Phase 13 hostile-peer gate (DEC-29). 649/649 tests green from a clean `-Pjmh` build. |
 | 13 — Security hardening & abuse resistance | done | `feature/core/http2` | Two-bucket Rapid Reset/stream/settings/ping/aggregate counters, control/write queue bounds, optional stream/byte/lifetime budgets, absolute header and idle-stream deadlines, and hostile-peer suite complete. Security review found+fixed EX-50/51. JMH counter: 38.083 ns/op, ~10^-4 B/op, no GC. 100k-CONTINUATION attack terminates in under 2 s with bounded retained heap. 663/663 tests green from a clean `-Pjmh` build. |
 | 14 — h2c prior knowledge + proxy support | done | `feature/core/http2` | Independent TLS/h2c gates, pooled proxy-oriented h2 client with TLS ALPN and h2c, bidirectional h1/h2 trailer relay, shared four-direction hop-by-hop policy and certificate-backed 421 handling complete. Real grpcurl h2c interop passes. 670/670 tests green from a clean `-Pjmh` build. |
-| 15 — RFC 8441 extended CONNECT (WS over h2) | not started | — | — |
+| 15 — RFC 8441 extended CONNECT (WS over h2) | done | `feature/core/http2` | SETTINGS_ENABLE_CONNECT_PROTOCOL, shared WS router/session, DATA flow control, >1 MiB message, h1/h2 parity and lifecycle hardening complete. EX-52/53 fixed; DEC-32 recorded. 675/675 tests green from a clean `-Pjmh` build; real grpcurl interop remains green. |
 | 16 — Compliance test suite | not started | — | — |
 | 17 — Benchmarks, allocation gates, tuning | not started | — | — |
 | 18 — Documentation | not started | — | — |
@@ -812,6 +812,25 @@ zero; a more unfortunate interleaving could have touched a reused pooled object.
 stream retirement atomic in `Http2StreamTable` and require both the expected stream id and object
 identity to match the live table entry. A regression test proves that a stale retirement cannot
 remove the next generation of the same pooled object. **Phase**: 13.
+
+### EX-52 — WebSocket `onOpen` failures bypassed lifecycle cleanup
+
+Found while routing extended CONNECT through the existing WebSocket loop. `onOpen` ran before the
+loop's `try/finally`, and runtime failures from application callbacks were not handled alongside
+I/O failures. An exception could therefore escape without `onError`, `onClose`, or guaranteed
+transport release. **Fix**: include `onOpen` and all callback dispatch in the guarded lifecycle,
+report runtime failures, and force-close in a nested `finally` even if `onClose` fails.
+`WebSocketLoopTest` is the regression test. **Phase**: 15.
+
+### EX-53 — Push-streaming HTTP/2 responses could deadlock before response headers
+
+Found in the first live extended-CONNECT test. `Http2ResponseWriter.startFlowControlled` tried to
+read the first push-streaming body byte while constructing the same batch as the response HEADERS.
+A full-duplex producer waiting for request DATA therefore blocked before the client could receive
+the successful response and send that DATA. **Fix**: publish push-streaming HEADERS as the first
+batch and start body reads only from the post-write resume batch. `WebSocketOverH2Test` proves the
+handshake completes before sending a message and then carries a message beyond the flow window.
+**Phase**: 15.
 
 ---
 
@@ -2956,8 +2975,9 @@ defines the h2 mechanism.
 - `flash/docs/http2/WEBSOCKET.md`.
 
 ### DoD
-- [ ] A browser negotiating h2 can open a WebSocket to a Flash `ws()` route.
-- [ ] `AbstractWsRouter` and `FastPathWsRouterImpl` unchanged.
+- [x] An RFC 8441 client negotiating h2 can open a WebSocket to a Flash `ws()` route
+      (`WebSocketOverH2Test`; the release-browser matrix remains Phase 16 scope).
+- [x] `AbstractWsRouter` and `FastPathWsRouterImpl` unchanged.
 
 ---
 

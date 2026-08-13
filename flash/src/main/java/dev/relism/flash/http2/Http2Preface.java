@@ -55,6 +55,7 @@ public final class Http2Preface {
     setting(bytes, Http2Settings.MAX_CONCURRENT_STREAMS, Http2Limits.MAX_CONCURRENT_STREAMS);
     setting(bytes, Http2Settings.INITIAL_WINDOW_SIZE, Http2Limits.INITIAL_WINDOW_SIZE_LOCAL);
     setting(bytes, Http2Settings.MAX_HEADER_LIST_SIZE, Http2Limits.MAX_HEADER_LIST_SIZE);
+    setting(bytes, Http2Settings.ENABLE_CONNECT_PROTOCOL, 1);
     frame.endFrame();
     return copy(bytes);
   }

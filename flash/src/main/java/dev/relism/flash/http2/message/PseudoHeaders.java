@@ -12,6 +12,7 @@ public final class PseudoHeaders {
   private static final int SCHEME = 2;
   private static final int PATH = 4;
   private static final int AUTHORITY = 8;
+  private static final int PROTOCOL = 16;
 
   private final PooledSlice name = new PooledSlice();
   private final PooledSlice value = new PooledSlice();
@@ -19,6 +20,7 @@ public final class PseudoHeaders {
   private final PooledSlice scheme = new PooledSlice();
   private final PooledSlice path = new PooledSlice();
   private final PooledSlice authority = new PooledSlice();
+  private final PooledSlice protocol = new PooledSlice();
   private final PooledSlice host = new PooledSlice();
   private int present;
 
@@ -28,6 +30,7 @@ public final class PseudoHeaders {
     scheme.reset(null, 0, 0);
     path.reset(null, 0, 0);
     authority.reset(null, 0, 0);
+    protocol.reset(null, 0, 0);
     host.reset(null, 0, 0);
     boolean regularSeen = false;
 
@@ -51,7 +54,15 @@ public final class PseudoHeaders {
 
     if ((present & METHOD) == 0) fail(streamId, "missing :method");
     boolean connect = equals(method, "CONNECT");
-    if (connect) {
+    boolean extendedConnect = (present & PROTOCOL) != 0;
+    if (extendedConnect) {
+      if (!connect) fail(streamId, ":protocol requires CONNECT");
+      int required = METHOD | SCHEME | PATH | AUTHORITY | PROTOCOL;
+      if ((present & required) != required) {
+        fail(streamId, "extended CONNECT missing pseudo-header");
+      }
+      if (path.length() == 0) fail(streamId, "empty :path");
+    } else if (connect) {
       if ((present & AUTHORITY) == 0) fail(streamId, "CONNECT requires :authority");
       if ((present & (SCHEME | PATH)) != 0) fail(streamId, "CONNECT forbids :scheme and :path");
     } else {
@@ -94,11 +105,16 @@ public final class PseudoHeaders {
     return authority;
   }
 
+  public boolean websocket() {
+    return protocol.array() != null && equals(protocol, "websocket");
+  }
+
   private void copySlice(int bit, PooledSlice source) {
     if (bit == METHOD) copy(source, method);
     else if (bit == SCHEME) copy(source, scheme);
     else if (bit == PATH) copy(source, path);
-    else copy(source, authority);
+    else if (bit == AUTHORITY) copy(source, authority);
+    else copy(source, protocol);
   }
 
   private static void copy(PooledSlice source, PooledSlice target) {
@@ -110,6 +126,7 @@ public final class PseudoHeaders {
     if (equals(name, ":scheme")) return SCHEME;
     if (equals(name, ":path")) return PATH;
     if (equals(name, ":authority")) return AUTHORITY;
+    if (equals(name, ":protocol")) return PROTOCOL;
     return 0;
   }
 

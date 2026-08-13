@@ -1042,3 +1042,25 @@ general-purpose stack.
 bounded pool or client-side multiplexing without changing the proxy-facing API.
 
 ---
+
+## DEC-32 — Reuse the WebSocket router and session for extended CONNECT
+
+**Context.** RFC 8441 changes the HTTP handshake and transport framing, but not the application
+route, RFC 6455 message semantics, or handler lifecycle. Introducing an HTTP/2-specific router,
+handler, or session would duplicate public and internal behavior.
+
+**Decision.** Validate CONNECT and `:protocol` at the HTTP/2 wire boundary, then expose a
+`websocket` extended CONNECT as GET only while resolving the existing `AbstractWsRouter` route.
+Feed request DATA to the existing `WebSocketSession` and adapt the protocol-neutral
+`ResponseStream` to its `OutputStream` contract. Publish response HEADERS in their own first batch
+so the full-duplex producer cannot block the handshake while waiting for request DATA.
+
+**Consequence.** One `ws(path, handler)` registration behaves the same on HTTP/1.1 and HTTP/2;
+masking, fragmentation, callbacks, and close handling have one implementation. HTTP/2 contributes
+only pseudo-header validation and DATA flow control, while the shared response bridge remains
+usable by other streaming adapters.
+
+**Revisit when.** Only if a future WebSocket transport cannot be represented by the existing
+stream pair without losing protocol semantics.
+
+---

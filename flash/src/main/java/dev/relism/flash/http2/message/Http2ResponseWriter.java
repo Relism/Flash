@@ -151,7 +151,8 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       throws IOException {
     if (streamId <= 0) throw new IllegalArgumentException("streamId must be positive");
     if (maxFrameSize <= 0 || availableFlowWindow < 0) {
-      throw new IllegalArgumentException("frame size must be positive and flow window non-negative");
+      throw new IllegalArgumentException(
+          "frame size must be positive and flow window non-negative");
     }
     headerBlock.reset();
     output.reset();
@@ -212,7 +213,7 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       finished = true;
       endStreamInBatch = true;
     }
-    if (hasBody && availableFlowWindow > 0) {
+    if (hasBody && availableFlowWindow > 0 && !pushBody) {
       appendData(maxFrameSize, availableFlowWindow);
     }
     return dataBytesInBatch;
@@ -282,7 +283,8 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       end = unknownLength ? eof : bodyRemaining == 0;
       boolean trailersFollow = end && response.hasTrailers();
       if (count != 0 || !trailersFollow) {
-        frames.beginFrame(FrameType.DATA, end && !trailersFollow ? FrameFlags.END_STREAM : 0, streamId);
+        frames.beginFrame(
+            FrameType.DATA, end && !trailersFollow ? FrameFlags.END_STREAM : 0, streamId);
         output.writeBytes(relay, 0, count);
         frames.endFrame();
       }
