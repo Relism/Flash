@@ -69,6 +69,7 @@ public final class Http2Stream
   private volatile boolean responseStarted;
   private boolean releaseClaimed;
   private volatile boolean resumeTask;
+  private volatile long lastActivityNanos;
   Http2Stream poolNext;
 
   Http2Stream(DataBufferPool dataBuffers) {
@@ -96,6 +97,7 @@ public final class Http2Stream
     headerBlock.reset();
     trailerBlock.reset();
     trailers.reset(trailerBlock);
+    touch();
   }
 
   void clear() {
@@ -299,6 +301,14 @@ public final class Http2Stream
 
   public boolean cancelled() {
     return cancelled;
+  }
+
+  public void touch() {
+    lastActivityNanos = System.nanoTime();
+  }
+
+  public boolean idleExpired(long nowNanos, long timeoutNanos) {
+    return timeoutNanos > 0 && nowNanos - lastActivityNanos >= timeoutNanos;
   }
 
   public synchronized int sendWindow() {

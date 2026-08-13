@@ -97,6 +97,22 @@ public final class Http2StreamTable {
     return removed;
   }
 
+  /** Removes a stream only when both its id and pooled-object identity still match. */
+  public synchronized boolean removeIfSame(Http2Stream stream, int streamId) {
+    if (streamId <= 0) return false;
+    int slot = find(streamId);
+    if (keys[slot] != streamId || values[slot] != stream) return false;
+    remove(streamId);
+    return true;
+  }
+
+  /** Atomically removes and recycles the matching generation of a pooled stream. */
+  public synchronized boolean retire(Http2Stream stream, int streamId) {
+    if (!removeIfSame(stream, streamId)) return false;
+    release(stream);
+    return true;
+  }
+
   public synchronized void forEach(StreamConsumer consumer) {
     for (int i = 0; i < keys.length; i++) {
       if (keys[i] != 0) consumer.accept(values[i]);

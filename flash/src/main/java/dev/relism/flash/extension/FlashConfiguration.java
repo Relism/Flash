@@ -101,6 +101,34 @@ public class FlashConfiguration {
    */
   @Builder.Default boolean h2HuffmanDynamicValues = false;
 
+  /** Maximum peer RST_STREAM frames per rolling interval. */
+  @Builder.Default int h2MaxResetStreamsPerInterval =
+      dev.relism.flash.http2.Http2Limits.MAX_RESET_STREAMS_PER_INTERVAL;
+
+  /** Maximum peer-created streams per rolling interval. */
+  @Builder.Default int h2MaxStreamsCreatedPerInterval =
+      dev.relism.flash.http2.Http2Limits.MAX_STREAMS_CREATED_PER_INTERVAL;
+
+  /** Rolling interval used by HTTP/2 abuse-rate counters. */
+  @Builder.Default long h2AbuseRateIntervalMs =
+      dev.relism.flash.http2.Http2Limits.RESET_RATE_INTERVAL_MS;
+
+  /** Maximum total streams served by one HTTP/2 connection; zero disables the budget. */
+  @Builder.Default long h2MaxStreamsPerConnection =
+      dev.relism.flash.http2.Http2Limits.MAX_STREAMS_PER_CONNECTION;
+
+  /** Maximum wire bytes read by one HTTP/2 connection; zero disables the budget. */
+  @Builder.Default long h2MaxBytesPerConnection =
+      dev.relism.flash.http2.Http2Limits.MAX_BYTES_PER_CONNECTION;
+
+  /** Maximum HTTP/2 connection lifetime in milliseconds; zero disables the budget. */
+  @Builder.Default long h2MaxConnectionLifetimeMs =
+      dev.relism.flash.http2.Http2Limits.MAX_CONNECTION_LIFETIME_MS;
+
+  /** Maximum inactivity time for an open HTTP/2 stream. */
+  @Builder.Default long h2StreamIdleTimeoutMs =
+      dev.relism.flash.http2.Http2Limits.STREAM_IDLE_TIMEOUT_MS;
+
   /**
    * Whether every response includes a {@code Date} header (RFC 9110 §6.6.1). Default {@code true};
    * set {@code false} if Flash sits behind a reverse proxy that already adds one, to skip the

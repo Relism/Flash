@@ -73,6 +73,27 @@ public final class Http2Limits {
    */
   public static final int MAX_STREAMS_CREATED_PER_INTERVAL = 400;
 
+  /** Maximum SETTINGS frames accepted within one abuse-rate interval. */
+  public static final int MAX_SETTINGS_PER_INTERVAL = 100;
+
+  /** Maximum non-acknowledgement PING frames accepted within one abuse-rate interval. */
+  public static final int MAX_PINGS_PER_INTERVAL = 200;
+
+  /**
+   * Aggregate bound for frames that consume parsing work without carrying application data:
+   * PRIORITY, WINDOW_UPDATE, empty DATA and unknown extension frames.
+   */
+  public static final int MAX_USELESS_FRAMES_PER_INTERVAL = 10_000;
+
+  /** Default total-stream budget for one connection; zero disables the budget. */
+  public static final long MAX_STREAMS_PER_CONNECTION = 100_000;
+
+  /** Default wire-byte budget for one connection; zero disables the budget. */
+  public static final long MAX_BYTES_PER_CONNECTION = 0;
+
+  /** Default connection lifetime budget in milliseconds; zero disables the budget. */
+  public static final long MAX_CONNECTION_LIFETIME_MS = 0;
+
   /**
    * Maximum number of SETTINGS parameter entries accepted in a single SETTINGS frame. A SETTINGS
    * frame is already bounded in byte length by {@link #MAX_FRAME_SIZE_LOCAL} (each entry is 6

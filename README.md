@@ -173,6 +173,13 @@ app.onException((ex, req, res) -> {
 | `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
 | `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
 | `http2Enabled` | `false` | Whether the server negotiates HTTP/2 through ALPN or accepts h2c prior knowledge. The conservative default keeps protocol rollout explicit. |
+| `h2MaxResetStreamsPerInterval` | `200` | Rapid Reset budget per rolling interval. |
+| `h2MaxStreamsCreatedPerInterval` | `400` | New-stream budget per rolling interval. |
+| `h2AbuseRateIntervalMs` | `10000` | Rolling interval for the two operator-tunable rate limits above. |
+| `h2MaxStreamsPerConnection` | `100000` | Total stream budget; `0` disables it. |
+| `h2MaxBytesPerConnection` | `0` | Optional total wire-byte budget; `0` disables it. |
+| `h2MaxConnectionLifetimeMs` | `0` | Optional connection lifetime; `0` disables it. |
+| `h2StreamIdleTimeoutMs` | `60000` | Inactive open-stream deadline. |
 
 ## TLS
 

@@ -1,7 +1,9 @@
 package dev.relism.flash.http2.stream;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -22,5 +24,18 @@ class Http2StreamTableTest {
     for (int i = 1; i < streams.length; i += 2) {
       assertSame(streams[i], table.get(streams[i].id()));
     }
+  }
+
+  @Test
+  void staleRetirementCannotRemoveAReusedPooledStream() {
+    Http2StreamTable table = new Http2StreamTable(1);
+    Http2Stream firstGeneration = table.acquire(1);
+
+    assertTrue(table.retire(firstGeneration, 1));
+    Http2Stream secondGeneration = table.acquire(3);
+    assertSame(firstGeneration, secondGeneration);
+
+    assertFalse(table.retire(firstGeneration, 1));
+    assertSame(secondGeneration, table.get(3));
   }
 }

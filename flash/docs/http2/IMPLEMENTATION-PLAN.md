@@ -74,7 +74,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 10 — Stream state machine + dispatch | done | `feature/core/http2` | Explicit stream transition table, bounded primitive stream table and pool, pseudo-header/message validation, protocol-neutral `Request` assembly, virtual-thread dispatch and exception path, cancellation-safe release, raw h2c + Java HTTP/2 integration. Phase 11 closed the two deferred content-length/DATA cases; h2spec sections 5/8 are now 39/39. JMH pooled lifecycle: 458.499 ns/op, 0.003 B/op, no GC. 618/618 tests green at phase closure. |
 | 11 — DATA, flow control, bodies | done | `feature/core/http2` | Two-level receive/send flow control, consumption-driven WINDOW_UPDATE hysteresis, bounded/coalescing DATA pool, inline and blocking streaming request bodies through the existing `RequestBody`, resumable fixed/known/unknown response streams, content-length and empty-DATA validation. Real TLS HTTP/2 transfer: 100 MiB upload + 100 MiB download verified byte-for-byte. h2spec combined sections 5, 6.1, 6.9 and 8: 50 passed, 1 tool-skipped, 0 failed. JMH: inline materialization exactly one 1,040-byte array; request streaming 0.001 B/op; response streaming 0.002 B/op; full pooled lifecycle 0.003 B/op. 633/633 tests green from a clean `-Pjmh` build. |
 | 12 — Trailers, half-close, gRPC | done | `feature/core/http2` | Protocol-neutral request/response trailers, bounded push streaming, four half-close orderings and authority-form CONNECT tunnels complete. Real grpcurl 1.9.3 unary/server-streaming/error interop passes. EX-48/49 fixed. HTTP/2 remains opt-in until the Phase 13 hostile-peer gate (DEC-29). 649/649 tests green from a clean `-Pjmh` build. |
-| 13 — Security hardening & abuse resistance | not started | — | — |
+| 13 — Security hardening & abuse resistance | done | `feature/core/http2` | Two-bucket Rapid Reset/stream/settings/ping/aggregate counters, control/write queue bounds, optional stream/byte/lifetime budgets, absolute header and idle-stream deadlines, and hostile-peer suite complete. Security review found+fixed EX-50/51. JMH counter: 38.083 ns/op, ~10^-4 B/op, no GC. 100k-CONTINUATION attack terminates in under 2 s with bounded retained heap. 663/663 tests green from a clean `-Pjmh` build. |
 | 14 — h2c prior knowledge + proxy support | not started | — | — |
 | 15 — RFC 8441 extended CONNECT (WS over h2) | not started | — | — |
 | 16 — Compliance test suite | not started | — | — |
@@ -793,6 +793,25 @@ through the ordinary path sanitizer, which prepended `/`; both HTTP/1.1 authorit
 targets and HTTP/2 `:authority` arrive without that prefix, so the existing CONNECT API could
 never match its documented target. **Fix**: normalize CONNECT authority targets separately in the
 shared router registration path and verify a live bidirectional HTTP/2 tunnel. **Phase**: 12.
+
+### EX-50 — Declared HTTP/2 header and stream idle deadlines were not enforced
+
+Found during the whole-package hostile-peer review. `HEADER_BLOCK_ASSEMBLY_TIMEOUT_MS` and
+`STREAM_IDLE_TIMEOUT_MS` existed in `Http2Limits` and were described as enforced defences, but no
+production path read either constant. A peer could retain a CONTINUATION assembly or an open
+stream indefinitely. **Fix**: give header assembly an absolute non-renewable deadline checked on
+frames and read wakeups; track per-stream activity and cancel idle streams with `RST_STREAM
+CANCEL`; expose the stream deadline operationally and add deadline regression tests. **Phase**: 13.
+
+### EX-51 — Concurrent half-close could retire the same pooled HTTP/2 stream twice
+
+Found when the clean integration suite logged an internal error despite passing its assertions.
+The demultiplexer and response-completion thread could both observe a closed stream, then one
+thread could recycle it before the other read its id. The loser attempted to remove stream id
+zero; a more unfortunate interleaving could have touched a reused pooled object. **Fix**: make
+stream retirement atomic in `Http2StreamTable` and require both the expected stream id and object
+identity to match the live table entry. A regression test proves that a stale retirement cannot
+remove the next generation of the same pooled object. **Phase**: 13.
 
 ---
 
@@ -2834,9 +2853,11 @@ of allocated memory (assert with a heap sample, not a hope).
 applicable, and how to tune it. This is the document an operator reads at 3 a.m.
 
 ### DoD
-- [ ] Every attack in this phase has a test that proves the defence.
-- [ ] Every limit is documented with its rationale.
-- [ ] A `security-review` pass over the whole `h2` package is completed and its findings fixed.
+- [x] Every attack in this phase has a test that proves the defence.
+- [x] Every limit is documented with its rationale.
+- [x] A `security-review` pass over the whole `h2` package is completed and its findings fixed
+      (`EX-50`: declared header-assembly and idle-stream deadlines were not wired; `EX-51`:
+      concurrent half-close could retire the same pooled stream twice).
 
 ---
 

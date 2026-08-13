@@ -93,6 +93,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void handle(Http2Stream stream) {
+    stream.touch();
     if (stream.cancelled()) {
       streams.release(stream);
       return;
@@ -162,17 +163,18 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void tryResumeResponse(Http2Stream stream) {
+    stream.touch();
     if (stream.cancelled()) {
       stream.endResponseBatch();
       streams.release(stream);
       return;
     }
     Http2ResponseWriter responseWriter = stream.responseWriter();
+    int streamId = stream.id();
     if (responseWriter.finished()) {
       stream.endResponseBatch();
       if (stream.state() == Http2StreamState.CLOSED) {
-        streams.remove(stream.id());
-        streams.release(stream);
+        streams.retire(stream, streamId);
       }
       return;
     }
@@ -228,8 +230,10 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
 
   @Override
   public void responseBatchCompleted(Http2Stream stream) {
+    stream.touch();
     stream.endResponseBatch();
-    if (stream.id() == 0) return;
+    int streamId = stream.id();
+    if (streamId == 0) return;
     if (stream.cancelled()) {
       streams.remove(stream.id());
       streams.release(stream);
@@ -237,8 +241,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     }
     if (stream.responseWriter().finished()) {
       if (stream.state() == Http2StreamState.CLOSED) {
-        streams.remove(stream.id());
-        streams.release(stream);
+        streams.retire(stream, streamId);
       }
       return;
     }
@@ -246,18 +249,18 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void failAndRelease(Http2Stream stream, Http2ErrorCode error, Exception cause) {
-    if (stream.id() == 0) return;
-    if (cause != null) log.error("HTTP/2 stream {} failed", stream.id(), cause);
-    streams.remove(stream.id());
+    int streamId = stream.id();
+    if (!streams.removeIfSame(stream, streamId)) return;
+    if (cause != null) log.error("HTTP/2 stream {} failed", streamId, cause);
     try {
       stream.cancel();
     } catch (RuntimeException cancellationFailure) {
-      log.debug("Failed to cancel HTTP/2 stream {} cleanly", stream.id(), cancellationFailure);
+      log.debug("Failed to cancel HTTP/2 stream {} cleanly", streamId, cancellationFailure);
     }
     try {
-      failures.fail(stream.id(), error);
+      failures.fail(streamId, error);
     } catch (IOException writeFailure) {
-      log.debug("Failed to write RST_STREAM for {}", stream.id(), writeFailure);
+      log.debug("Failed to write RST_STREAM for {}", streamId, writeFailure);
     } finally {
       streams.release(stream);
     }

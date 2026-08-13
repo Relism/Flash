@@ -982,21 +982,43 @@ window and pool byte capacity together; never raise credit independently of boun
 
 ---
 
-## DEC-29 — Keep HTTP/2 opt-in until the adversarial phase is complete
+## DEC-29 — Keep HTTP/2 opt-in through the cleartext rollout boundary
 
 **Context.** Trailers and push streaming make the protocol feature-complete for ordinary and gRPC-
 shaped traffic, but the dedicated rate-based and composite abuse controls are deliberately owned
 by the following security phase.
 
-**Decision.** Keep `FlashConfiguration.http2Enabled` defaulting to `false` during this phase.
-Applications can enable the complete path explicitly; the default changes only after the hostile-
-peer suite and its limits are green.
+**Decision.** Keep `FlashConfiguration.http2Enabled` defaulting to `false`. Applications can
+enable the complete path explicitly. The Phase 13 hostile-peer suite is now green, but the same
+flag currently also admits cleartext prior-knowledge traffic; Phase 14 owns splitting that into a
+separate `http2CleartextEnabled` opt-in before the general protocol default can change safely.
 
 **Consequence.** Existing deployments do not silently expose a newly completed protocol before its
 adversarial gate. This is rollout sequencing, not an architectural separation: both protocols use
 the same public request/response, header, trailer and streaming APIs.
 
-**Revisit when.** At Phase 13 closure; either flip the default with evidence or record why it must
-remain opt-in.
+**Revisit when.** At Phase 14 closure, after TLS HTTP/2 and cleartext h2c have independent rollout
+controls.
+
+---
+
+## DEC-30 — Rate-limit aggregate non-progress work as one class
+
+**Context.** SETTINGS, PING, PRIORITY, WINDOW_UPDATE, empty DATA and unknown extension frames have
+different wire semantics but share the abuse property that they can consume parser/control work
+without advancing an application message. Separate limits leave gaps when an attacker alternates
+frame types below every individual threshold.
+
+**Decision.** Keep dedicated lower limits for mandatory SETTINGS and PING replies, plus one
+connection-owned two-bucket counter for the aggregate non-progress class. RST_STREAM and stream
+creation retain dedicated CVE-2023-44487 counters because their expensive effect is stream
+lifecycle churn, not merely frame parsing.
+
+**Consequence.** Mixed floods are bounded without six timers or maps. All counters are fixed fields
+on the connection, use `System.nanoTime()`, allocate nothing per increment and require no reaper
+thread. A fixed control-intent pool and one-in-flight intent per live stream bound write queues.
+
+**Revisit when.** Production telemetry shows legitimate control-heavy traffic approaching the
+aggregate default; tune the threshold from evidence without splitting the defence by frame type.
 
 ---

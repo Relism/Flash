@@ -16,7 +16,18 @@ final class Http2HeaderBlockDecoder {
 
   private final ContinuationAssembler assembler = new ContinuationAssembler();
   private final HpackDecoder decoder = new HpackDecoder();
+  private final long assemblyTimeoutNanos;
   private boolean endStream;
+  private long assemblyStartedNanos;
+
+  Http2HeaderBlockDecoder() {
+    this(Http2Limits.HEADER_BLOCK_ASSEMBLY_TIMEOUT_MS);
+  }
+
+  Http2HeaderBlockDecoder(long assemblyTimeoutMillis) {
+    if (assemblyTimeoutMillis <= 0) throw new IllegalArgumentException("non-positive timeout");
+    assemblyTimeoutNanos = assemblyTimeoutMillis * 1_000_000L;
+  }
 
   boolean insideHeaderBlock() {
     return assembler.isActive();
@@ -24,6 +35,7 @@ final class Http2HeaderBlockDecoder {
 
   /** Accepts HEADERS or CONTINUATION and returns true when a complete block was decoded. */
   boolean accept(FrameHeader frame, HeaderSink sink) {
+    checkTimeout();
     if (assembler.isActive() && frame.type() != FrameType.CONTINUATION) {
       throw Http2Exception.PROTOCOL_ERROR;
     }
@@ -50,7 +62,18 @@ final class Http2HeaderBlockDecoder {
           streamId, Http2ErrorCode.ENHANCE_YOUR_CALM, tooLarge.getMessage());
     }
     assembler.reset();
+    assemblyStartedNanos = 0;
     return true;
+  }
+
+  void checkTimeout() {
+    if (assembler.isActive()
+        && System.nanoTime() - assemblyStartedNanos >= assemblyTimeoutNanos) {
+      assembler.reset();
+      assemblyStartedNanos = 0;
+      throw Http2Exception.of(Http2ErrorCode.ENHANCE_YOUR_CALM,
+          "header block assembly timeout");
+    }
   }
 
   boolean endStream() {
@@ -58,6 +81,7 @@ final class Http2HeaderBlockDecoder {
   }
 
   private void begin(FrameHeader frame) {
+    assemblyStartedNanos = System.nanoTime();
     endStream = FrameFlags.isEndStream(frame.flags());
     long unpadded =
         Padding.unpad(

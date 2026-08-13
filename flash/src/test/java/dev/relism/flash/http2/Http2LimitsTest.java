@@ -24,6 +24,10 @@ class Http2LimitsTest {
         assertTrue(Http2Limits.MAX_STREAMS_CREATED_PER_INTERVAL > 0);
         assertTrue(Http2Limits.MAX_SETTINGS_ENTRIES_PER_FRAME > 0);
         assertTrue(Http2Limits.MAX_PING_QUEUE_DEPTH > 0);
+        assertTrue(Http2Limits.MAX_SETTINGS_PER_INTERVAL > 0);
+        assertTrue(Http2Limits.MAX_PINGS_PER_INTERVAL > 0);
+        assertTrue(Http2Limits.MAX_USELESS_FRAMES_PER_INTERVAL > 0);
+        assertTrue(Http2Limits.MAX_STREAMS_PER_CONNECTION > 0);
         assertTrue(Http2Limits.MAX_EMPTY_DATA_FRAMES_PER_STREAM > 0);
         assertTrue(Http2Limits.INITIAL_WINDOW_SIZE_LOCAL > 0);
         assertTrue(Http2Limits.CONNECTION_WINDOW_SIZE_LOCAL > 0);

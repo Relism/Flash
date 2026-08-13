@@ -1,6 +1,7 @@
 package dev.relism.flash.http2;
 
 import dev.relism.flash.bytes.Pairs;
+import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlIntent;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlKind;
 import dev.relism.flash.http2.frame.FrameFlags;
@@ -63,6 +64,9 @@ public final class Http2Connection implements ConnectionProtocol {
   private Http2StreamDispatcher streamDispatcher;
   private final Http2Stream[] dispatchQueue = new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
   private int dispatchCount;
+  private final Http2AbuseGuard abuse = new Http2AbuseGuard();
+  private long streamIdleTimeoutNanos = Http2Limits.STREAM_IDLE_TIMEOUT_MS * 1_000_000L;
+  private final Http2Stream[] idleSweep = new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
 
   public Http2Connection() {
     this(delta -> {}, Http2Limits.SETTINGS_ACK_TIMEOUT_MS);
@@ -88,6 +92,7 @@ public final class Http2Connection implements ConnectionProtocol {
 
   @Override
   public void run(ConnectionContext ctx) throws IOException {
+    configure(ctx.configuration());
     Http2FrameWriter writer = new Http2FrameWriter(ctx.rawOut()::write);
     flowController =
         new Http2FlowController(
@@ -126,6 +131,7 @@ public final class Http2Connection implements ConnectionProtocol {
       BooleanSupplier stopped)
       throws IOException {
     if (!verifyPreface(input)) return;
+    abuse.start();
 
     sendConstant(writer, Http2Preface.serverSettings());
     sendConstant(writer, Http2Preface.initialConnectionWindow());
@@ -135,12 +141,15 @@ public final class Http2Connection implements ConnectionProtocol {
     boolean firstFrame = true;
     try {
       while (!gracefulFinished && !peerGoAway) {
+        abuse.checkBudgets();
+        closeIdleStreams(writer);
         if (stopped.getAsBoolean() && !gracefulStarted) startGracefulShutdown(writer);
         FrameHeader frame;
         try {
           frame = reader.readFrame(Math.min(100, nextReadTimeoutMs()));
         } catch (SocketTimeoutException timeout) {
           checkSettingsTimeout();
+          headerBlocks.checkTimeout();
           if (stopped.getAsBoolean() && !gracefulStarted) {
             startGracefulShutdown(writer);
             continue;
@@ -149,7 +158,9 @@ public final class Http2Connection implements ConnectionProtocol {
           continue;
         }
         if (frame == null) break;
+        abuse.receivedFrame(frame.length());
         try {
+          headerBlocks.checkTimeout();
           FrameValidator.validate(frame, headerBlocks.insideHeaderBlock());
           if (headerBlocks.insideHeaderBlock() && frame.type() != FrameType.CONTINUATION) {
             throw Http2Exception.PROTOCOL_ERROR;
@@ -201,7 +212,10 @@ public final class Http2Connection implements ConnectionProtocol {
 
   private void dispatch(FrameHeader frame, Http2FrameWriter writer) throws IOException {
     FrameType type = frame.type();
-    if (type == null) return;
+    if (type == null) {
+      abuse.uselessFrameReceived();
+      return;
+    }
     switch (type) {
       case SETTINGS -> receiveSettings(frame, writer);
       case PING -> receivePing(frame, writer);
@@ -221,6 +235,7 @@ public final class Http2Connection implements ConnectionProtocol {
     if ((streamId & 1) == 0) throw Http2Exception.PROTOCOL_ERROR;
     Http2Stream existing = streams.get(streamId);
     if (existing != null) {
+      existing.touch();
       if (!FrameFlags.isEndStream(frame.flags())) {
         throw new Http2StreamException(
             streamId, Http2ErrorCode.PROTOCOL_ERROR, "trailers require END_STREAM");
@@ -232,6 +247,7 @@ public final class Http2Connection implements ConnectionProtocol {
       return;
     }
     if (streamId <= highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
+    abuse.streamCreated();
     highestClientStreamId = streamId;
     pendingTrailers = false;
 
@@ -285,15 +301,13 @@ public final class Http2Connection implements ConnectionProtocol {
           lastProcessedStreamId = Math.max(lastProcessedStreamId, streamId);
         }
         if (streamDispatcher == null && !pendingTrailers) {
-          streams.remove(streamId);
-          streams.release(stream);
+          streams.retire(stream, streamId);
           if (!gracefulStarted) startGracefulShutdown(writer);
         } else if (dispatch) {
           enqueueDispatch(stream);
         } else if (stream.responseStarted() && stream.responseWriter().finished()
             && !stream.responseInFlight() && stream.state() == Http2StreamState.CLOSED) {
-          streams.remove(stream.id());
-          streams.release(stream);
+          streams.retire(stream, streamId);
         }
       }
     } finally {
@@ -304,6 +318,7 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   private void receivePriority(FrameHeader frame) {
+    abuse.uselessFrameReceived();
     int dependency = readUInt31(frame.buffer(), frame.payloadOffset());
     if (dependency == frame.streamId()) {
       throw new Http2StreamException(
@@ -312,6 +327,7 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   private void receiveData(FrameHeader frame) {
+    if (frame.length() == 0) abuse.uselessFrameReceived();
     flowController.receiveConnectionBytes(frame.length());
     Http2Stream stream = streams.get(frame.streamId());
     if (stream == null) {
@@ -322,6 +338,7 @@ public final class Http2Connection implements ConnectionProtocol {
     }
     boolean bodyAccepted = false;
     try {
+      stream.touch();
       stream.transition(
           FrameFlags.isEndStream(frame.flags())
               ? Http2StreamState.Event.RECV_DATA_ES
@@ -352,8 +369,7 @@ public final class Http2Connection implements ConnectionProtocol {
         else if (stream.responseStarted() && stream.responseWriter().finished()
             && !stream.responseInFlight()
             && stream.state() == Http2StreamState.CLOSED) {
-          streams.remove(stream.id());
-          streams.release(stream);
+          streams.retire(stream, frame.streamId());
         }
       }
     } catch (RuntimeException failure) {
@@ -363,6 +379,7 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   private void receiveRstStream(FrameHeader frame) {
+    abuse.resetReceived();
     Http2Stream stream = streams.get(frame.streamId());
     if (stream == null) {
       if (frame.streamId() > highestClientStreamId) throw Http2Exception.PROTOCOL_ERROR;
@@ -371,7 +388,7 @@ public final class Http2Connection implements ConnectionProtocol {
     boolean releaseDeferred =
         stream.dispatched() || stream.state() == Http2StreamState.HALF_CLOSED_REMOTE;
     stream.transition(Http2StreamState.Event.RECV_RST);
-    streams.remove(stream.id());
+    if (!streams.removeIfSame(stream, frame.streamId())) return;
     if (releaseDeferred) {
       stream.cancel();
       if (stream.responseStarted() && !stream.responseInFlight()) streams.release(stream);
@@ -408,6 +425,7 @@ public final class Http2Connection implements ConnectionProtocol {
       if (outstandingLocalSettings == 0) oldestSettingsSentNanos = 0;
       return;
     }
+    abuse.settingsReceived();
     peerSettings.apply(frame.buffer(), frame.payloadOffset(), frame.length(), streamWindows);
     sendConstant(writer, Http2Preface.settingsAck());
   }
@@ -420,12 +438,14 @@ public final class Http2Connection implements ConnectionProtocol {
       }
       return;
     }
+    abuse.pingReceived();
     ControlIntent pong = scratch.acquire(ControlKind.PING);
     pong.frame(FrameType.PING, FrameFlags.ACK, 0, frame.buffer(), frame.payloadOffset(), 8);
     writer.writePriority(pong);
   }
 
   private void receiveWindowUpdate(FrameHeader frame) {
+    abuse.uselessFrameReceived();
     int increment = readUInt31(frame.buffer(), frame.payloadOffset());
     if (increment == 0) {
       if (frame.streamId() == 0) throw Http2Exception.PROTOCOL_ERROR;
@@ -439,6 +459,7 @@ public final class Http2Connection implements ConnectionProtocol {
         return;
       }
       try {
+        stream.touch();
         flowController.increaseStreamSendWindow(stream, increment);
       } catch (IllegalStateException overflow) {
         throw new Http2StreamException(
@@ -455,6 +476,29 @@ public final class Http2Connection implements ConnectionProtocol {
     peerLastStreamId = readUInt31(frame.buffer(), frame.payloadOffset());
     peerErrorCode = readInt(frame.buffer(), frame.payloadOffset() + 4);
     peerGoAway = true;
+  }
+
+  void configure(FlashConfiguration configuration) {
+    abuse.configure(configuration);
+    long idle = configuration.getH2StreamIdleTimeoutMs();
+    if (idle <= 0) throw new IllegalArgumentException("h2StreamIdleTimeoutMs must be positive");
+    streamIdleTimeoutNanos = idle > Long.MAX_VALUE / 1_000_000L
+        ? Long.MAX_VALUE : idle * 1_000_000L;
+  }
+
+  private void closeIdleStreams(Http2FrameWriter writer) throws IOException {
+    int count = streams.copyValues(idleSweep);
+    long now = System.nanoTime();
+    for (int i = 0; i < count; i++) {
+      Http2Stream stream = idleSweep[i];
+      idleSweep[i] = null;
+      if (!stream.idleExpired(now, streamIdleTimeoutNanos)) continue;
+      int streamId = stream.id();
+      if (!streams.removeIfSame(stream, streamId)) continue;
+      sendRstStream(writer, streamId, Http2ErrorCode.CANCEL);
+      if (stream.dispatched()) stream.cancel();
+      else streams.release(stream);
+    }
   }
 
   private void startGracefulShutdown(Http2FrameWriter writer) throws IOException {
@@ -495,8 +539,9 @@ public final class Http2Connection implements ConnectionProtocol {
   }
 
   private void closeStreamAfterError(int streamId) {
-    Http2Stream stream = streams.remove(streamId);
+    Http2Stream stream = streams.get(streamId);
     if (stream == null) return;
+    if (!streams.removeIfSame(stream, streamId)) return;
     if (stream.dispatched()) stream.cancel();
     else streams.release(stream);
     if (pendingHeaderStream == stream) pendingHeaderStream = null;
