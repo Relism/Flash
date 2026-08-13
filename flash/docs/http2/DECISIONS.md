@@ -733,3 +733,35 @@ once Phase 6 lands `Request`/`RequestBody` pooling — re-run this exact benchma
 this entry (or add a new one) with the "after" number, closing the loop Phase 4 opened.
 
 ---
+
+## DEC-21 — Phase 5's zero-alloc contract, measured
+
+**Context.** Phase 5's plan states: "Reading, validating and discarding a frame: 0 B/op ...
+Writing a frame header: 0 B/op." Measured with JMH `-prof gc` (JDK 21.0.11, JMH 1.37,
+`FrameLayerBenchmark`, `src/jmh/java`) rather than left as an unverified assertion, per this
+project's own standing practice of measuring every stated performance/allocation claim
+(`DEC-09`, `DEC-20`).
+
+**Measurement.** `readValidateAndDiscard` (`Http2FrameReader.readFrame` +
+`FrameValidator.validate` + one byte read from the payload + `consumeFrame`, against a warm,
+already-grown buffer, matching real keep-alive-connection steady state): 299.846 ± 19.722 ns/op,
+**0.002 B/op** — indistinguishable from zero (compare `DEC-20`'s harness-floor discussion: even
+this near-zero figure is most plausibly measurement noise around the true 0, not a real
+allocation, since nothing in the read/validate/consume path can be shown by inspection to
+allocate on the warm path). `writeFrame` (`FrameWriteBuffer.beginFrame` + one `writeBytes` call +
+`endFrame`, against an already-grown `ByteWriter`): 14.262 ± 1.084 ns/op, **≈10⁻⁴ B/op** —
+likewise indistinguishable from zero.
+
+**Decision.** Contract verified as stated; no design change required. Both numbers are recorded
+here as the baseline Phase 17's eventual CI allocation gate should hold this component to.
+
+**Consequence.** None beyond the recorded numbers — this entry exists so a future regression
+(e.g. a later phase accidentally introducing an allocation on this path while adding HPACK or
+stream-state integration) has a concrete "was 0, now isn't" baseline to diff against, per this
+project's standing insistence that every non-obvious performance claim trace to an actual number.
+
+**Revisit when.** Not expected to be revisited; re-measure if `FrameHeader`, `Http2FrameReader`,
+or `FrameWriteBuffer` are ever modified in a way that could plausibly affect their allocation
+profile.
+
+---

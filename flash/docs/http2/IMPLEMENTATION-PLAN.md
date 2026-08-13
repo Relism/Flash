@@ -66,7 +66,7 @@ Status values: `not started` / `in progress` / `blocked` / `done`.
 | 2 — Transport decomposition | done | `feature/core/http2` | `HttpServer.java` deleted; `transport`/`http1` packages + WS extraction (EX-01/06/11/12/13/14/15/16/32/34) done. Router `ThreadLocal` (EX-06 router half) deliberately deferred to Phase 4 per DEC-15. 311/311 tests green (run 3×). h1 benchmark check deferred — no JMH harness until Phase 3. |
 | 3 — Serialized frame writer (GO/NO-GO gate) | done | `feature/core/http2` | `Http2FrameWriter`/`WriteIntent`/`IntrusiveMpscQueue` + `Http2FrameWriterTest`/`Http2FrameWriterStressTest` + `FrameWriterBenchmark` (JMH, `-Pjmh`, `src/jmh/java` — moved there from `src/test/java` after it broke default `mvn test`; see `DEC-17`). All 4 gate criteria met: N=1 0 B/op & 42.6 ns overhead (≤50 ns budget); N=64 65.5% throughput retention (≥60%) & 11.8–14.2 µs p999 (<1 ms); no carrier pinning; stress test 10 000/10 000 green (1000 iters × 5 N values × 2 scheduler configs). Full numbers in `WRITER.md`, `DEC-09`. 321/321 non-JMH tests green. |
 | 4 — Byte-layer foundations | done | `feature/core/http2` | `dev.relism.flash.bytes` package (`ByteScan`+SWAR, `ArrayBackedByteView`, `SegmentedByteView`, `PooledSlice`/`SlicePool`, `ByteWriter`, `Pairs`) built. `EX-04`/`EX-05`/`EX-09`/`EX-19`/`EX-25`/`EX-26`/`EX-33` done, plus `EX-06`'s router half (plan correction, `DEC-19`) removing `FastPathRouterImpl`/`FastPathWsRouterImpl`'s `ThreadLocal`s via an opaque per-connection scratch (`AbstractRouter#newScratch`) instead of extending `ConnectionScratch` (would have created a `routing`→`transport` package cycle). `AbstractRouter`/`AbstractWsRouter.route()` gained a `scratch` param — all call sites updated. Measured (`DEC-20`): SWAR scan 35.4% faster (kept), `EX-04`'s word-path 32.1% faster at the mechanism level (kept; today's router doesn't route through it — `MethodPathByteView` stays non-array-backed by design). Router matching itself is ≈0 B/op including parametric routes. Full h1 pipeline is 120.008 B/op, 100% attributable to `Request`/`RequestBody`/`RequestLine` construction — explicitly Phase 6 scope, not a Phase 4 regression. Two documented (non-hot-path) anonymous-`ByteView` fallbacks remain in `QueryParams`/`PathParams.view`. `BYTES.md` written. 395/395 tests green (both with and without `-Pjmh`). |
-| 5 — Frame layer | not started | — | — |
+| 5 — Frame layer | done | `feature/core/http2` | `FrameType`/`FrameFlags`/`FrameHeader`/`Http2FrameReader`/`FrameValidator`/`Padding`/`FrameWriteBuffer` built. All 10 frame types read/validated/written; per-type RFC error codes verified individually (`FrameValidatorTest`); fuzz-tested 10M random inputs (~14s, green). Zero-alloc contract measured, not asserted: read+validate+consume 0.002 B/op, write ≈10⁻⁴ B/op (`DEC-21`). Found+fixed `EX-37` (`BufferedByteSource`'s deadline mechanism NPE'd against a `null` socket — zero prior test coverage of `EX-07`'s own fix; added `BufferedByteSourceTest`). `FRAMES.md` written. 449/449 tests green. |
 | 6 — Request/Response model refactor | not started | — | — |
 | 7 — HPACK decoder | not started | — | — |
 | 8 — Connection state machine | not started | — | — |
@@ -629,6 +629,30 @@ moved on to the next — a malformed header line was permissively ignored rather
 RFC 9112 §5 gives no such leniency: a header field line without a colon is not valid HTTP.
 **Fix**: `colon == -1` now rejects the request with `400 Bad Request`.
 **Phase**: 1.
+
+### EX-37 — `BufferedByteSource`'s deadline mechanism NPEs against a `null` socket, so it was never actually testable in isolation
+Found while writing `Http2FrameReaderTest` (Phase 5): `BufferedByteSource.clearDeadline()` and
+`fillFromUnderlying()` both call `socket.setSoTimeout(...)` unconditionally. Every isolated unit
+test in this codebase that constructs a `BufferedByteSource` directly (over a
+`ByteArrayInputStream`, to test a parser/reader without a real connection) passes `null` for
+`socket` — the codebase's own established idiom, used throughout `RequestParserTest`,
+`ChunkedInputStreamTest`, `RequestParserSecurityTest`. That idiom works today only because none
+of those tests ever call `setDeadline`/trigger a deadline-bounded read — `RequestParser` itself
+never calls `setDeadline` (only `Http1Connection`, which always has a real socket, does). The
+moment any code under test (here, `Http2FrameReader`, which correctly uses the deadline exactly
+as `EX-07` designed it) sets a deadline and then performs a read against a `null`-socket source,
+both methods threw `NullPointerException` instead of the intended `SocketTimeoutException`/
+normal read. `BufferedByteSource` — the class that exists specifically to implement `EX-07`'s
+slowloris defence — had **zero** dedicated unit tests (`BufferedByteSourceTest` did not exist);
+its deadline mechanism was exercised only indirectly, end-to-end, via real-socket tests
+(`HttpServerTimeoutTest`), which never hit this path.
+**Fix**: both methods now skip the `socket.setSoTimeout(...)` call when `socket == null` — a
+`null` socket means "no OS-level timeout to bound", not a misuse; the deadline-expiry check
+itself (`remainingNanos <= 0` → `SocketTimeoutException`) is independent of the socket and keeps
+working. Production always supplies a real socket, so no production behavior changes.
+`BufferedByteSourceTest.java` added (previously absent) with direct coverage of the deadline
+mechanism against a `null` socket, closing the actual test gap this bug lived in.
+**Phase**: 5 (found and fixed while building `Http2FrameReaderTest`).
 
 ---
 
@@ -1602,36 +1626,57 @@ Created:
   payload copy at this layer (the payload stays in the read buffer; copies happen above, per
   the layer that needs to retain it).
 - Writing a frame header: 0 B/op (writes into the existing scratch).
+- [x] **Measured**, not just asserted: `FrameLayerBenchmark` (`-prof gc`) — read+validate+consume
+      0.002 B/op, write 10⁻⁴ B/op, both indistinguishable from zero. `DECISIONS.md`, `DEC-21`.
 
 ### Safety checks
-- [ ] Declared length checked against `SETTINGS_MAX_FRAME_SIZE` **before** any buffer growth
-- [ ] Buffer growth bounded and monotonic (never shrink mid-connection; shrink only on release
-      to the pool if the high-water mark was pathological)
-- [ ] Per-type length/stream-id/flag validation table complete for all 10 types
-- [ ] Unknown types ignored; unknown types inside a header block rejected
-- [ ] Reserved bit masked, not rejected
-- [ ] Padding length validated against frame length
-- [ ] Frame read is timeout-bounded (reuse `bodyReadTimeoutMs` semantics or add
-      `Http2Limits.FRAME_READ_TIMEOUT_MS`)
+- [x] Declared length checked against `SETTINGS_MAX_FRAME_SIZE` **before** any buffer growth —
+      `Http2FrameReader.readFrame` checks `declaredLength > MAX_FRAME_SIZE_LOCAL` immediately
+      after decoding the header, before the payload-sized `ensureAvailable` call that would grow
+      the buffer.
+- [x] Buffer growth bounded and monotonic — grows only to accommodate `9 + declaredLength`,
+      itself already bounded by the check above; never shrinks (matches `RequestParser`'s own
+      buffer policy, not yet pool-released — no per-connection buffer pool exists before Phase 13).
+- [x] Per-type length/stream-id/flag validation table complete for all 10 types — `FrameType`'s
+      constants + `FrameValidator`, one `FrameValidatorTest` case per RFC-mandated rejection.
+- [x] Unknown types ignored; unknown types inside a header block rejected —
+      `FrameValidator.validate`'s `insideHeaderBlock` parameter,
+      `unknownType_outsideHeaderBlock_isIgnoredNotRejected`/`unknownType_insideHeaderBlock_isProtocolError`.
+- [x] Reserved bit masked, not rejected — `FrameHeader.reset` masks it out of `streamId()`;
+      `reservedBitInStreamId_isMaskedNotRejected`.
+- [x] Padding length validated against frame length — `Padding.unpad`, `PaddingTest`'s boundary
+      cases (`padLength == payloadLength - 1` valid, `padLength >= payloadLength` rejected).
+- [x] Frame read is timeout-bounded — `Http2Limits.FRAME_READ_TIMEOUT_MS` (new constant, this
+      phase), enforced via `BufferedByteSource`'s existing deadline mechanism.
 
 ### Tests
 - `Http2FrameReaderTest` — round-trip every frame type; boundary lengths 0, 1, 16383, 16384,
-  16385; a frame split across three socket reads; a frame exactly filling the buffer.
+  16385; a frame split across three socket reads; a frame exactly filling the buffer; multiple
+  sequential frames; reserved-bit masking.
 - `FrameValidatorTest` — one test per RFC-mandated rejection, asserting the **specific** error
   code, not merely that an error occurred.
-- `Http2FrameReaderFuzzTest` — random bytes into the reader; assert only `Http2Exception` or
-  `Http2StreamException` escapes (never `ArrayIndexOutOfBoundsException`, `NegativeArraySizeException`,
-  `OutOfMemoryError`, or an infinite loop — enforce with a per-case timeout).
+- `Http2FrameReaderFuzzTest` — 10 000 000 random-length, random-content inputs — **plan
+  correction**: asserts only `Http2Exception`, `EOFException`, or `SocketTimeoutException`
+  escapes, not `Http2Exception`/`Http2StreamException` as originally written here.
+  `Http2StreamException` is stream-scoped and this phase has no stream concept yet (Phase 10);
+  `EOFException`/`SocketTimeoutException` are the correctly-typed outcomes for a fuzz input that
+  truncates mid-frame or (in principle) times out — both legitimate, expected rejections of
+  malformed/incomplete input, not bugs. Any other exception type still fails the test. Green,
+  ~14s.
 - `PaddingTest`.
+- `BufferedByteSourceTest` — new, not originally planned for this phase: regression coverage for
+  `EX-37`, a `NullPointerException` bug in `BufferedByteSource`'s deadline mechanism found while
+  writing `Http2FrameReaderTest` (see the registry entry for the full writeup — a plain bug fix,
+  not a design decision, so no `DECISIONS.md` entry).
 
 ### Docs
-`flash/docs/http2/FRAMES.md` — the wire format, the validation table (as an actual table, one row per
-frame type, with the RFC section for each rule), and the ignore-vs-reject policy.
+- [x] `flash/docs/http2/FRAMES.md` — the wire format, the validation table (as an actual table,
+      one row per frame type, with the RFC section for each rule), and the ignore-vs-reject policy.
 
 ### DoD
-- [ ] All 10 frame types read, validated, and written.
-- [ ] Fuzz test green for 10 million random inputs.
-- [ ] `flash/docs/http2/FRAMES.md` complete with the validation table.
+- [x] All 10 frame types read, validated, and written — `roundTrip_everyFrameType`.
+- [x] Fuzz test green for 10 million random inputs — `Http2FrameReaderFuzzTest`, ~14s.
+- [x] `flash/docs/http2/FRAMES.md` complete with the validation table.
 
 ---
 

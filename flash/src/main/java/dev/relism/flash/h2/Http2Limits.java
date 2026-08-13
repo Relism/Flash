@@ -156,4 +156,13 @@ public final class Http2Limits {
      * {@code Socket#setSoTimeout} — that option bounds reads, not writes.
      */
     public static final long WRITE_TIMEOUT_MS = 30_000;
+
+    /**
+     * Maximum time, in milliseconds, {@code Http2FrameReader} may wait for a single frame's
+     * header and payload to fully arrive. Bounds the same slowloris-shaped hazard {@code
+     * BufferedByteSource}'s deadline mechanism already defends h1 against ({@code EX-07}):
+     * without it, a peer that sends 9 header bytes and then never sends the declared payload
+     * would hold this connection's frame reader waiting forever.
+     */
+    public static final long FRAME_READ_TIMEOUT_MS = 20_000;
 }

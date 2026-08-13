@@ -91,10 +91,17 @@ public final class BufferedByteSource extends InputStream {
      * Removes the deadline and restores the socket to blocking indefinitely
      * ({@code SO_TIMEOUT = 0}). Must be called before any read the caller wants to be
      * unbounded (e.g. handing the connection off to a long-lived WebSocket session loop).
+     *
+     * <p>{@code EX-37}: a {@code null} socket (the constructor accepts one — every isolated unit
+     * test in this codebase that constructs a {@code BufferedByteSource} directly over a
+     * {@code ByteArrayInputStream} passes {@code null}, since there is no real connection to
+     * bound) is treated as "no OS-level timeout to clear", not an error — only the deadline
+     * bookkeeping is reset. Production always supplies a real socket, so this changes no
+     * production behavior; without it, no test can exercise the deadline mechanism at all.
      */
     public void clearDeadline() throws IOException {
         this.deadlineActive = false;
-        socket.setSoTimeout(0);
+        if (socket != null) socket.setSoTimeout(0);
     }
 
     // ── InputStream ──────────────────────────────────────────────────────────
@@ -247,6 +254,14 @@ public final class BufferedByteSource extends InputStream {
      * active, computes the exact remaining budget and hands it to {@link Socket#setSoTimeout}
      * before reading, so a {@link SocketTimeoutException} from {@code in.read} unambiguously
      * means the deadline — not merely one read — has elapsed; see the class Javadoc.
+     *
+     * <p>{@code EX-37}: the expiry check above (throwing once {@code remainingNanos <= 0}) runs
+     * regardless of whether a real {@link Socket} is present; only the OS-level
+     * {@code setSoTimeout} call — meaningless without a socket, and previously called
+     * unconditionally, which NPE'd the instant any deadline-bounded read ran against a
+     * {@code null}-socket source — is skipped when {@code socket == null}. See
+     * {@link #clearDeadline()}'s Javadoc for why {@code null} is a legitimate, tested case, not
+     * a misuse.
      */
     private int fillFromUnderlying(byte[] dst, int off, int len) throws IOException {
         if (!deadlineActive) {
@@ -256,9 +271,11 @@ public final class BufferedByteSource extends InputStream {
         if (remainingNanos <= 0) {
             throw new SocketTimeoutException("Read deadline exceeded");
         }
-        long remainingMillis = (remainingNanos + 999_999L) / 1_000_000L; // round up
-        int timeoutMs = (int) Math.max(1, Math.min(Integer.MAX_VALUE, remainingMillis));
-        socket.setSoTimeout(timeoutMs);
+        if (socket != null) {
+            long remainingMillis = (remainingNanos + 999_999L) / 1_000_000L; // round up
+            int timeoutMs = (int) Math.max(1, Math.min(Integer.MAX_VALUE, remainingMillis));
+            socket.setSoTimeout(timeoutMs);
+        }
         return in.read(dst, off, len);
     }
 }
