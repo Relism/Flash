@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.flash.models.Response;
@@ -82,7 +82,7 @@ class JsonTest {
                 new FastPathViews.StringByteView("/json"),
                 null,
                 new FastPathViews.StringByteView("HTTP/1.1"),
-                new HeaderMap()
+                new Http1HeaderMap()
         );
         return new Request(line, body);
     }
