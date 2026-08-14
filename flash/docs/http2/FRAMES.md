@@ -131,8 +131,7 @@ needing.
 `BufferedByteSource`'s deadline mechanism (`EX-07`'s actual fix) turned out to have zero dedicated
 unit tests and an unconditional `socket.setSoTimeout(...)` call that NPE'd against the `null`
 socket every isolated unit test in this codebase uses. Found while writing
-`Http2FrameReaderTest`, fixed, and given its own regression suite (`BufferedByteSourceTest`) —
-full writeup in the plan's registry, `EX-37`.
+`Http2FrameReaderTest`, fixed, and given its own regression suite (`BufferedByteSourceTest`).
 
 ## Testing
 

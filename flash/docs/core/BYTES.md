@@ -150,9 +150,9 @@ deleting a case that only test code could exercise. `Http1HeaderMap.view` has no
 ## `EX-19`/`EX-06` (router half): the `FastPathRouterImpl` scratch
 
 `FastPathRouterImpl.RouteScratch` (created once per connection via `AbstractRouter#newScratch`,
-replacing the `ThreadLocal<MatchResult>`/`ThreadLocal<MethodPathByteView>` pair — see
-`DECISIONS.md`, `DEC-19`, for why this is an opaque caller-owned object rather than an extension
-of `ConnectionScratch`) also owns the reusable path-param arrays and a single long-lived
+replacing the `ThreadLocal<MatchResult>`/`ThreadLocal<MethodPathByteView>` pair, as an opaque
+caller-owned object rather than an extension of `ConnectionScratch`) also owns the reusable
+path-param arrays and a single long-lived
 `PathParams` instance, grown (via `ensureParamCapacity`, doubling) to the largest param count any
 route on that connection has ever matched, and repositioned (`PathParams#reset`) rather than
 reallocated on every match. `PathParams` gained a second, count-explicit constructor and a public
@@ -172,7 +172,6 @@ escapes, and mixed queries (`QueryParamsFastPathTest`).
 
 ## Performance measurement
 
-`EX-04` (the router's word-at-a-time path) and `EX-33` (the SWAR header-end scan) both carry an
-explicit "measure, and keep only if it doesn't cost" instruction in the plan. Both are measured
-together with the phase's overall zero-allocation contract in one JMH pass — see `DECISIONS.md`,
-`DEC-20`, for the numbers and the keep/revert decision for each.
+`EX-04` (the router's word-at-a-time path) and `EX-33` (the SWAR header-end scan) both carried an
+explicit "measure, and keep only if it doesn't cost" requirement. Both were measured together
+with the phase's overall zero-allocation contract in one JMH pass, and both were kept.

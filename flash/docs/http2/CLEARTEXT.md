@@ -1,4 +1,4 @@
-# HTTP/2 cleartext and proxying
+# HTTP/2 cleartext
 
 TLS HTTP/2 and cleartext HTTP/2 have independent rollout controls:
 
@@ -7,18 +7,6 @@ TLS HTTP/2 and cleartext HTTP/2 have independent rollout controls:
 
 Both default to `false`. Cleartext support follows RFC 9113 prior knowledge. The obsolete
 HTTP/1.1 `Upgrade: h2c` transition is intentionally unsupported.
-
-## Upstream client
-
-`Http2Client` is a synchronous, pooled client for reverse-proxy handlers. It supports TLS ALPN and
-h2c prior knowledge, request and response bodies, flow control, response status, trailers,
-SETTINGS, PING, GOAWAY and RST_STREAM. Connections are pooled by origin and reused across
-sequential exchanges. A connection serializes its exchanges deliberately; this keeps ownership
-and HPACK state explicit and bounded while virtual threads allow independent origins to progress.
-It is not intended to replace a general-purpose HTTP client.
-
-`HttpProxy.toHttp2(origin, client)` adapts Flash's shared `Request` and `Response` models to that
-client. It preserves the incoming raw path and query, body, end-to-end fields and trailers.
 
 ## Header conversion
 
@@ -34,9 +22,8 @@ subject alternative names. An authority outside that served set receives `421 Mi
 Request`, allowing a coalescing client to retry on a different connection. Exact names and
 single-label wildcards are supported; h2c has no certificate identity and is unaffected.
 
-## Trailer guarantee
-
-The proxy copies request trailers only after the incoming body reaches EOF and emits upstream
-trailers as a trailing HEADERS block. Response trailers follow the reverse path and remain
-trailers on both HTTP/2 and HTTP/1.1 chunked downstream connections. The live relay tests cover
-both downstream protocols.
+An outbound HTTP/2 client and reverse-proxy adapter (`Http2Client`, `HttpProxy`) were built
+against this cleartext support but had no caller anywhere in `flash` core — an HTTP/1.1+2 server
+framework has no business shipping an outbound client. That code has been removed; if a
+reverse-proxy capability is needed later, it belongs in its own `flash-extensions/flash-ext-*`
+module, not in core.

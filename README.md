@@ -15,7 +15,6 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
-| `flash-bench` | Demo harness (OIDC + OpenAPI + Jackson) |
 
 ## Requirements
 
@@ -169,10 +168,11 @@ app.onException((ex, req, res) -> {
 | `listeners` | `[]` | Multiple bind targets (port + host + optional TLS) on one app — see [TLS](#tls) |
 | `maxHeaderBufferSize` | `65536` | Max size of the header buffer (bytes) |
 | `wsFrameBufferSize` | `65536` | Per-connection WebSocket read buffer (bytes) |
-| `headerReadTimeoutMs` | `10000` | Once a request's first byte arrives, how long the full header block may take. Bounds slowloris-style attacks — see [`HTTP1-HARDENING.md`](flash/docs/http2/HTTP1-HARDENING.md). |
+| `headerReadTimeoutMs` | `10000` | Once a request's first byte arrives, how long the full header block may take. Bounds slowloris-style attacks — see [`HTTP1-HARDENING.md`](flash/docs/core/HTTP1-HARDENING.md). |
 | `idleKeepAliveTimeoutMs` | `60000` | How long a keep-alive connection may sit idle waiting for its next request. |
 | `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
 | `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
+| `maxConnections` | auto (~heap/10MB) | Maximum concurrent connections across all listeners before new ones are closed immediately at accept time, before any per-connection state (TLS handshake included) is created. Auto-scales from `Runtime.maxMemory()`; set explicitly for a known deployment size, or `0` to disable. |
 | `http2Enabled` | `false` | Whether TLS listeners advertise HTTP/2 through ALPN. |
 | `http2CleartextEnabled` | `false` | Whether plaintext listeners accept HTTP/2 prior knowledge (h2c). Independent from TLS HTTP/2. |
 | `h2HuffmanDynamicValues` | `false` | HPACK-Huffman encode runtime response values. Constants remain pre-encoded; the measured default avoids an extra encode pass. |
@@ -310,7 +310,7 @@ upgrading `Request` — no separate TLS state is tracked for WS.
 `Request` and `Response` are **pooled per connection**, not allocated per request: one instance is
 created per connection and repositioned (`reset()`) over each new request/response in turn — the
 same idiom Java NIO buffers use, applied to the whole request/response model
-(`flash/docs/http2/MESSAGE-MODEL.md` has the full design record). This is what makes a warm h1
+(`flash/docs/core/MESSAGE-MODEL.md` has the full design record). This is what makes a warm h1
 request/response cycle 0 B/op.
 
 **Do not retain a `Request` or `Response` past the handler that received it.** A reference kept in
@@ -389,20 +389,6 @@ The API renders as chunked data and trailers on HTTP/1.1, and DATA plus trailing
 HTTP/2. Flash core supplies these transport primitives; a higher-level gRPC codec belongs in a
 future `flash-ext-grpc` extension.
 
-### HTTP/2 upstream proxy
-
-The core includes a deliberately small, proxy-oriented HTTP/2 client and a protocol-neutral relay:
-
-```java
-Http2Client upstream = new Http2Client();
-app.post("/service/{path}",
-    HttpProxy.toHttp2(URI.create("http://service.internal:8080"), upstream));
-```
-
-The relay preserves the path, query, body and trailers and applies one shared hop-by-hop field
-policy for HTTP/1.1 and HTTP/2. Close the client when the application stops. Cleartext upstreams
-use prior knowledge; Flash never implements the obsolete `Upgrade: h2c` mechanism.
-
 ## Architecture
 
 ```
@@ -433,7 +419,4 @@ mvn test
 
 # Run a single test class
 mvn test -pl flash -Dtest=RequestParserTest
-
-# Run the benchmark demo server
-java -jar flash-bench/target/flash-bench-1.0-SNAPSHOT.jar
 ```

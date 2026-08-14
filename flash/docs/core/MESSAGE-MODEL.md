@@ -135,9 +135,9 @@ back down between requests. Both checks throw `IllegalStateException`, not
 `HeaderMap` split into `HeaderView` (the protocol-neutral read contract: `first`, `all`, `view`,
 `valueEqualsIgnoreCase`, `contains`, `count`, `forEach`) and `Http1HeaderMap` (the existing
 byte-buffer-backed implementation, kept in `dev.relism.flash.models` rather than moved to
-`dev.relism.flash.http1` — see `DECISIONS.md`, `DEC-22`, for why: `RequestParser` (root package)
-owns and constructs it, and `http1`→root already exists via `Http1Connection`, so moving it to
-`http1` would create a `models`↔`http1` package cycle). `RequestLine.headers` is typed as the
+`dev.relism.flash.http1`: `RequestParser` (root package) owns and constructs it, and
+`http1`→root already exists via `Http1Connection`, so moving it to `http1` would create a
+`models`↔`http1` package cycle). `RequestLine.headers` is typed as the
 interface; `Http2HeaderMap` is the HPACK-backed second implementation without requiring a
 `Request` or `RequestLine` API split.
 
@@ -178,7 +178,7 @@ call — pre-existing since at least Phase 4, invisible until the larger `Reques
 `RequestLine` cost sitting on top of them was removed. Fixed the same way as everything else in
 this document: `RequestByteView` gained a `reset(byte[], int, int)`; `RequestParser` now owns one
 pooled instance per role. `parseAndRoute` measures 0.008 B/op after the fix — JMH's noise floor,
-effectively 0. Full numbers in `DECISIONS.md`, `DEC-23`.
+effectively 0.
 
 ## The zero-alloc contract, closed
 
@@ -188,6 +188,4 @@ effectively 0. Full numbers in `DECISIONS.md`, `DEC-23`.
 `RequestPipelineBenchmark.parseAndRoute` (parse + route with a parametric match, no header/param
 access) measures 0 B/op. `parseRouteAndExtractThreeFields` (the same, plus one path param and two
 header reads) measures 184.009 B/op — entirely the `String` allocations the contract's own text
-exempts ("except for the user-facing `String`s the handler explicitly asks for"). See
-`DECISIONS.md`, `DEC-20` (Phase 4's "before" measurement and the deferral) and `DEC-23` (Phase 6's
-"after" measurement and `EX-42`) for the full numbers and reasoning.
+exempts ("except for the user-facing `String`s the handler explicitly asks for").

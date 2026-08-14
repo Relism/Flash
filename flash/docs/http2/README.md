@@ -18,20 +18,18 @@ listener / TLS
         <- HTTP/2 stream writer ----+
 ```
 
-## Start here
+This page covers the HTTP/2-specific layers only. The transport, message model, and byte
+primitives shared with HTTP/1.1 live in [`../core/`](../core/README.md).
 
-- [HTTP/1.1 hardening](HTTP1-HARDENING.md) — message-boundary rules, timeouts and negotiation.
-- [Transport](TRANSPORT.md) — listeners, connection ownership, TLS and virtual threads.
-- [Message model](MESSAGE-MODEL.md) — shared request/response objects and their lifetime contract.
+## Protocol layers
+
 - [Connection](CONNECTION.md) and [streams](STREAMS.md) — HTTP/2 connection and stream state.
 - [Flow control](FLOW-CONTROL.md) — request backpressure and streamed responses.
-- [Trailers and streaming](TRAILERS-AND-STREAMING.md) — the public cross-protocol APIs.
-- [Cleartext and proxying](CLEARTEXT-AND-PROXY.md) — prior knowledge and the upstream h2 client.
+- [Cleartext](CLEARTEXT.md) — prior knowledge and the 421 misdirected-request rule.
 - [WebSockets](WEBSOCKET.md) — RFC 8441 extended CONNECT using the existing WebSocket API.
 
 ## Wire internals
 
-- [Byte primitives](BYTES.md) — reusable views, scanning and bounded slice lifetimes.
 - [Serialized writer](WRITER.md) — the single-owner output path and contention model.
 - [Frames](FRAMES.md) — frame parsing, validation and error scope.
 - [HPACK](HPACK.md) — integer/Huffman coding and static/dynamic table ownership.
@@ -43,9 +41,3 @@ listener / TLS
 - [Compliance](COMPLIANCE.md) — h2spec, interoperability, fuzzing and deliberate omissions.
 - [Performance](PERFORMANCE.md) and [CI baselines](BASELINES.md) — measurements and regression
   gates, including the comparison with nghttpd.
-
-## Design history
-
-[Decisions](DECISIONS.md) records non-obvious trade-offs and rejected alternatives. The
-implementation plan is retained as historical engineering evidence; it is not required to use or
-extend the runtime.

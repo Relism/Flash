@@ -137,8 +137,8 @@ from the path this document's gate criteria are strictest about.
 ## Benchmark methodology
 
 `flash/src/jmh/java/dev/relism/flash/http2/frame/FrameWriterBenchmark.java` (a JMH source root
-registered only under the `jmh` Maven profile — see `DECISIONS.md`, `DEC-17`, for why it does not
-live in `src/test/java`) compares four harnesses at `threads` ∈ {1, 2, 4, 8, 16, 64}:
+registered only under the `jmh` Maven profile, not `src/test/java`) compares four harnesses at
+`threads` ∈ {1, 2, 4, 8, 16, 64}:
 
 - `trylock_mpsc` — the shipped `Http2FrameWriter` design.
 - `plain_lock` — every write blocks on `ReentrantLock.lock()` unconditionally (candidate (a)).
@@ -258,7 +258,7 @@ design's exclusive use of `ReentrantLock` (never `synchronized`) on every path t
 | 4 | Stress test green at every N, 1000 iterations, incl. parallelism=1 | 10 000/10 000 | **PASS** |
 
 **All four gate criteria are met.** `Http2FrameWriter` ships as designed: a `tryLock()` fast path
-with an intrusive MPSC fallback. See `DECISIONS.md` for the retained alternatives and evidence.
+with an intrusive MPSC fallback.
 
 ## What this design costs vs. what it saves
 
