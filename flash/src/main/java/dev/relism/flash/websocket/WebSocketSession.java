@@ -133,22 +133,20 @@ public final class WebSocketSession {
     }
 
     /**
-     * Sends a CLOSE frame exactly once.
+     * Sends a CLOSE frame exactly once, masked exactly like any other outgoing frame when this
+     * session is in client mode ({@link #maskOutgoing}) — via {@link #writeFrame}, the same path
+     * {@link #sendText}/{@link #send}/{@link #sendPong} use, rather than hand-writing the 4 bytes
+     * unmasked regardless of role. A client-mode session that skipped masking here was sending an
+     * RFC-6455-invalid CLOSE frame that a strict peer's {@link #readFrame} correctly rejects (the
+     * masking check {@link #readFrame} itself enforces on the receive side).
      * No flush needed — {@code out} is the raw socket OutputStream (not buffered);
      * each write goes directly to the kernel send buffer, and TCP_NODELAY ensures
      * it's transmitted immediately.
      */
     public void close(int code) throws IOException {
         if (!open.compareAndSet(true, false)) return;
-        writeLock.lock();
-        try {
-            out.write(0x88);
-            out.write(0x02);
-            out.write((code >> 8) & 0xFF);
-            out.write(code & 0xFF);
-        } finally {
-            writeLock.unlock();
-        }
+        byte[] payload = {(byte) ((code >> 8) & 0xFF), (byte) (code & 0xFF)};
+        writeFrame(WebSocketFrame.OP_CLOSE, payload, 0, 2);
     }
 
     // ── Session loop internals ─────────────────────────────────────────────

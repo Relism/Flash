@@ -91,6 +91,26 @@ class WebSocketSessionTest {
     }
 
     @Test
+    void close_masksWhenActingAsClient() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        WebSocketSession session = new WebSocketSession(
+                new ByteArrayInputStream(new byte[0]), out, 64, null, true);
+
+        session.close(1000);
+
+        assertFalse(session.isOpen());
+        assertEquals(1000, session.closeCode());
+        byte[] bytes = out.toByteArray();
+        assertEquals((byte) 0x88, bytes[0]); // FIN + CLOSE
+        assertEquals((byte) (0x80 | 2), bytes[1]); // masked bit + length 2
+        // Header is opcode + length + a full 4-byte mask key (bytes 2-5) regardless of payload
+        // length, then the (masked) payload — mirrors sendText_masksWhenActingAsClient above.
+        byte m0 = bytes[2], m1 = bytes[3];
+        assertEquals((byte) (0x03 ^ m0), bytes[6]);
+        assertEquals((byte) (0xE8 ^ m1), bytes[7]);
+    }
+
+    @Test
     void closeFromPeer_extractsCloseCode() {
         WebSocketSession session = new WebSocketSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), 64);
         WebSocketFrame frame = new WebSocketFrame();

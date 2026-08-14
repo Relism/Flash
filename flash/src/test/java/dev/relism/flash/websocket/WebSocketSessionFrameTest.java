@@ -40,4 +40,26 @@ class WebSocketSessionFrameTest {
 
         assertThrows(Exception.class, () -> session.readFrame(frame));
     }
+
+    /**
+     * Regression for the CLOSE frame Pathway's {@code UpstreamWebSocketConnector} (a client-mode
+     * session, {@code maskOutgoing=true}) sends when relaying the client's own CLOSE to a backend:
+     * before this fix, {@link WebSocketSession#close} never masked, so a server-mode peer's own
+     * {@link WebSocketSession#readFrame} (which enforces masking per RFC 6455 §5.1) rejected it
+     * with a {@link WebSocketProtocolException}, and the close was silently lost.
+     */
+    @Test
+    void readFrame_acceptsCloseFrameWrittenByAClientSession() throws Exception {
+        ByteArrayOutputStream wire = new ByteArrayOutputStream();
+        WebSocketSession client = new WebSocketSession(new ByteArrayInputStream(new byte[0]), wire, 64, null, true);
+        client.close(1000);
+
+        WebSocketSession server = new WebSocketSession(new ByteArrayInputStream(wire.toByteArray()), new ByteArrayOutputStream(), 64);
+        WebSocketFrame frame = new WebSocketFrame();
+
+        assertTrue(server.readFrame(frame));
+        assertEquals(WebSocketFrame.OP_CLOSE, frame.opcode());
+        server.closeFromPeer(frame);
+        assertEquals(1000, server.closeCode());
+    }
 }
