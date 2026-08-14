@@ -1,5 +1,8 @@
 package dev.relism.flash.models;
 
+import dev.relism.flash.bytes.ArrayBackedByteView;
+import dev.relism.flash.bytes.Pairs;
+import dev.relism.flash.bytes.SlicePool;
 import dev.relism.fpr.core.ByteView;
 
 import java.nio.charset.StandardCharsets;
@@ -15,8 +18,14 @@ import java.util.List;
  */
 public class QueryParams {
     public static final QueryParams EMPTY = new QueryParams(null);
+    private static final int VIEW_POOL_SIZE = 4;
 
     private final ByteView raw;
+
+    // recreated per request (see Request#resolveQueryParams), so an eagerly-constructed pool
+    // would cost VIEW_POOL_SIZE allocations on every request that touches query params at all,
+    // even the (currently: every) request that never calls view().
+    private SlicePool viewPool;
 
     public QueryParams(ByteView raw) {
         this.raw = raw;
@@ -25,16 +34,29 @@ public class QueryParams {
     public String get(String name) {
         long r = findFirst(name);
         if (r < 0) return null;
-        return decode((int) (r >> 32), (int) (r & 0xFFFFFFFFL));
+        return decode(Pairs.hi(r), Pairs.lo(r));
     }
 
+    /**
+     * Returns a view over the first raw (not percent-decoded) value of {@code name}, or
+     * {@link #raw} is array-backed (always true for h1 today) instead of allocated per call —
+     * same reuse-window contract as {@link Http1HeaderMap#view}: valid until either the request ends
+     * or {@link #view} is called {@value #VIEW_POOL_SIZE} more times on this instance, whichever
+     * comes first. Falls back to a fresh (allocating) view when {@link #raw} is not array-backed
+     * — never exercised on the real request path (see {@link ArrayBackedByteView}'s Javadoc).
+     */
     ByteView view(String name) {
         long r = findFirst(name);
         if (r < 0) return null;
-        final int s = (int) (r >> 32), l = (int) (r & 0xFFFFFFFFL);
+        int s = Pairs.hi(r), l = Pairs.lo(r);
+        if (raw instanceof ArrayBackedByteView abv) {
+            if (viewPool == null) viewPool = new SlicePool(VIEW_POOL_SIZE);
+            return viewPool.acquire(abv.array(), abv.offset() + s, l);
+        }
+        final int fs = s, fl = l;
         return new ByteView() {
-            public int  length()        { return l; }
-            public byte byteAt(int idx) { return raw.byteAt(s + idx); }
+            public int  length()        { return fl; }
+            public byte byteAt(int idx) { return raw.byteAt(fs + idx); }
         };
     }
 
@@ -62,7 +84,7 @@ public class QueryParams {
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    /** Returns (valStart << 32) | valLen, or -1 if not found. */
+    /** Returns {@code (valStart << 32) | valLen}, or {@code -1} if not found. */
     private long findFirst(String name) {
         if (raw == null) return -1L;
         int i = 0, len = raw.length();
@@ -74,7 +96,7 @@ public class QueryParams {
                 i++;
                 int valStart = i;
                 while (i < len && raw.byteAt(i) != '&') i++;
-                if (keyMatches(keyStart, keyLen, name)) return ((long) valStart << 32) | (i - valStart);
+                if (keyMatches(keyStart, keyLen, name)) return Pairs.pack(valStart, i - valStart);
             }
             if (i < len && raw.byteAt(i) == '&') i++;
         }
@@ -91,8 +113,26 @@ public class QueryParams {
      * Percent-decodes a value slice from {@code raw} into a UTF-8 String.
      * {@code %XX} triplets are decoded to their byte values; {@code +} decodes as space.
      * Invalid {@code %} sequences are passed through as-is.
+     *
+     * {@code +} — scanned for first; when clean and {@link #raw} is array-backed, the
+     * {@code String} is built directly from the backing array in one allocation, skipping the
+     * scratch {@code byte[]} copy this method used to make unconditionally for every value.
      */
     private String decode(int start, int length) {
+        boolean clean = true;
+        for (int i = 0; i < length; i++) {
+            byte b = raw.byteAt(start + i);
+            if (b == '%' || b == '+') { clean = false; break; }
+        }
+        if (clean) {
+            if (raw instanceof ArrayBackedByteView abv) {
+                return new String(abv.array(), abv.offset() + start, length, StandardCharsets.UTF_8);
+            }
+            byte[] out = new byte[length];
+            for (int i = 0; i < length; i++) out[i] = raw.byteAt(start + i);
+            return new String(out, StandardCharsets.UTF_8);
+        }
+
         byte[] out = new byte[length]; // upper bound — decoded is never longer
         int w = 0;
         for (int i = 0; i < length; i++) {

@@ -161,4 +161,44 @@ class RequestBodyTest {
         body.drain();
         assertEquals(0, socket.available());
     }
+
+
+    @Test
+    void reset_repositionsSamePooledInstance_overSuccessiveRequests() throws IOException {
+        RequestBody body = new RequestBody(); // pooled ctor — no I/O configured yet
+
+        byte[] first = "first".getBytes(StandardCharsets.UTF_8);
+        body.reset(new ByteArrayInputStream(first), 5, new byte[0], 0, 0);
+        assertArrayEquals(first, body.bytes());
+
+        byte[] second = "second-request".getBytes(StandardCharsets.UTF_8);
+        body.reset(new ByteArrayInputStream(second), second.length, new byte[0], 0, 0);
+        assertArrayEquals(second, body.bytes(), "reset() must not leak the previous request's resolved body");
+    }
+
+    @Test
+    void stream_reusesTheSameBoundedStreamInstance_acrossResets() throws IOException {
+        RequestBody body = new RequestBody();
+
+        body.reset(new ByteArrayInputStream("one".getBytes(StandardCharsets.UTF_8)), 3, new byte[0], 0, 0);
+        InputStream stream1 = body.stream();
+        assertEquals("one", new String(stream1.readAllBytes(), StandardCharsets.UTF_8));
+
+        body.reset(new ByteArrayInputStream("two".getBytes(StandardCharsets.UTF_8)), 3, new byte[0], 0, 0);
+        InputStream stream2 = body.stream();
+        assertEquals("two", new String(stream2.readAllBytes(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void drain_reusesTheSameDrainBuffer_acrossChunkedResets() throws IOException {
+        RequestBody body = new RequestBody();
+
+        body.reset(new ByteArrayInputStream("chunk one".getBytes(StandardCharsets.UTF_8)), -1L, null, 0, 0);
+        body.drain();
+
+        ByteArrayInputStream secondSocket = new ByteArrayInputStream("chunk two".getBytes(StandardCharsets.UTF_8));
+        body.reset(secondSocket, -1L, null, 0, 0);
+        body.drain();
+        assertEquals(0, secondSocket.available(), "drain() must fully consume the second request's chunked body too");
+    }
 }

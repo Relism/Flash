@@ -2,7 +2,7 @@ package dev.relism.flash.api.multipart;
 
 import dev.relism.fpr.core.ByteView;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestLine;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ class MultipartTest {
     private static Request request(byte[] bodyBytes) {
         String ct = "multipart/form-data; boundary=" + BOUNDARY;
         byte[] headerBuf = ("Content-Type: " + ct).getBytes(StandardCharsets.US_ASCII);
-        HeaderMap headers = new HeaderMap();
+        Http1HeaderMap headers = new Http1HeaderMap();
         headers.reset(headerBuf, 0, headerBuf.length);
         RequestLine line = new RequestLine(HttpMethod.POST, viewOf("/upload"), null, viewOf("HTTP/1.1"), headers);
         return new Request(line, bodyBytes);
@@ -236,11 +236,64 @@ class MultipartTest {
     @Test
     void of_notMultipart_throws() {
         byte[] headerBuf = "Content-Type: application/json".getBytes(StandardCharsets.US_ASCII);
-        HeaderMap headers = new HeaderMap();
+        Http1HeaderMap headers = new Http1HeaderMap();
         headers.reset(headerBuf, 0, headerBuf.length);
         RequestLine line = new RequestLine(HttpMethod.POST, viewOf("/"), null, viewOf("HTTP/1.1"), headers);
         Request req = new Request(line, new byte[0]);
 
         assertThrows(IllegalArgumentException.class, () -> Multipart.of(req));
+    }
+
+    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+
+    @Test
+    void field_bodyAboveMaxBufferedSize_throws() throws IOException {
+        // MAX_MULTIPART_BUFFERED_PART_SIZE is 10 MiB — one byte over must be rejected, not
+        // buffered whole into a single byte[].
+        String tooBig = "z".repeat((int) dev.relism.flash.http.Http1Limits.MAX_MULTIPART_BUFFERED_PART_SIZE + 1);
+        Multipart mp = Multipart.of(request(body(textPart("huge", tooBig))));
+        assertThrows(IOException.class, () -> mp.field("huge"));
+    }
+
+    @Test
+    void file_materializedDuringFullScan_aboveMaxBufferedSize_throws() throws IOException {
+        String tooBig = "z".repeat((int) dev.relism.flash.http.Http1Limits.MAX_MULTIPART_BUFFERED_PART_SIZE + 1);
+        Multipart mp = Multipart.of(request(body(filePart("f", "f.bin", "application/octet-stream", tooBig))));
+        assertThrows(IOException.class, mp::parts);
+    }
+
+    @Test
+    void scan_tooManyParts_throws() throws IOException {
+        String[] parts = new String[dev.relism.flash.http.Http1Limits.MAX_MULTIPART_PARTS + 1];
+        for (int i = 0; i < parts.length; i++) parts[i] = textPart("f" + i, "v");
+        Multipart mp = Multipart.of(request(body(parts)));
+        assertThrows(IOException.class, mp::parts);
+    }
+
+    @Test
+    void partHeaders_tooManyHeaderLines_throws() throws IOException {
+        StringBuilder part = new StringBuilder("Content-Disposition: form-data; name=\"x\"\r\n");
+        for (int i = 0; i <= dev.relism.flash.http.Http1Limits.MAX_MULTIPART_PART_HEADER_COUNT; i++) {
+            part.append("X-Extra-").append(i).append(": v\r\n");
+        }
+        part.append("\r\nbody");
+        Multipart mp = Multipart.of(request(body(part.toString())));
+        assertThrows(IOException.class, () -> mp.field("x"));
+    }
+
+    @Test
+    void partHeaderLine_tooLong_throws() throws IOException {
+        String longValue = "v".repeat(dev.relism.flash.http.Http1Limits.MAX_MULTIPART_HEADER_LINE_LENGTH + 1);
+        String part = "Content-Disposition: form-data; name=\"x\"\r\n"
+                + "X-Long: " + longValue + "\r\n\r\nbody";
+        Multipart mp = Multipart.of(request(body(part)));
+        assertThrows(IOException.class, () -> mp.field("x"));
+    }
+
+    @Test
+    void withinAllLimits_stillWorksNormally() throws IOException {
+        // Sanity check the bounds above don't false-positive on a normal small request.
+        assertEquals("alice", Multipart.of(request(body(textPart("username", "alice")))).field("username"));
     }
 }

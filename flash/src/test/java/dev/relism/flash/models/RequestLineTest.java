@@ -28,7 +28,7 @@ class RequestLineTest {
         ByteView path = viewOf("/api");
         ByteView query = viewOf("q=1");
         ByteView proto = viewOf("HTTP/1.1");
-        HeaderMap headers = new HeaderMap();
+        Http1HeaderMap headers = new Http1HeaderMap();
         
         RequestLine rl = new RequestLine(HttpMethod.GET, path, query, proto, headers);
         

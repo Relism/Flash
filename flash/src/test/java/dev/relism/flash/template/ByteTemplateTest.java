@@ -55,4 +55,37 @@ class ByteTemplateTest {
         byte[] result = tpl.render("v1", "1", "v2", "2");
         assertEquals("A12B", new String(result, StandardCharsets.UTF_8));
     }
+
+
+    @Test
+    void renderInto_writesAtOffset_andReturnsLength() {
+        ByteTemplate tpl = new ByteTemplate("Hello {{name}}!");
+        byte[] buffer = new byte[64];
+        int len = tpl.renderInto(buffer, 5, "name", "World");
+
+        assertEquals("Hello World!".length(), len);
+        assertEquals("Hello World!", new String(buffer, 5, len, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void renderInto_repeatedPlaceholder_fillsEveryOccurrence() {
+        ByteTemplate tpl = new ByteTemplate("{{var}} == {{var}}");
+        byte[] buffer = new byte[32];
+        int len = tpl.renderInto(buffer, 0, "var", "test");
+        assertEquals("test == test", new String(buffer, 0, len, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void renderInto_bufferTooSmall_throws() {
+        ByteTemplate tpl = new ByteTemplate("Hello {{name}}!");
+        byte[] buffer = new byte[5];
+        assertThrows(IndexOutOfBoundsException.class, () -> tpl.renderInto(buffer, 0, "name", "World"));
+    }
+
+    @Test
+    void renderInto_negativeOffset_throws() {
+        ByteTemplate tpl = new ByteTemplate("Hi {{name}}");
+        byte[] buffer = new byte[32];
+        assertThrows(IndexOutOfBoundsException.class, () -> tpl.renderInto(buffer, -1, "name", "X"));
+    }
 }

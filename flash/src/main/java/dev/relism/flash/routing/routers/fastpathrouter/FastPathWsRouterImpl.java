@@ -10,11 +10,30 @@ import dev.relism.flash.models.Request;
 import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.flash.websocket.WebSocketHandler;
 
+/**
+ * WebSocket-upgrade counterpart of {@link FastPathRouterImpl} — same {@code fpr-core} matching
+ * via {@link #newScratch} in place of the {@code ThreadLocal}s this class used to hold). Unlike
+ * registry entry names {@code FastPathRouterImpl.route} specifically) and still allocates a
+ * fresh {@code PathParams} per matched, parametric WebSocket upgrade — WebSocket upgrades are
+ * inherently rare relative to ordinary requests (one per connection, not one per message), so
+ * this was not flagged as a hot-path allocation concern.
+ */
 public final class FastPathWsRouterImpl extends AbstractWsRouter {
 
     private final RouterBuilder<WebSocketHandler>               builder = new RouterBuilder<>();
     private volatile FastPathRouter<ByteView, WebSocketHandler> router;
     private          String[]                                   cachedParamNames;
+
+    /** Per-connection reusable matching state. */
+    static final class RouteScratch {
+        final MatchResult<WebSocketHandler> matchResult = new MatchResult<>(32, 128);
+        final FastPathViews.MethodPathByteView combinedView = new FastPathViews.MethodPathByteView();
+    }
+
+    @Override
+    public Object newScratch() {
+        return new RouteScratch();
+    }
 
     @Override
     protected AbstractWsRouter addRoute(HttpMethod method, String path, WebSocketHandler handler) {
@@ -24,15 +43,16 @@ public final class FastPathWsRouterImpl extends AbstractWsRouter {
     }
 
     @Override
-    public WebSocketHandler route(Request request) {
+    public WebSocketHandler route(Request request, Object scratchObj) {
         ensureCompiled();
+        RouteScratch scratch = (RouteScratch) scratchObj;
 
-        MatchResult<WebSocketHandler> result = Context.result();
+        MatchResult<WebSocketHandler> result = scratch.matchResult;
         result.reset();
 
         HttpMethod method = request.getRequestLine().getMethod();
         ByteView pathView = request.getRequestLine().getPath();
-        FastPathViews.MethodPathByteView combined = Context.combined();
+        FastPathViews.MethodPathByteView combined = scratch.combinedView;
         combined.reset(method.getBytes(), pathView);
 
         int labelId = router.match(combined, result);
@@ -58,14 +78,4 @@ public final class FastPathWsRouterImpl extends AbstractWsRouter {
 
     @Override
     public void compile() { ensureCompiled(); }
-
-    private static final class Context {
-        private static final ThreadLocal<MatchResult<WebSocketHandler>> RESULT =
-                ThreadLocal.withInitial(() -> new MatchResult<>(32, 128));
-        private static final ThreadLocal<FastPathViews.MethodPathByteView> COMBINED =
-                ThreadLocal.withInitial(FastPathViews.MethodPathByteView::new);
-
-        static MatchResult<WebSocketHandler> result() { return RESULT.get(); }
-        static FastPathViews.MethodPathByteView combined() { return COMBINED.get(); }
-    }
 }

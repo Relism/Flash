@@ -23,6 +23,14 @@ public class PathUtils {
         return sanitized;
     }
 
+    /** Normalizes an authority-form CONNECT target without turning it into an origin-form path. */
+    public static String sanitizeAuthority(String authority) {
+        if (authority == null) return "";
+        String sanitized = authority.trim();
+        while (sanitized.startsWith("/")) sanitized = sanitized.substring(1);
+        return sanitized;
+    }
+
     /**
      * Joins two path segments and ensures the result is sanitized.
      * Prevents "double namespace" if the path already starts with the base.

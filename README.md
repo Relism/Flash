@@ -1,12 +1,13 @@
 # Flash
 
-A high-performance HTTP/1.1 server library for Java 21, built around virtual threads and a zero-allocation FSM router.
+A high-performance HTTP/1.1 and HTTP/2 server library for Java 21, built around virtual threads,
+a zero-allocation FSM router, bounded protocol state, and one shared request/response API.
 
 ## Modules
 
 | Module | Description |
 |---|---|
-| `flash` | Core server library — router, request parser, HTTP I/O transport |
+| `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
@@ -14,7 +15,6 @@ A high-performance HTTP/1.1 server library for Java 21, built around virtual thr
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
-| `flash-bench` | Demo harness (OIDC + OpenAPI + Jackson) |
 
 ## Requirements
 
@@ -58,7 +58,7 @@ app.post("/echo", (req, res) -> {
 });
 
 app.get("/users/{id}", (req, res) -> {
-    String id = req.pathParam("id");
+    String id = req.param("id");
     return "user:" + id;
 });
 ```
@@ -167,13 +167,64 @@ app.onException((ex, req, res) -> {
 | `tls` | `null` | TLS for the default listener — see [TLS](#tls) |
 | `listeners` | `[]` | Multiple bind targets (port + host + optional TLS) on one app — see [TLS](#tls) |
 | `maxHeaderBufferSize` | `65536` | Max size of the header buffer (bytes) |
+| `wsFrameBufferSize` | `65536` | Per-connection WebSocket read buffer (bytes) |
+| `headerReadTimeoutMs` | `10000` | Once a request's first byte arrives, how long the full header block may take. Bounds slowloris-style attacks — see [`HTTP1-HARDENING.md`](flash/docs/core/HTTP1-HARDENING.md). |
+| `idleKeepAliveTimeoutMs` | `60000` | How long a keep-alive connection may sit idle waiting for its next request. |
+| `bodyReadTimeoutMs` | `30000` | How long reading a request body (handler or automatic drain) may take. |
+| `shutdownDrainTimeoutMs` | `15000` | How long graceful shutdown waits for in-flight requests before force-closing. |
+| `maxConnections` | auto (~heap/10MB) | Maximum concurrent connections across all listeners before new ones are closed immediately at accept time, before any per-connection state (TLS handshake included) is created. Auto-scales from `Runtime.maxMemory()`; set explicitly for a known deployment size, or `0` to disable. |
+| `http2Enabled` | `false` | Whether TLS listeners advertise HTTP/2 through ALPN. |
+| `http2CleartextEnabled` | `false` | Whether plaintext listeners accept HTTP/2 prior knowledge (h2c). Independent from TLS HTTP/2. |
+| `h2HuffmanDynamicValues` | `false` | HPACK-Huffman encode runtime response values. Constants remain pre-encoded; the measured default avoids an extra encode pass. |
+| `h2MaxResetStreamsPerInterval` | `200` | Rapid Reset budget per rolling interval. |
+| `h2MaxStreamsCreatedPerInterval` | `400` | New-stream budget per rolling interval. |
+| `h2AbuseRateIntervalMs` | `10000` | Rolling interval for the two operator-tunable rate limits above. |
+| `h2MaxStreamsPerConnection` | `100000` | Total stream budget; `0` disables it. |
+| `h2MaxBytesPerConnection` | `0` | Optional total wire-byte budget; `0` disables it. |
+| `h2MaxConnectionLifetimeMs` | `0` | Optional connection lifetime; `0` disables it. |
+| `h2StreamIdleTimeoutMs` | `60000` | Inactive open-stream deadline. |
+| `sendDate` | `true` | Add an RFC 9110 `Date` field to responses; disable when an upstream proxy supplies it. |
+
+## Protocols
+
+Routes, middleware, `Request`, `Response`, bodies, trailers, streaming and WebSockets use the same
+API on HTTP/1.1 and HTTP/2. Protocol selection happens once per connection:
+
+- On TLS listeners, enable `http2Enabled`; Flash advertises `h2` and `http/1.1` through ALPN and
+  uses the protocol selected by the client. Existing HTTP/1.1 clients continue to work.
+- On plaintext listeners, enable `http2CleartextEnabled` to accept the HTTP/2 prior-knowledge
+  preface on the same port as HTTP/1.1. Clients that do not send that exact preface are parsed as
+  HTTP/1.1.
+- With both switches left at their default `false`, Flash behaves as an HTTP/1.1 server.
+
+After enabling the appropriate switch, application routes need no protocol-specific code. TLS
+still requires the normal certificate configuration shown below.
+
+Flash deliberately does not implement HTTP/2 server push, RFC 7540 dependency-tree priority
+scheduling, or the obsolete HTTP/1.1 `Upgrade: h2c` transition. Server push has no application API,
+RFC 9113 deprecated the old priority scheme, and cleartext HTTP/2 uses prior knowledge instead.
+See the [HTTP/2 compliance record](flash/docs/http2/COMPLIANCE.md) for exact coverage.
+
+## WebSockets over HTTP/2
+
+The same `ws(path, handler)` route serves WebSockets over HTTP/1.1 and HTTP/2. When HTTP/2 is
+enabled, Flash advertises RFC 8441 extended CONNECT support and carries WebSocket frames inside
+flow-controlled DATA frames. No alternate handler, route, or session API is required:
+
+```java
+app.ws("/live", handler);
+```
+
+HTTP/1.1 clients use the ordinary `101 Switching Protocols` upgrade. HTTP/2 clients use an
+extended CONNECT and receive status `200`; Flash applies the same RFC 6455 framing, masking,
+fragmentation, close, and callback behavior on both transports. Client support for negotiating
+WebSockets over HTTP/2 varies, so clients without RFC 8441 support continue to use HTTP/1.1.
 
 ## TLS
 
-HTTPS and WSS are a transport-layer concern only: once a listener is bound, the accepted
-`Socket` is either plain or an `SSLSocket` indistinguishably from `HttpServer`'s point of view
-onward — the request parser, router, and WebSocket upgrade never branch on it. WSS is therefore
-not a separate feature; it's a WebSocket upgrade running over whatever transport it was handed.
+HTTPS and WSS are a transport-layer concern only. Once a listener is bound, the accepted socket
+is plain or TLS; the selected HTTP connection implementation then performs either the HTTP/1.1
+upgrade or the HTTP/2 extended CONNECT. WSS does not require a separate route or handler API.
 
 ### Quick start
 
@@ -254,23 +305,108 @@ that got the request this far has already completed, never a forced handshake.
 `WebSocketSession` mirrors this exactly (`isSecure()`, `sslSession()`) by delegating to the
 upgrading `Request` — no separate TLS state is tracked for WS.
 
+## Object lifetime
+
+`Request` and `Response` are **pooled per connection**, not allocated per request: one instance is
+created per connection and repositioned (`reset()`) over each new request/response in turn — the
+same idiom Java NIO buffers use, applied to the whole request/response model
+(`flash/docs/core/MESSAGE-MODEL.md` has the full design record). This is what makes a warm h1
+request/response cycle 0 B/op.
+
+**Do not retain a `Request` or `Response` past the handler that received it.** A reference kept in
+a field, a captured closure, a `CompletableFuture` continuation, or a background thread and read
+*after* the handler returns will observe whatever the *next* request on that connection
+repositioned the same instance to — not the request you thought you had:
+
+```java
+// WRONG — captures `req`, reads it after the handler has returned
+app.get("/slow", (req, res) -> {
+    CompletableFuture.runAsync(() -> log(req.header("X-Trace-Id"))); // may log the NEXT request's header
+    return "ok";
+});
+```
+
+Copy out whatever you need before returning or handing work off asynchronously — every accessor
+that returns a `String` (`header`, `param`, `query`, `path`, …) gives you an independent heap copy
+that's safe to keep as long as you like:
+
+```java
+app.get("/slow", (req, res) -> {
+    String traceId = req.header("X-Trace-Id");             // copy now, safe to retain
+    CompletableFuture.runAsync(() -> log(traceId));
+    return "ok";
+});
+```
+
+Run with `-Dflash.env=dev` and a use-after-return access throws `IllegalStateException` immediately
+at the offending call site instead of silently reading the wrong request's data — turn this on in
+tests and local development. It's a no-op in production beyond a single `boolean` field read.
+
+`req.body()`/`RequestBody` follows the same rule — materialise (`.bytes()`) or fully consume
+(`.stream()`) it inside the handler; don't stash the `RequestBody` itself for later.
+
+### Reusable response headers
+
+Use `PreEncodedHeader` for a constant header sent by many responses. It stores the name and value
+once and remains valid on both HTTP versions:
+
+```java
+private static final PreEncodedHeader NO_STORE =
+    new PreEncodedHeader("cache-control", "no-store");
+
+app.get("/health", (req, res) -> res.header(NO_STORE).body("ok"));
+```
+
+`Response.header(byte[])` accepts a complete CRLF-terminated HTTP/1 field line and is therefore
+HTTP/1-only; HPACK needs the name and value as separate fields. Prefer `PreEncodedHeader` for shared
+application and middleware code.
+
+### Trailers and push streaming
+
+Request trailers become available after the body reaches EOF:
+
+```java
+byte[] payload = req.body().bytes();
+String status = req.trailers().first("grpc-status");
+```
+
+For a producer-driven response, `Response.streaming` provides a blocking `ResponseStream`. Its
+bounded buffer and HTTP/2 flow-control windows apply backpressure directly to the producer's
+virtual thread:
+
+```java
+return res.streaming(stream -> {
+    try {
+        stream.write(payload, 0, payload.length);
+        stream.trailer("result", "complete");
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+});
+```
+
+The API renders as chunked data and trailers on HTTP/1.1, and DATA plus trailing HEADERS on
+HTTP/2. Flash core supplies these transport primitives; a higher-level gRPC codec belongs in a
+future `flash-ext-grpc` extension.
+
 ## Architecture
 
 ```
-ServerSocket.accept()
-  → RequestParser.parse()       # zero-alloc header parsing, buffer reuse across keep-alive
-  → GlobalRouter.route()        # two-tier: mounted sub-routers (longest prefix) then FastPathRouterImpl
-  → RequestHandler.handle()     # user handler; return value sets body
-  → Request.drain()             # consume unread body for keep-alive
-  → HttpServer writes response  # status line, headers, then fixed or chunked body
-  → loop or close socket        # based on Connection header
+TransportFactory.create()           # binds every listener, wires the connection runner
+  → AcceptLoop                      # one per listener × accept thread; hands sockets off
+  → ConnectionRunner.accept()       # per-connection setup: TLS handshake, protocol negotiation
+      → ProtocolNegotiator          # ALPN / h2c-preface — decides the protocol once
+      ├─ Http1Connection.run()      # request parser, router, handler, h1 response writer
+      └─ Http2Connection.run()      # frame demux, HPACK, stream dispatch, flow control
+             → RequestHandler.handle()  # the same protocol-neutral request/response API
 ```
 
-- **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`). Java 21 required.
+- **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`, owned by `TransportFactory`). Java 21 required.
 - **Zero-allocation router** — `FastPathRouterImpl` uses `fpr-core`, a byte-level FSM that matches on `METHOD + path` bytes with no per-request allocation.
 - **Keep-alive** — `RequestParser` reuses its header buffer across requests on the same connection.
 - **Chunked transfer** — both chunked request bodies (decoded via `ChunkedInputStream`) and chunked response bodies are supported.
 - **TLS is transport-only** — see [TLS](#tls). Listeners bind either a plain `ServerSocket` or an `SSLServerSocket`; nothing downstream of `accept()` branches on which.
+- **`ConnectionProtocol` seam** — HTTP/1.1 and HTTP/2 are peers behind this interface, selected once per connection by `ProtocolNegotiator`; routing and application models are shared.
 
 ## Build & test
 
@@ -283,7 +419,4 @@ mvn test
 
 # Run a single test class
 mvn test -pl flash -Dtest=RequestParserTest
-
-# Run the benchmark demo server
-java -jar flash-bench/target/flash-bench-1.0-SNAPSHOT.jar
 ```

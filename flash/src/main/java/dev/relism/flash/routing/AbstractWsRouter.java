@@ -15,7 +15,16 @@ public abstract class AbstractWsRouter {
         return addRoute(method, PathUtils.sanitize(path), handler);
     }
 
-    public abstract WebSocketHandler route(Request request);
+    /**
+     * Creates a fresh per-connection scratch object for {@link #route}, or {@code null} if this
+     * router keeps no reusable per-connection state — see {@link AbstractRouter#newScratch} for
+     * router.
+     */
+    public Object newScratch() {
+        return null;
+    }
+
+    public abstract WebSocketHandler route(Request request, Object scratch);
 
     protected abstract AbstractWsRouter addRoute(HttpMethod method, String path, WebSocketHandler handler);
 

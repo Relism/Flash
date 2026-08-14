@@ -37,4 +37,82 @@
         </dependency>
     </dependencies>
 
+    <!--
+      Phase 3 (flash/docs/http2/IMPLEMENTATION-PLAN.md): the JMH benchmark gate for the h2
+      serialized frame writer. Not bound to the default build — activate explicitly with
+      `-Pjmh`. Benchmarks live in src/jmh/java, a source root distinct from src/test/java
+      (a `jmh` profile on this module, per the plan's own suggestion, rather than a new
+      flash-bench submodule — recorded as DEC-09), specifically so that `mvn test` with no
+      profile never even *compiles* them: src/jmh/java is registered as a test-source root
+      only inside this profile (build-helper-maven-plugin's add-test-source), and the JMH
+      dependencies it imports are likewise profile-scoped. An earlier revision put the
+      benchmark directly in src/test/java, relying on Surefire's JUnit filtering (JMH classes
+      carry no JUnit annotations) to skip it at *run* time — but Surefire's test discovery
+      loads every compiled test class regardless, so a plain `mvn test` without `-Pjmh` failed
+      the whole module at test-compile with "package org.openjdk.jmh.annotations does not
+      exist", since jmh-core is not on the classpath outside this profile. The separate source
+      root fixes that at the root: with the profile inactive, the benchmark source is not on
+      any compiler's input at all. Run: `mvn -Pjmh -pl flash test-compile` then
+      `java -cp ... org.openjdk.jmh.Main` (see FrameWriterBenchmark's own Javadoc for the full
+      classpath incantation).
+    -->
+    <profiles>
+        <profile>
+            <id>jmh</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-core</artifactId>
+                    <version>${jmh.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-generator-annprocess</artifactId>
+                    <version>${jmh.version}</version>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>${build.helper.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>add-jmh-source</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/jmh/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                </path>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

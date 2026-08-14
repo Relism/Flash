@@ -17,7 +17,7 @@ class AbstractRouterTest {
         String         lastAddedPath;
 
         @Override
-        public RequestHandler route(Request request) { return null; }
+        public RequestHandler route(Request request, Object scratch) { return null; }
 
         @Override
         protected AbstractRouter addRoute(HttpMethod method, String path, RequestHandler handler) {

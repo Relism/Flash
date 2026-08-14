@@ -4,6 +4,7 @@ import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.routing.AbstractRouter;
 import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.transport.TransportFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -11,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Public handle to the underlying HTTP transport. Returned by {@link #create}
  * so that {@link FlashApp} can start and stop the server
- * without holding a direct reference to the package-private {@link HttpServer}.
+ * without holding a direct reference to the transport's internal composition
  */
 public interface ServerHandle {
 
@@ -30,6 +31,6 @@ public interface ServerHandle {
     static ServerHandle create(FlashConfiguration config,
                                AbstractRouter httpRouter,
                                AbstractWsRouter wsRouter) throws IOException {
-        return new HttpServer(config, httpRouter, wsRouter);
+        return TransportFactory.create(config, httpRouter, wsRouter);
     }
 }

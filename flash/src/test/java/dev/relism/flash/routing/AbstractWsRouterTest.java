@@ -15,7 +15,7 @@ class AbstractWsRouterTest {
         String lastPath;
 
         @Override
-        public WebSocketHandler route(Request request) { return null; }
+        public WebSocketHandler route(Request request, Object scratch) { return null; }
 
         @Override
         protected AbstractWsRouter addRoute(HttpMethod method, String path, WebSocketHandler handler) {

@@ -1,7 +1,9 @@
 package dev.relism.flash.api.multipart;
 
+import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.models.Request;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +43,7 @@ import java.util.*;
  * <p><b>Thread safety:</b> not thread-safe; one instance per request.
  */
 public final class Multipart {
+    private int partCount;
 
     private static final int BUF_CAP = 8192;
 
@@ -156,6 +159,11 @@ public final class Multipart {
         Map<String, String> headers = readPartHeaders();
         if (headers == null) { done = true; return null; }
 
+        // unbounded growth of `scanned` and unbounded cumulative header-parsing work.
+        if (++partCount > Http1Limits.MAX_MULTIPART_PARTS) {
+            throw new IOException("multipart body exceeds max part count (" + Http1Limits.MAX_MULTIPART_PARTS + ")");
+        }
+
         String disp     = headers.get("content-disposition");
         String name     = extractParam(disp, "name");
         String filename = extractParam(disp, "filename");
@@ -168,13 +176,35 @@ public final class Multipart {
             // File part — expose streaming body; not cached (stream is consumed once)
             p = Part.streaming(name, filename, ct, active);
         } else {
-            // Text part, or full-scan path: buffer body now
-            byte[] body = active.readAllBytes();
+            // InputStream.readAllBytes() — an unbounded field/file body would otherwise let a
+            // hostile peer force an arbitrarily large single heap allocation.
+            byte[] body = readBoundedBody(active);
             active = null;
             p = Part.buffered(name, filename, ct, body);
             scanned.add(p);
         }
         return p;
+    }
+
+    /**
+     * Reads {@code in} to EOF into a {@code byte[]}, bounded by
+     * {@link Http1Limits#MAX_MULTIPART_BUFFERED_PART_SIZE} — see that constant's Javadoc for why
+     * this bound is necessary even though the overall request body already has one.
+     */
+    private static byte[] readBoundedBody(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(BUF_CAP);
+        byte[] chunk = new byte[BUF_CAP];
+        long total = 0;
+        int n;
+        while ((n = in.read(chunk)) > 0) {
+            total += n;
+            if (total > Http1Limits.MAX_MULTIPART_BUFFERED_PART_SIZE) {
+                throw new IOException("multipart part body exceeds max buffered size ("
+                        + Http1Limits.MAX_MULTIPART_BUFFERED_PART_SIZE + " bytes)");
+            }
+            out.write(chunk, 0, n);
+        }
+        return out.toByteArray();
     }
 
     // -------------------------------------------------------------------------
@@ -266,9 +296,15 @@ public final class Multipart {
 
     private Map<String, String> readPartHeaders() throws IOException {
         Map<String, String> map = new HashMap<>();
+        int count = 0;
         while (true) {
             String line = readLine();
             if (line == null || line.isEmpty()) break;
+            // header lines before the blank line that ends a part's header block.
+            if (++count > Http1Limits.MAX_MULTIPART_PART_HEADER_COUNT) {
+                throw new IOException("multipart part exceeds max header count ("
+                        + Http1Limits.MAX_MULTIPART_PART_HEADER_COUNT + ")");
+            }
             int colon = line.indexOf(':');
             if (colon > 0)
                 map.put(line.substring(0, colon).trim().toLowerCase(Locale.ROOT),
@@ -289,6 +325,7 @@ public final class Multipart {
                     sb.append(new String(win, wPos, i - wPos, StandardCharsets.UTF_8));
                     int consumed = i - wPos + 2;
                     wPos += consumed; wLen -= consumed;
+                    checkHeaderLineLength(sb.length());
                     return sb.toString();
                 }
             }
@@ -298,11 +335,23 @@ public final class Multipart {
                 sb.append(new String(win, wPos, append, StandardCharsets.UTF_8));
                 wPos += append; wLen -= append;
             }
+            // growing for as long as it keeps streaming bytes — the multipart-header analogue of
+            // RequestParser's Http1Limits.MAX_HEADER_VALUE_LENGTH check, which does not apply
+            // here since these header lines live inside the body, not the top-level HTTP headers.
+            checkHeaderLineLength(sb.length());
             if (srcEof && wLen > 0) {
                 sb.append(new String(win, wPos, wLen, StandardCharsets.UTF_8));
                 wPos += wLen; wLen = 0;
+                checkHeaderLineLength(sb.length());
                 return sb.toString();
             }
+        }
+    }
+
+    private static void checkHeaderLineLength(int length) throws IOException {
+        if (length > Http1Limits.MAX_MULTIPART_HEADER_LINE_LENGTH) {
+            throw new IOException("multipart header line exceeds "
+                    + Http1Limits.MAX_MULTIPART_HEADER_LINE_LENGTH + " bytes");
         }
     }
 

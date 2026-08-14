@@ -1,7 +1,7 @@
 package dev.relism.flash.template;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.HeaderMap;
+import dev.relism.flash.models.Http1HeaderMap;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestLine;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
@@ -24,7 +24,7 @@ class ErrorPagesTest {
         byte[] protoBytes = protocol.getBytes(StandardCharsets.UTF_8);
         FastPathViews.RequestByteView protoView = new FastPathViews.RequestByteView(protoBytes, 0, protoBytes.length);
 
-        RequestLine line = new RequestLine(HttpMethod.GET, pathView, null, protoView, new HeaderMap());
+        RequestLine line = new RequestLine(HttpMethod.GET, pathView, null, protoView, new Http1HeaderMap());
         return new Request(line, new byte[0]);
     }
 

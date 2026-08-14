@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Inspects a handler class at registration time and returns zero or more
- * {@link Middleware middlewares} to inject automatically.
+ * {@link MiddlewareNode middleware nodes} to inject automatically.
  *
  * <p>Processors are called once per register call, before
  * the handler is compiled into the router. Returning an empty list is always

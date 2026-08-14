@@ -28,6 +28,30 @@ class FastPathViewsTest {
         assertThrows(IndexOutOfBoundsException.class, () -> view.byteAt(10));
     }
 
+
+    @Test
+    void requestByteView_reset_repositionsSameInstance() {
+        FastPathViews.RequestByteView view = new FastPathViews.RequestByteView(SHARED_BUFFER, 4, 10);
+        assertEquals("/api/users", view.toString());
+
+        byte[] other = "PUT /orders/9 HTTP/1.1".getBytes(StandardCharsets.UTF_8);
+        view.reset(other, 4, 8);
+        assertEquals(8, view.length());
+        assertEquals("/orders/", view.toString());
+    }
+
+    @Test
+    void requestByteView_reset_updatesArrayBackedByteViewAccessors() {
+        FastPathViews.RequestByteView view = new FastPathViews.RequestByteView(SHARED_BUFFER, 0, 3);
+        byte[] other = "zzHELLOzz".getBytes(StandardCharsets.UTF_8);
+        view.reset(other, 2, 5);
+
+        assertSame(other, view.array());
+        assertEquals(2, view.offset());
+        assertEquals(5, view.length());
+        assertEquals("HELLO", view.toString());
+    }
+
     // --- MethodPathByteView ---
 
     @Test
