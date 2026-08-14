@@ -148,7 +148,7 @@ class JteExtensionTest {
     }
 
     private static Request request(String path, String query, String acceptEncoding, String origin) {
-        dev.relism.flash.models.HeaderMap headers = new dev.relism.flash.models.HeaderMap();
+        dev.relism.flash.models.Http1HeaderMap headers = new dev.relism.flash.models.Http1HeaderMap();
         String raw = "Host: localhost\r\n";
         if (acceptEncoding != null) raw += "Accept-Encoding: " + acceptEncoding + "\r\n";
         if (origin != null) raw += "Origin: " + origin + "\r\n";
