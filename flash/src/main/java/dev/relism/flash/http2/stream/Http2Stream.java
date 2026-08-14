@@ -310,6 +310,11 @@ public final class Http2Stream
         throw new IllegalStateException("failed to restore discarded flow-control bytes", failure);
       }
     }
+    // Symmetric with http2Body.cancel() above, for the outbound leg: closes a still-open
+    // streaming response body (e.g. a reverse proxy's pooled backend connection) so an abandoned
+    // stream — RST_STREAM from the peer, connection teardown — doesn't leak it. No-op if the
+    // response never streamed a body or already finished normally.
+    responseWriter.abort();
   }
 
   public boolean cancelled() {

@@ -13,6 +13,8 @@ import dev.relism.flash.http2.hpack.HpackDecoder;
 import dev.relism.flash.models.Response;
 import dev.relism.fpr.core.ByteView;
 import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -147,6 +149,78 @@ class Http2ResponseWriterTest {
     assertTrue((parsed.flags.get(2) & FrameFlags.END_STREAM) != 0);
     assertTrue(decode(parsed.headerBlock).contains("grpc-status=0"));
     assertTrue(writer.trailerHeadersInBatch());
+  }
+
+  /**
+   * Regression for the connection leak fixed alongside {@code Http1ResponseWriter}'s identical
+   * bug ({@code cf16be0}): {@code streamBody} was never closed on any exit path, so a handler
+   * stream releasing a held resource (a pooled backend connection, for a reverse proxy) from
+   * {@code close()} leaked it.
+   */
+  @Test
+  void startFlowControlled_closesStreamBodyOnceFullyDrainedInOneCall() throws Exception {
+    TrackingInputStream body = new TrackingInputStream(new byte[] {1, 2, 3, 4});
+    Response response = new Response(200, ContentType.BINARY).stream(body, 4);
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    writer.startFlowControlled(response, 1, false, false, true, false, false, 16_384, 4096, 16_384);
+
+    assertTrue(writer.finished());
+    assertTrue(body.closed, "streamBody must be closed once the response finished normally");
+  }
+
+  @Test
+  void resume_closesStreamBodyOnceFullyDrainedAcrossFlowControlWindows() throws Exception {
+    TrackingInputStream body = new TrackingInputStream(new byte[] {1, 2, 3, 4});
+    Response response = new Response(200, ContentType.BINARY).stream(body, 4);
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    // availableFlowWindow of 2 forces a second batch via resume() to drain the remaining bytes.
+    writer.startFlowControlled(response, 1, false, false, true, false, false, 16_384, 4096, 2);
+    assertFalse(writer.finished());
+    assertFalse(body.closed, "must not close before the response actually finishes");
+
+    writer.resume(16_384, 16_384);
+
+    assertTrue(writer.finished());
+    assertTrue(body.closed);
+  }
+
+  @Test
+  void abort_closesAStillOpenStreamBody() throws Exception {
+    TrackingInputStream body = new TrackingInputStream(new byte[] {1, 2, 3, 4});
+    Response response = new Response(200, ContentType.BINARY).stream(body, 4);
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+
+    // availableFlowWindow of 0: prepares headers only, the body is still fully unread.
+    writer.startFlowControlled(response, 1, false, false, true, false, false, 16_384, 4096, 0);
+    assertFalse(writer.finished());
+    assertFalse(body.closed);
+
+    writer.abort();
+
+    assertTrue(body.closed, "an abandoned stream (RST_STREAM/connection teardown) must still close streamBody");
+  }
+
+  @Test
+  void abort_isANoOpForANonStreamingResponse() {
+    Http2ResponseWriter writer = new Http2ResponseWriter();
+    // No streamBody was ever set — must not throw.
+    writer.abort();
+  }
+
+  private static final class TrackingInputStream extends FilterInputStream {
+    boolean closed;
+
+    TrackingInputStream(byte[] data) {
+      super(new ByteArrayInputStream(data));
+    }
+
+    @Override
+    public void close() throws IOException {
+      closed = true;
+      super.close();
+    }
   }
 
   private static Parsed parse(Http2ResponseWriter writer) {
