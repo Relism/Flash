@@ -120,7 +120,7 @@ public final class Http1ResponseWriter {
         out.write(head.array(), 0, head.length());
         if (suppressBody) return;
         if (response.isStreaming()) {
-            writeChunked(out, response.getStream(), response, scratch);
+            writeChunkedAndClose(out, response, scratch);
         } else {
             byte[] body = response.getBody();
             if (body != null && body.length != 0) {
@@ -145,7 +145,7 @@ public final class Http1ResponseWriter {
             head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
             head.writeBytes(CRLF);
             out.write(head.array(), 0, head.length());
-            if (!suppressBody) relay(response.getStream(), out, scratch);
+            if (!suppressBody) relayAndClose(response.getStream(), out, scratch);
         } else {
             head.writeBytes(TRANSFER_CHUNKED);
             head.writeBytes(keepAlive ? CONNECTION_KEEPALIVE : CONNECTION_CLOSE);
@@ -154,7 +154,34 @@ public final class Http1ResponseWriter {
             // A HEAD response still declares the Transfer-Encoding GET would have used (RFC
             // 9110 §9.3.2) but writes zero body bytes — not even the final-chunk marker, since
             // there is no chunk framing at all for a message with no body.
-            if (!suppressBody) writeChunked(out, response.getStream(), response, scratch);
+            if (!suppressBody) writeChunkedAndClose(out, response, scratch);
+        }
+    }
+
+    /**
+     * Closes the handler's stream on every exit — clean EOF or a write failure partway through
+     * (e.g. the client disconnected mid-transfer). Without this, a handler whose stream only
+     * releases a held resource (a pooled backend connection, say) from {@code close()} — not from
+     * observing EOF on a {@code read()} that a downstream write failure means it never reaches —
+     * leaks that resource for as long as the JVM takes to finalize it. A well-behaved stream's
+     * {@code close()} must already be idempotent (Java's own contract for {@link InputStream}), so
+     * this costs nothing extra on the ordinary clean-EOF path.
+     */
+    private static void relayAndClose(InputStream in, OutputStream out, ConnectionScratch scratch)
+            throws IOException {
+        try {
+            relay(in, out, scratch);
+        } finally {
+            in.close();
+        }
+    }
+
+    private static void writeChunkedAndClose(OutputStream out, Response response, ConnectionScratch scratch)
+            throws IOException {
+        try {
+            writeChunked(out, response.getStream(), response, scratch);
+        } finally {
+            response.getStream().close();
         }
     }
 

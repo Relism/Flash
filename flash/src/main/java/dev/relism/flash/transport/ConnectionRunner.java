@@ -61,21 +61,38 @@ public final class ConnectionRunner {
    * Submits {@code socket} to the virtual-thread executor for full connection handling. {@code
    * stopped} is threaded through to the eventual {@link ConnectionContext} so the protocol
    * implementation can observe an in-progress graceful shutdown.
+   *
+   * <p>Rejects before any per-connection state exists — no TLS handshake, no protocol
+   * negotiation, no HPACK tables — once {@code activeSockets} reaches {@link
+   * FlashConfiguration#getMaxConnections()}. This is an approximate check (accept runs on up to
+   * {@link TransportTuning#ACCEPT_THREADS} concurrent threads, so a burst can briefly land a few
+   * connections past the limit), not an atomic guarantee; it only needs to bound worst-case
+   * growth, not enforce an exact count.
    */
   public void accept(Socket socket, BooleanSupplier stopped) {
+    int max = configuration.getMaxConnections();
+    if (max > 0 && activeSockets.size() >= max) {
+      closeQuietly(socket);
+      return;
+    }
+    activeSockets.add(socket);
     try {
       executorService.submit(() -> handle(socket, stopped));
     } catch (RejectedExecutionException ignored) {
-      try {
-        socket.close();
-      } catch (IOException e) {
-        log.debug("Error closing socket on shutdown", e);
-      }
+      activeSockets.remove(socket);
+      closeQuietly(socket);
+    }
+  }
+
+  private static void closeQuietly(Socket socket) {
+    try {
+      socket.close();
+    } catch (IOException e) {
+      log.debug("Error closing socket on shutdown", e);
     }
   }
 
   private void handle(Socket socket, BooleanSupplier stopped) {
-    activeSockets.add(socket);
     ConnectionScratch scratch = scratchPool.acquire();
     try (socket;
         OutputStream out = new BufferedOutputStream(socket.getOutputStream())) {

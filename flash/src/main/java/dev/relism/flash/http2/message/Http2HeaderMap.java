@@ -18,7 +18,7 @@ public final class Http2HeaderMap implements HeaderView {
   private HpackHeaderBlock block;
   private PseudoHeaders pseudoHeaders;
   private int viewCursor;
-  private int regularCount;
+  private int regularCount = -1;
 
   public Http2HeaderMap() {
     for (int i = 0; i < views.length; i++) views[i] = new PooledSlice();
@@ -28,11 +28,7 @@ public final class Http2HeaderMap implements HeaderView {
     this.block = block;
     this.pseudoHeaders = pseudoHeaders;
     viewCursor = 0;
-    regularCount = 0;
-    for (int i = 0; i < block.count(); i++) {
-      block.get(i, scanName, scanValue);
-      if (scanName.byteAt(0) != ':') regularCount++;
-    }
+    regularCount = -1;
   }
 
   public void reset(HpackHeaderBlock block) {
@@ -67,11 +63,16 @@ public final class Http2HeaderMap implements HeaderView {
 
   @Override
   public List<String> all() {
-    List<String> result = new ArrayList<>(regularCount);
+    List<String> result = new ArrayList<>(regularCount < 0 ? block.count() : regularCount);
+    int found = 0;
     for (int i = 0; i < block.count(); i++) {
       block.get(i, scanName, scanValue);
-      if (scanName.byteAt(0) != ':') result.add(string(scanValue));
+      if (scanName.byteAt(0) != ':') {
+        result.add(string(scanValue));
+        found++;
+      }
     }
+    regularCount = found;
     return result;
   }
 
@@ -94,6 +95,14 @@ public final class Http2HeaderMap implements HeaderView {
 
   @Override
   public int count() {
+    if (regularCount < 0) {
+      int found = 0;
+      for (int i = 0; i < block.count(); i++) {
+        block.get(i, scanName, scanValue);
+        if (scanName.byteAt(0) != ':') found++;
+      }
+      regularCount = found;
+    }
     return regularCount;
   }
 

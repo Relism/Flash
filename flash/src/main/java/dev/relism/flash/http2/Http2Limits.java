@@ -70,8 +70,19 @@ public final class Http2Limits {
    * companion bound to {@link #MAX_RESET_STREAMS_PER_INTERVAL}: Rapid Reset defences that only
    * count resets can still be bypassed by a peer that creates streams fast enough that the reset
    * counter never saturates within any single window boundary.
+   *
+   * <p>Matches {@link #MAX_STREAMS_PER_CONNECTION}'s lifetime budget by design: a connection may
+   * not create more streams in one rolling burst window than it is ever allowed to create in its
+   * whole lifetime. An earlier value of 400 (40/s) measured the RST_STREAM flood attack this bound
+   * exists for, but also rejected ordinary high-concurrency multiplexed clients well below the
+   * throughput a hardened server is expected to sustain — h2load's default light-load pattern (10
+   * connections, 10 concurrent streams each) alone drives multiple thousands of legitimate stream
+   * creations per connection per second on a fast peer, which 400/10s cannot distinguish from
+   * abuse. The RST_STREAM-rate counter above measures the actual CVE-2023-44487 signature (resets,
+   * not creates); this bound only needs to catch a peer creating streams fast enough to dodge that
+   * counter, which a much higher ceiling still does.
    */
-  public static final int MAX_STREAMS_CREATED_PER_INTERVAL = 400;
+  public static final int MAX_STREAMS_CREATED_PER_INTERVAL = 100_000;
 
   /** Maximum SETTINGS frames accepted within one abuse-rate interval. */
   public static final int MAX_SETTINGS_PER_INTERVAL = 100;

@@ -7,8 +7,11 @@ import dev.relism.flash.transport.ConnectionScratch;
 import dev.relism.flash.transport.ScratchPool;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
@@ -176,5 +179,75 @@ class Http1ResponseWriterTest {
 
         assertEquals(1, out.arrayWriteCalls);
         assertFalse(out.sink.toString(StandardCharsets.UTF_8).contains("hello world"));
+    }
+
+    // --- Streaming body close-on-every-exit -----------------------------------------
+
+    /** Tracks whether {@code close()} was called, regardless of how the stream was read. */
+    private static final class TrackingInputStream extends ByteArrayInputStream {
+        boolean closed;
+
+        TrackingInputStream(byte[] buf) {
+            super(buf);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
+    }
+
+    /** Simulates a client disconnecting mid-transfer: the Nth write() call throws. */
+    private static final class FailingOutputStream extends OutputStream {
+        private final int failAfterCalls;
+        private int calls;
+
+        FailingOutputStream(int failAfterCalls) {
+            this.failAfterCalls = failAfterCalls;
+        }
+
+        @Override public void write(int b) {}
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            calls++;
+            if (calls > failAfterCalls) throw new IOException("simulated client disconnect");
+        }
+    }
+
+    @Test
+    void chunkedStreamingBody_isClosed_onCleanCompletion() throws IOException {
+        TrackingInputStream stream = new TrackingInputStream("hello world".getBytes(StandardCharsets.UTF_8));
+        Response response = new Response(200, ContentType.TEXT_PLAIN).chunked(stream);
+        Http1ResponseWriter.writeResponse(new ByteArrayOutputStream(), response, HttpMethod.GET, true, false, scratch());
+
+        assertTrue(stream.closed, "a fully-relayed streaming body must be closed");
+    }
+
+    @Test
+    void fixedLengthStreamingBody_isClosed_evenWhenTheClientDisconnectsMidTransfer() {
+        // Regression test: a handler's streaming body (e.g. a reverse proxy relaying a pooled
+        // upstream connection's response) must have close() called even when the downstream
+        // write fails partway through — otherwise a resource that's only released from close(),
+        // not from observing EOF on a read() the failed write means it never reaches, leaks.
+        TrackingInputStream stream = new TrackingInputStream("hello world".getBytes(StandardCharsets.UTF_8));
+        Response response = new Response(200, ContentType.TEXT_PLAIN).stream(stream, 11);
+        FailingOutputStream out = new FailingOutputStream(1); // 1st call writes the head, 2nd (body) fails
+
+        assertThrows(IOException.class, () ->
+                Http1ResponseWriter.writeResponse(out, response, HttpMethod.GET, true, false, scratch()));
+        assertTrue(stream.closed, "the streaming body must be closed even when the write to the client fails");
+    }
+
+    @Test
+    void chunkedStreamingBody_isClosed_evenWhenTheClientDisconnectsMidTransfer() {
+        TrackingInputStream stream = new TrackingInputStream("hello world".getBytes(StandardCharsets.UTF_8));
+        Response response = new Response(200, ContentType.TEXT_PLAIN).chunked(stream);
+        FailingOutputStream out = new FailingOutputStream(1); // 1st call writes the head, 2nd (body) fails
+
+        assertThrows(IOException.class, () ->
+                Http1ResponseWriter.writeResponse(out, response, HttpMethod.GET, true, false, scratch()));
+        assertTrue(stream.closed, "the streaming body must be closed even when the write to the client fails");
     }
 }

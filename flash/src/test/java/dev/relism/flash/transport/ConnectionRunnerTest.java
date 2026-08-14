@@ -16,6 +16,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -75,6 +76,63 @@ class ConnectionRunnerTest {
             "socket must be removed from activeSockets on every exit path");
       }
       acceptThread.join(2000);
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void connectionsBeyondMaxConnections_areClosedImmediately_beforeAnyProtocolWork()
+      throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
+    ScratchPool scratchPool = new ScratchPool();
+    AbstractRouter router = new FastPathRouterImpl();
+    AbstractWsRouter wsRouter = new FastPathWsRouterImpl();
+    FlashConfiguration configuration =
+        FlashConfiguration.builder().port(0).maxConnections(1).build();
+
+    AtomicInteger protocolInvocations = new AtomicInteger();
+    ConnectionProtocol countingProtocol =
+        ctx -> {
+          protocolInvocations.incrementAndGet();
+          throw new IOException("simulated protocol failure");
+        };
+
+    ConnectionRunner runner =
+        new ConnectionRunner(
+            executor,
+            activeSockets,
+            scratchPool,
+            router,
+            wsRouter,
+            configuration,
+            countingProtocol,
+            () -> countingProtocol);
+
+    try (ServerSocket serverSocket = new ServerSocket(0)) {
+      int port = serverSocket.getLocalPort();
+
+      // First connection: admitted (activeSockets is empty, limit is 1). Held open by never
+      // closing the client socket, so it still counts toward the limit for the second attempt.
+      Socket firstClient = new Socket("127.0.0.1", port);
+      Socket firstServerSide = serverSocket.accept();
+      activeSockets.add(firstServerSide); // simulate an in-flight, still-admitted connection
+
+      // Second connection: activeSockets.size() (1) >= maxConnections (1) -> must be
+      // rejected at accept() time, before the executor or protocol ever run.
+      try (Socket secondClient = new Socket("127.0.0.1", port);
+          Socket secondServerSide = serverSocket.accept()) {
+        runner.accept(secondServerSide, () -> false);
+        Thread.sleep(300); // give any (incorrectly) submitted virtual-thread task time to run
+
+        assertEquals(0, protocolInvocations.get(), "rejected connection must not reach the protocol");
+        assertEquals(1, activeSockets.size(), "rejected connection must not be added to activeSockets");
+        assertTrue(secondServerSide.isClosed(), "rejected connection's socket must be closed");
+      } finally {
+        firstServerSide.close();
+        firstClient.close();
+      }
     } finally {
       executor.shutdownNow();
     }

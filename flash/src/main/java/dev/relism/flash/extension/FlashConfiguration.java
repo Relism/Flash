@@ -88,6 +88,17 @@ public class FlashConfiguration {
    */
   @Builder.Default int shutdownDrainTimeoutMs = 15_000;
 
+  /**
+   * Maximum connections admitted across all listeners before new connections are closed
+   * immediately at accept time, before any per-connection state (TLS handshake, protocol
+   * negotiation, HPACK tables, buffers) is set up. Defaults to an auto-scaled budget based on the
+   * JVM's max heap ({@link dev.relism.flash.transport.TransportLimits#defaultMaxConnections()}),
+   * so a connection flood cannot exhaust the heap out of the box. Set explicitly if you know your
+   * deployment's real capacity, or to {@code 0} to disable the check entirely (unlimited).
+   */
+  @Builder.Default int maxConnections =
+      dev.relism.flash.transport.TransportLimits.defaultMaxConnections();
+
   /** Whether TLS listeners advertise HTTP/2 through ALPN. */
   @Builder.Default boolean http2Enabled = false;
 

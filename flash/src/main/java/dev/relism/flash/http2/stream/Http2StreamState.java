@@ -26,6 +26,8 @@ public enum Http2StreamState {
 
   private static final byte ERROR = -1;
   private static final byte[][] TRANSITIONS = buildTransitions();
+  // enum values() clones its backing array on every call; this is read-only and shared safely.
+  private static final Http2StreamState[] VALUES = values();
 
   public Http2StreamState transition(int streamId, Event event) {
     int next = TRANSITIONS[ordinal()][event.ordinal()];
@@ -33,7 +35,7 @@ public enum Http2StreamState {
       throw new Http2StreamException(
           streamId, errorFor(event), "invalid stream transition " + this + " + " + event);
     }
-    return values()[next];
+    return VALUES[next];
   }
 
   private Http2ErrorCode errorFor(Event event) {
