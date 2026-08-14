@@ -251,32 +251,38 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       int limit = unknownLength ? target : (int) Math.min(target, bodyRemaining);
       count = 0;
       boolean eof = false;
-      if (pushBody) {
-        int read = streamBody.read(relay, 0, limit);
-        if (read < 0) eof = true;
-        else count = read;
-      } else {
-        while (count < limit) {
-          int read = streamBody.read(relay, count, limit - count);
-          if (read < 0) {
-            eof = true;
-            break;
-          }
-          if (read == 0) {
-            int one = streamBody.read();
-            if (one < 0) {
+      try {
+        if (pushBody) {
+          int read = streamBody.read(relay, 0, limit);
+          if (read < 0) eof = true;
+          else count = read;
+        } else {
+          while (count < limit) {
+            int read = streamBody.read(relay, count, limit - count);
+            if (read < 0) {
               eof = true;
               break;
             }
-            relay[count++] = (byte) one;
-          } else {
-            count += read;
+            if (read == 0) {
+              int one = streamBody.read();
+              if (one < 0) {
+                eof = true;
+                break;
+              }
+              relay[count++] = (byte) one;
+            } else {
+              count += read;
+            }
           }
         }
+      } catch (IOException failure) {
+        closeStreamBodyQuietly();
+        throw failure;
       }
       if (!unknownLength) {
         bodyRemaining -= count;
         if (eof && bodyRemaining != 0) {
+          closeStreamBodyQuietly();
           throw new IOException("streaming response ended before its declared length");
         }
       }
@@ -297,6 +303,38 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       endStreamInBatch = end;
     }
     finished = end;
+    if (end) closeStreamBodyQuietly();
+  }
+
+  /**
+   * Closes any in-flight streaming response body still open when the stream is abandoned before
+   * finishing (RST_STREAM from the peer, connection teardown) — see {@link
+   * dev.relism.flash.http2.stream.Http2Stream#cancel()}, the abort-path caller. Normal completion
+   * already closes {@link #streamBody} itself, from {@link #appendData} once {@code end} is
+   * reached; this covers everything else. A no-op if the response never streamed a body, or
+   * already finished/closed.
+   */
+  public void abort() {
+    closeStreamBodyQuietly();
+  }
+
+  /**
+   * Best-effort, idempotent close — mirrors {@code Http1ResponseWriter}'s identical
+   * {@code relayAndClose}/{@code writeChunkedAndClose} reasoning (fixed there in {@code cf16be0}):
+   * a handler stream that releases a held resource (a pooled backend connection, for a reverse
+   * proxy) from {@code close()} leaks it under any real amount of failed writes or peer resets
+   * unless every exit path closes it, matching {@link InputStream#close()}'s own idempotency
+   * contract.
+   */
+  private void closeStreamBodyQuietly() {
+    if (streamBody == null) return;
+    try {
+      streamBody.close();
+    } catch (IOException ignored) {
+      // Best-effort — nothing to do about a failure to close an already-broken stream.
+    } finally {
+      streamBody = null;
+    }
   }
 
   private void appendTrailers(int maxFrameSize) {
