@@ -40,10 +40,16 @@
     </properties>
 
     <repositories>
+        <!--
+          maven.relism.dev went down; fpr-core's source (dev.relism/FastPathRouter) now
+          publishes to Gitea's own Maven registry instead, via that repo's
+          .gitea/workflows/publish-maven.yml (same pattern as this project's own). Public repo
+          owned by a public Gitea user, so this resolves anonymously — no credentials needed.
+        -->
         <repository>
-            <id>reposilite-repository-releases</id>
-            <name>Reposilite Repository</name>
-            <url>https://maven.relism.dev/releases</url>
+            <id>gitea-fastpathrouter</id>
+            <name>Gitea Maven Registry (Relism/FastPathRouter)</name>
+            <url>https://git.pixel-services.com/api/packages/Relism/maven</url>
         </repository>
     </repositories>
 
@@ -107,7 +113,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>fpr-core</artifactId>
-                <version>1.1.1</version>
+                <!-- Gitea can't republish an existing name+version, so FastPathRouter's CI
+                     stamps a commit-scoped version on every push — see its own
+                     .gitea/workflows/publish-maven.yml. Bump by hand to pick up newer
+                     FastPathRouter changes, same precedent as Pathway's flash.version. -->
+                <version>1.1.0-36216cd</version>
             </dependency>
             <dependency>
                 <groupId>org.projectlombok</groupId>
