@@ -51,6 +51,12 @@ public abstract class FlashRegistrar<SELF extends FlashRegistrar<SELF>> {
     public final SELF purge  (String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.PURGE,   path, h, mw); }
     public final SELF query  (String path, SimpleHandler.FunctionalHandler h, Middleware... mw) { return route(HttpMethod.QUERY,   path, h, mw); }
 
+    /** Registers {@code h} under every {@link HttpMethod}: for handlers indifferent to verb (e.g. a proxy). */
+    public final SELF any(String path, SimpleHandler.FunctionalHandler h, Middleware... mw) {
+        for (HttpMethod m : HttpMethod.values()) route(m, path, h, mw);
+        return (SELF) this;
+    }
+
     public final SELF getWith    (String path, SimpleHandler.FunctionalHandler h, MiddlewareNode... mw) { return route(HttpMethod.GET,     path, h, mw); }
     public final SELF postWith   (String path, SimpleHandler.FunctionalHandler h, MiddlewareNode... mw) { return route(HttpMethod.POST,    path, h, mw); }
     public final SELF putWith    (String path, SimpleHandler.FunctionalHandler h, MiddlewareNode... mw) { return route(HttpMethod.PUT,     path, h, mw); }

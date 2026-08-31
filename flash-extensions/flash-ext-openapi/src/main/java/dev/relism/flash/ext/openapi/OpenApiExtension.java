@@ -10,6 +10,7 @@ import dev.relism.flash.extension.RouteEvent;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.routing.Route;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Generates and serves an OpenAPI 3.0 spec and Swagger UI under a configurable base path.
@@ -34,6 +35,7 @@ import dev.relism.flash.routing.Route;
  *     .start();
  * }</pre>
  */
+@Slf4j
 public class OpenApiExtension implements FlashExtension {
 
     private static final String YAML_CONTENT_TYPE = "application/yaml";
@@ -124,7 +126,11 @@ public class OpenApiExtension implements FlashExtension {
         if (handlerClass == null) return; // lambda route: no annotation metadata
 
         ApiOperation op = handlerClass.getAnnotation(ApiOperation.class);
-        if (op == null) return;
+        if (op == null) {
+            log.warn("{} {} ({}) has no @ApiOperation — omitted from the OpenAPI spec",
+                    event.method(), event.path(), handlerClass.getSimpleName());
+            return;
+        }
 
         builder.addOperation(routeOf(event), op, handlerClass);
     }

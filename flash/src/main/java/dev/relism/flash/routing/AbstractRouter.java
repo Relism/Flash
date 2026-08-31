@@ -7,6 +7,7 @@ import dev.relism.flash.Flash;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.template.ErrorPages;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 
@@ -29,6 +30,7 @@ import java.nio.charset.StandardCharsets;
  * <p><b>Registration</b>: use {@link FlashApp} — the single
  * public registration API. {@link #doRegister} is an infrastructure method.
  */
+@Slf4j
 public abstract class AbstractRouter {
 
     /** Eagerly validates and compiles this route graph before traffic is accepted. */
@@ -59,6 +61,7 @@ public abstract class AbstractRouter {
                 return ErrorPages.renderException(req, ex);
             }
             : (ex, req, res) -> {
+                log.error("Unhandled exception in {} {}", req.method(), req.path(), ex);
                 res.status(500);
                 res.type(ContentType.JSON);
                 return JSON_500;
