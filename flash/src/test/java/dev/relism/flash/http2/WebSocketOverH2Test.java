@@ -23,15 +23,15 @@ class WebSocketOverH2Test {
 
   @Test
   void opensEchoesFragmentsAndCarriesAMessageLargerThanTheFlowWindow() throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .wsFrameBufferSize(2 * 1024 * 1024)
                 .build());
+    int port = app.port();
     app.ws(
         "/chat",
         new WebSocketHandler() {
@@ -67,9 +67,4 @@ class WebSocketOverH2Test {
     }
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

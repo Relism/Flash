@@ -36,14 +36,14 @@ class H2SpecComplianceTest {
 
   @Test
   void cleartextSuiteHasNoFailuresOrSkips(@TempDir Path directory) throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     registerProbeRoutes();
     app.start();
 
@@ -52,7 +52,6 @@ class H2SpecComplianceTest {
 
   @Test
   void tlsSuiteHasNoFailuresOrSkips(@TempDir Path directory) throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -63,10 +62,11 @@ class H2SpecComplianceTest {
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     registerProbeRoutes();
     app.start();
 
@@ -145,11 +145,6 @@ class H2SpecComplianceTest {
     assertEquals(0, skipped.getLength(), output);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 
   private record ProcessResult(int exitCode, String output) {}
 }

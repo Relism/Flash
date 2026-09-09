@@ -28,14 +28,14 @@ class H2cPriorKnowledgeTest {
 
   @Test
   void priorKnowledgeRequiresItsIndependentOptIn() throws Exception {
-    int disabledPort = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(disabledPort)
+                .port(0)
                 .http2Enabled(true)
                 .build());
+    int disabledPort = app.port();
     app.get("/", (request, response) -> "wrong protocol");
     app.start();
 
@@ -47,14 +47,14 @@ class H2cPriorKnowledgeTest {
     }
     app.stop().join();
 
-    int enabledPort = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(enabledPort)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .build());
+    int enabledPort = app.port();
     app.get("/", (request, response) -> "h2c");
     app.start();
 
@@ -125,9 +125,4 @@ class H2cPriorKnowledgeTest {
         payload);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

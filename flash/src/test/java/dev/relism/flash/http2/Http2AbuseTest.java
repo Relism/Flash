@@ -183,15 +183,15 @@ class Http2AbuseTest {
 
   @Test
   void idleOpenStreamIsCancelledWithinConfiguredDeadline() throws Exception {
-    int port = freePort();
     FlashApp app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .h2StreamIdleTimeoutMs(20)
                 .build());
+    int port = app.port();
     app.post("/idle", (request, response) -> request.body().bytes());
     app.start();
     ByteWriter headers = new ByteWriter(64);
@@ -295,11 +295,6 @@ class Http2AbuseTest {
     throw new AssertionError("missing " + expected);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 
   private record Run(List<Http2TestFrames.WireFrame> frames) {
     int lastGoAwayError() {

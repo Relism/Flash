@@ -28,14 +28,14 @@ class WebSocketParityTest {
 
   @Test
   void oneRouteAndHandlerEchoTheSameMessageOverHttp1AndHttp2() throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     app.ws(
         "/parity",
         new WebSocketHandler() {
@@ -135,9 +135,4 @@ class WebSocketParityTest {
     return input.readNBytes(length);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

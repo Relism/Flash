@@ -42,16 +42,16 @@ class H2LoadMeasurementTest {
 
   @Test
   void measureFlashAndNghttpdMatrix(@TempDir Path directory) throws Exception {
-    int flashPort = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(flashPort)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(Integer.MAX_VALUE)
                 .h2MaxStreamsPerConnection(0)
                 .build());
+    int flashPort = app.port();
     app.get("/index.html", (request, response) -> "flash-load");
     app.start();
 
@@ -133,6 +133,10 @@ class H2LoadMeasurementTest {
     if (path != null) builder.environment().put("LD_LIBRARY_PATH", path);
   }
 
+  /**
+   * Still needed here: this port is handed to an external nghttpd process, which has no
+   * equivalent of {@code FlashApp.port()} to read an OS-assigned port back from.
+   */
   private static int freePort() throws Exception {
     try (ServerSocket socket = new ServerSocket(0)) {
       return socket.getLocalPort();
