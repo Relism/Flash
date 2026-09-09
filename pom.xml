@@ -38,6 +38,7 @@
         <maven.versions.plugin.version>2.18.0</maven.versions.plugin.version>
         <jmh.version>1.37</jmh.version>
         <junit.version>5.11.0</junit.version>
+        <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
     </properties>
 
@@ -66,6 +67,16 @@
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-validation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.validation</groupId>
+                <artifactId>jakarta.validation-api</artifactId>
+                <version>${jakarta.validation.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>

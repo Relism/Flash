@@ -24,6 +24,7 @@
         <module>flash-ext-limiter</module>
         <module>flash-ext-web-bundler</module>
         <module>flash-ext-mcp</module>
+        <module>flash-ext-validation</module>
         <module>flash-ext-data-core</module>
         <module>flash-ext-data-jdbc</module>
         <module>flash-ext-data-hibernate</module>
@@ -31,6 +32,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-validation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-testing</artifactId>
