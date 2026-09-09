@@ -7,6 +7,7 @@ import dev.relism.flash.routing.AbstractWsRouter;
 import dev.relism.flash.transport.TransportFactory;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -27,6 +28,16 @@ public interface ServerHandle {
 
     /** Gracefully stops the server, draining active connections. */
     CompletableFuture<Void> stop();
+
+    /**
+     * Port of the first bound listener. Valid as soon as the handle exists — listeners are
+     * bound at construction, not at {@link #start()} — so configuring with port {@code 0}
+     * and reading the OS-assigned port back is a supported pattern.
+     */
+    int port();
+
+    /** Ports of every bound listener, in configuration order. */
+    List<Integer> ports();
 
     static ServerHandle create(FlashConfiguration config,
                                AbstractRouter httpRouter,

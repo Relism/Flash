@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -138,6 +139,16 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         return this;
     }
 
+    /**
+     * Applies a {@link FlashApplication} to this app. Runs immediately, so {@code configure}
+     * sees a context that is still open for declarations and a listener that is already
+     * bound ({@link #port()}).
+     */
+    public FlashApp apply(FlashApplication application) {
+        Objects.requireNonNull(application, "application").configure(this);
+        return this;
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     /**
@@ -166,7 +177,24 @@ public final class FlashApp extends FlashRegistrar<FlashApp> {
         server.startAndBlock();
     }
 
-    public CompletableFuture<Void> stop() { return server.stop(); }
+    /**
+     * Gracefully stops the server, then runs every {@link FlashContext#onClose} callback so
+     * services release what they hold. Draining first means in-flight requests still see a
+     * live service graph.
+     */
+    public CompletableFuture<Void> stop() {
+        return server.stop().whenComplete((ignored, failure) -> ctx.runCloseCallbacks());
+    }
+
+    /**
+     * Port of the first bound listener. Usable before {@link #start()}: listeners bind when
+     * the app is created, so {@code FlashApp.create(cfg with port 0).port()} yields the
+     * OS-assigned port, and an app can even be configured against its own address.
+     */
+    public int port() { return server.port(); }
+
+    /** Ports of every bound listener, in configuration order. */
+    public List<Integer> ports() { return server.ports(); }
 
     // ── FlashRegistrar impl ───────────────────────────────────────────────────
 
