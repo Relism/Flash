@@ -16,6 +16,10 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
+| `flash-extensions/flash-ext-validation` | Request validation — jakarta constraints, compiled once per type |
+| `flash-extensions/flash-ext-scheduler` | Interval and cron background jobs on virtual threads |
+| `flash-extensions/flash-ext-cache-core` | Caching contract — `Cache`, `CacheManager`, `CacheSpec` |
+| `flash-extensions/flash-ext-cache-caffeine` | In-process cache backed by Caffeine |
 
 ## Requirements
 
@@ -146,6 +150,9 @@ See extension-specific READMEs for full details:
 - [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
+- [`flash-ext-validation`](flash-extensions/flash-ext-validation/docs/README.md)
+- [`flash-ext-scheduler`](flash-extensions/flash-ext-scheduler/docs/README.md)
+- [`flash-ext-cache-caffeine`](flash-extensions/flash-ext-cache-caffeine/docs/README.md)
 - [`flash-testing`](flash-testing/docs/README.md)
 
 ## Error handlers
