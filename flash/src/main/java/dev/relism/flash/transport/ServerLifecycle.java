@@ -46,6 +46,14 @@ public final class ServerLifecycle implements ServerHandle {
         this.acceptLatch     = new CountDownLatch(TransportTuning.ACCEPT_THREADS * listeners.size());
     }
 
+    @Override
+    public int port() { return listeners.get(0).socket().getLocalPort(); }
+
+    @Override
+    public List<Integer> ports() {
+        return listeners.stream().map(bound -> bound.socket().getLocalPort()).toList();
+    }
+
     /** Whether the server has begun shutting down. Passed down to every connection as a
      *  {@link java.util.function.BooleanSupplier} so in-flight request loops can drain
      *  promptly instead of waiting for their next keep-alive request. */

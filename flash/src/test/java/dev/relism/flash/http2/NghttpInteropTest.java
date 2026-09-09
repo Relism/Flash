@@ -38,9 +38,8 @@ class NghttpInteropTest {
   }
 
   private void exercise(Path directory, boolean tls) throws Exception {
-    int port = freePort();
     FlashConfiguration.FlashConfigurationBuilder builder =
-        FlashConfiguration.builder().host("127.0.0.1").port(port);
+        FlashConfiguration.builder().host("127.0.0.1").port(0);
     if (tls) {
       Path keystore =
           TestKeystores.build(
@@ -54,6 +53,7 @@ class NghttpInteropTest {
     }
     byte[] large = new byte[2 * 1024 * 1024 + 29];
     app = FlashApp.create(builder.build());
+    int port = app.port();
     app.get("/get", (request, response) -> "nghttp-get");
     app.post("/post", (request, response) -> "uploaded-" + request.body().bytes().length);
     app.get("/large", (request, response) -> response.body(large));
@@ -93,9 +93,4 @@ class NghttpInteropTest {
     assertTrue(trace.contains("recv DATA frame"), trace);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

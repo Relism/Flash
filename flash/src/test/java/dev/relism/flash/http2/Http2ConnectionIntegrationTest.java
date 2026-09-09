@@ -48,7 +48,6 @@ class Http2ConnectionIntegrationTest {
   @Test
   void javaHttpClientUsesHttp2AgainstAnExistingParameterizedRoute(@TempDir Path directory)
       throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -58,11 +57,12 @@ class Http2ConnectionIntegrationTest {
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.get(
         "/users/{id}", (request, response) -> request.param("id") + ":" + request.header("host"));
     app.start();
@@ -87,7 +87,6 @@ class Http2ConnectionIntegrationTest {
   @Test
   void javaHttpClientUploadsAndDownloadsFlowControlledBodies(@TempDir Path directory)
       throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -102,11 +101,12 @@ class Http2ConnectionIntegrationTest {
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.post("/echo", (request, response) -> request.body().bytes());
     app.get("/fixed", (request, response) -> response.body(download));
     app.get(
@@ -143,7 +143,6 @@ class Http2ConnectionIntegrationTest {
   @Test
   void pushStreamingAppliesBackpressureAcrossMultipleWindows(@TempDir Path directory)
       throws Exception {
-    int port = freePort();
     int length = 2 * 1024 * 1024 + 31;
     Path keystore =
         TestKeystores.build(
@@ -154,11 +153,12 @@ class Http2ConnectionIntegrationTest {
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.get(
         "/push",
         (request, response) ->
@@ -197,7 +197,6 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void hundredMegabyteUploadAndDownloadRemainStreaming(@TempDir Path directory) throws Exception {
-    int port = freePort();
     long length = 100L * 1024 * 1024;
     Path keystore =
         TestKeystores.build(
@@ -208,11 +207,12 @@ class Http2ConnectionIntegrationTest {
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.post(
         "/upload",
         (request, response) -> {
@@ -250,14 +250,14 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void bodylessGetRunsExistingRouteAndReturnsHeadersAndData() throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     app.get("/api/ping", (request, response) -> "pong");
     app.start();
 
@@ -314,15 +314,15 @@ class Http2ConnectionIntegrationTest {
   @Test
   void resetQueuedStreamCannotReleaseOrReuseItBeforeDispatchObservesCancellation()
       throws Exception {
-    int port = freePort();
     AtomicInteger calls = new AtomicInteger();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     app.get(
         "/queued",
         (request, response) -> {
@@ -384,15 +384,15 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void h2cTransportDispatchesControlFramesWithoutRunningApplicationWork() throws Exception {
-    int port = freePort();
     AtomicBoolean handlerEntered = new AtomicBoolean();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     app.get(
         "/",
         (request, response) -> {
@@ -442,15 +442,15 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void serverStopInitiatesTwoStageGoAwayOnIdleConnection() throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .shutdownDrainTimeoutMs(5_000)
                 .build());
+    int port = app.port();
     app.start();
 
     try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -485,14 +485,14 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void protocolStateDoesNotLeakAcrossConsecutiveConnections() throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     app.start();
 
     try (Socket first = new Socket("127.0.0.1", port)) {
@@ -537,7 +537,6 @@ class Http2ConnectionIntegrationTest {
   @Test
   void tlsListenerOffersAndNegotiatesH2WhenHttp2IsEnabled(@TempDir Path directory)
       throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -547,11 +546,12 @@ class Http2ConnectionIntegrationTest {
     app =
         FlashApp.create(
             FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.start();
 
     try (SSLSocket socket =
@@ -630,11 +630,6 @@ class Http2ConnectionIntegrationTest {
         payload);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 
   private static String ascii(dev.relism.fpr.core.ByteView view) {
     byte[] bytes = new byte[view.length()];

@@ -28,22 +28,17 @@ class ServerLifecycleGracefulShutdownTest {
         if (app != null) app.stop();
     }
 
-    private static int freePort() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
-    }
 
     @Test
     void inFlightRequest_completesWithConnectionClose_duringShutdown() throws Exception {
-        int port = freePort();
         CountDownLatch handlerStarted  = new CountDownLatch(1);
         CountDownLatch releaseHandler  = new CountDownLatch(1);
 
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .shutdownDrainTimeoutMs(5_000)
                 .build());
+        int port = app.port();
         app.get("/slow", (req, res) -> {
             handlerStarted.countDown();
             assertTrue(releaseHandler.await(5, TimeUnit.SECONDS));
@@ -80,11 +75,11 @@ class ServerLifecycleGracefulShutdownTest {
 
     @Test
     void stop_closesListener_soNewConnectionsAreRefused() throws Exception {
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .shutdownDrainTimeoutMs(500)
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 

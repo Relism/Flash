@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.OutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -30,21 +29,15 @@ class HttpServerTimeoutTest {
         if (app != null) app.stop();
     }
 
-    private int freePort() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
-    }
-
     @Test
     void slowlorisHeaderDribble_disconnectedWithinHeaderReadTimeout() throws Exception {
         int headerTimeoutMs = 300;
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(headerTimeoutMs)
                 .idleKeepAliveTimeoutMs(60_000)
                 .build());
+        int port = app.port();
         app.get("/", (req, res) -> "ok");
         app.start();
 
@@ -71,12 +64,12 @@ class HttpServerTimeoutTest {
     @Test
     void idleKeepAliveConnection_disconnectedWithinIdleTimeout() throws Exception {
         int idleTimeoutMs = 300;
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(10_000)
                 .idleKeepAliveTimeoutMs(idleTimeoutMs)
                 .build());
+        int port = app.port();
         app.get("/", (req, res) -> "ok");
         app.start();
 
@@ -96,13 +89,13 @@ class HttpServerTimeoutTest {
     @Test
     void slowBodyDribble_disconnectedWithinBodyReadTimeout() throws Exception {
         int bodyTimeoutMs = 300;
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(10_000)
                 .idleKeepAliveTimeoutMs(10_000)
                 .bodyReadTimeoutMs(bodyTimeoutMs)
                 .build());
+        int port = app.port();
         app.post("/echo", (req, res) -> req.body().bytes());
         app.start();
 
@@ -130,12 +123,12 @@ class HttpServerTimeoutTest {
         int headerTimeoutMs = 300;
         Path ks = TestKeystores.build(dir, "timeout.p12", "changeit",
                 TestKeystores.Entry.of("only", "timeout.test"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .headerReadTimeoutMs(headerTimeoutMs)
                 .build());
+        int port = app.port();
         app.get("/", (req, res) -> "ok");
         app.start();
 
@@ -157,13 +150,13 @@ class HttpServerTimeoutTest {
 
     @Test
     void wellBehavedRequest_wellWithinTimeouts_unaffected() throws Exception {
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(300)
                 .idleKeepAliveTimeoutMs(300)
                 .bodyReadTimeoutMs(300)
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 

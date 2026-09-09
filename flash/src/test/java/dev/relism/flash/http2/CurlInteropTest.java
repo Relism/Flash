@@ -32,7 +32,6 @@ class CurlInteropTest {
 
   @Test
   void tlsGetPostLargeUploadAndLargeDownload(@TempDir Path directory) throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -43,23 +42,24 @@ class CurlInteropTest {
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     exercise(directory, "https://localhost:" + port, "--http2", "--insecure");
   }
 
   @Test
   void cleartextGetPostLargeUploadAndLargeDownload(@TempDir Path directory) throws Exception {
-    int port = freePort();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .build());
+    int port = app.port();
     exercise(directory, "http://127.0.0.1:" + port, "--http2-prior-knowledge");
   }
 
@@ -112,9 +112,4 @@ class CurlInteropTest {
     return result;
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

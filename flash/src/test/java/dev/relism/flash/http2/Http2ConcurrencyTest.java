@@ -29,16 +29,16 @@ class Http2ConcurrencyTest {
 
   @Test
   void thousandMultiplexedStreamsCompleteOnOneConnection() throws Exception {
-    int port = freePort();
     AtomicInteger handled = new AtomicInteger();
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(2_000)
                 .build());
+    int port = app.port();
     app.get("/work", (request, response) -> Integer.toString(handled.incrementAndGet()));
     app.start();
 
@@ -110,9 +110,4 @@ class Http2ConcurrencyTest {
         payload);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

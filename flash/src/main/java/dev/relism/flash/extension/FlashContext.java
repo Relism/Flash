@@ -1,10 +1,13 @@
 package dev.relism.flash.extension;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 /** Deterministic boot-time service graph, frozen before handlers are initialised. */
+@Slf4j
 public final class FlashContext {
     private enum State { DECLARING, RESOLVING, READY }
 
@@ -13,6 +16,7 @@ public final class FlashContext {
     private final List<AnnotationProcessor> processors = new ArrayList<>();
     private final List<RouteListener> routeListeners = new ArrayList<>();
     private final List<Runnable> readyCallbacks = new ArrayList<>();
+    private final List<Runnable> closeCallbacks = new ArrayList<>();
     private final List<FlashContext> children = new ArrayList<>();
     private final Deque<Class<?>> resolutionPath = new ArrayDeque<>();
     private State state = State.DECLARING;
@@ -34,6 +38,23 @@ public final class FlashContext {
         declare(type, new Binding<>(type, List.of(), ignored -> Objects.requireNonNull(instance, "instance")));
     }
 
+    /**
+     * Replaces the binding for {@code type}, whether or not one already exists.
+     *
+     * <p>The declaration rule everywhere else is that a duplicate is an error
+     * ({@link #provide}, {@link #supply}); this is the single deliberate exception, and it
+     * exists for tests — {@code flash-testing} installs overrides as the last extension so a
+     * fake wins over whatever the application or an extension declared. Using it in
+     * production code is legal but almost always a mistake, so a replacement is logged.
+     */
+    public <T> void override(Class<T> type, T instance) {
+        requireDeclaring();
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(instance, "instance");
+        if (bindings.put(type, new Binding<>(type, List.of(), ignored -> instance)) != null)
+            log.info("Service binding overridden: {}", type.getName());
+    }
+
     /** Declares a no-dependency boot factory. */
     public <T> void supply(Class<T> type, Supplier<T> factory) {
         declare(type, new Binding<>(type, List.of(), ignored -> factory.get()));
@@ -52,6 +73,21 @@ public final class FlashContext {
 
     /** Registers work materialised after all services are resolved. */
     public void onReady(Runnable callback) { requireDeclaring(); readyCallbacks.add(Objects.requireNonNull(callback)); }
+
+    /**
+     * Registers cleanup to run when the app stops, after in-flight requests have drained.
+     *
+     * <p>Deliberately callable outside {@code DECLARING} so a factory can register its own
+     * teardown while it is being resolved:
+     * <pre>{@code
+     * ctx.supply(DataSource.class, c -> {
+     *     HikariDataSource ds = new HikariDataSource(cfg);
+     *     c.onClose(ds::close);
+     *     return ds;
+     * });
+     * }</pre>
+     */
+    public void onClose(Runnable callback) { closeCallbacks.add(Objects.requireNonNull(callback)); }
 
     @SuppressWarnings("unchecked")
     public <T> T require(Class<T> type) {
@@ -104,6 +140,21 @@ public final class FlashContext {
         for (Runnable callback : List.copyOf(readyCallbacks)) callback.run();
         readyCallbacks.clear();
         for (FlashContext child : children) child.runReadyCallbacks();
+    }
+
+    /**
+     * Runs every {@link #onClose} callback once: children first, then this context's own in
+     * reverse registration order, so a service always closes before whatever it depends on.
+     * A throwing callback is logged and does not stop the rest. Clearing makes a second
+     * {@code stop()} a no-op.
+     */
+    void runCloseCallbacks() {
+        for (FlashContext child : children) child.runCloseCallbacks();
+        for (int i = closeCallbacks.size() - 1; i >= 0; i--) {
+            try { closeCallbacks.get(i).run(); }
+            catch (RuntimeException e) { log.error("Close callback failed", e); }
+        }
+        closeCallbacks.clear();
     }
 
     /** Completes graph resolution and runs all deferred materialisation callbacks once. */

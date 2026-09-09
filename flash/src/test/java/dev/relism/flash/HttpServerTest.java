@@ -2,15 +2,14 @@ package dev.relism.flash;
 
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
@@ -18,19 +17,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HttpServerTest {
 
-    private FlashApp app;
-    private int port;
+    // Every test here is read-only against the same routes, so one boot for the class.
+    private static FlashApp app;
+    private static int port;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            port = s.getLocalPort();
-        }
-
+    @BeforeAll
+    static void setUp() {
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .build());
+        port = app.port();
 
         app.get("/api/ping", (req, res) -> "pong");
 
@@ -61,9 +58,9 @@ class HttpServerTest {
         app.start();
     }
 
-    @AfterEach
-    void tearDown() {
-        if (app != null) app.stop();
+    @AfterAll
+    static void tearDown() {
+        if (app != null) app.stop().join();
     }
 
     // --- helpers ---

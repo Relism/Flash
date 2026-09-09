@@ -2,16 +2,10 @@ package dev.relism.flash.ext.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.extension.FlashApp;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import dev.relism.flash.testing.FlashResponse;
+import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
-
-import java.net.ServerSocket;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,34 +16,15 @@ class McpExtensionIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private FlashApp app;
-    private String mcpUrl;
-    private HttpClient client;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        int port;
-        try (ServerSocket s = new ServerSocket(0)) {
-            port = s.getLocalPort();
-        }
-        mcpUrl = "http://127.0.0.1:" + port + "/mcp";
-        client = HttpClient.newHttpClient();
-
-        McpConfig config = McpConfig.builder("test-server")
-                .version("9.9.9")
-                .toolsPackage("dev.relism.flash.ext.mcp.fixtures")
-                .security(McpSecurity.NONE)
-                .build();
-
-        app = FlashApp.create(port);
-        app.install(new McpExtension(config));
-        app.start();
-    }
-
-    @AfterEach
-    void tearDown() {
-        if (app != null) app.stop();
-    }
+    // Every test here is a stateless JSON-RPC call against the same server, so one boot for
+    // the class rather than one per test.
+    @RegisterExtension
+    static FlashTest mcp = FlashTest.of(app -> app.install(new McpExtension(
+            McpConfig.builder("test-server")
+                    .version("9.9.9")
+                    .toolsPackage("dev.relism.flash.ext.mcp.fixtures")
+                    .security(McpSecurity.NONE)
+                    .build())));
 
     @Test
     void initialize_returnsProtocolVersionCapabilitiesAndServerInfo() throws Exception {
@@ -104,17 +79,13 @@ class McpExtensionIntegrationTest {
     }
 
     @Test
-    void notification_returns202WithEmptyBody() throws Exception {
-        String body = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
-        HttpResponse<String> resp = post(body);
-        assertEquals(202, resp.statusCode());
+    void notification_returns202WithEmptyBody() {
+        post("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}").expectStatus(202);
     }
 
     @Test
     void malformedJson_returns400ParseError() throws Exception {
-        HttpResponse<String> resp = post("not json");
-        assertEquals(400, resp.statusCode());
-        JsonNode json = MAPPER.readTree(resp.body());
+        JsonNode json = MAPPER.readTree(post("not json").expectStatus(400).body());
         assertEquals(-32700, json.get("error").get("code").asInt());
     }
 
@@ -128,16 +99,10 @@ class McpExtensionIntegrationTest {
 
     private JsonNode call(int id, String method, String paramsJson) throws Exception {
         String body = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"" + method + "\",\"params\":" + paramsJson + "}";
-        HttpResponse<String> resp = post(body);
-        assertEquals(200, resp.statusCode());
-        return MAPPER.readTree(resp.body());
+        return MAPPER.readTree(post(body).expectStatus(200).body());
     }
 
-    private HttpResponse<String> post(String body) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(mcpUrl))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
+    private FlashResponse post(String body) {
+        return mcp.request().json(body).post("/mcp");
     }
 }

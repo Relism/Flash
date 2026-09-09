@@ -4,11 +4,10 @@ import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashConfiguration;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.models.Response;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,20 +24,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HttpServerConcurrencyTest {
 
-    private FlashApp app;
-    private int port;
-    private HttpClient httpClient;
+    private static FlashApp app;
+    private static int port;
+    private static HttpClient httpClient;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            port = s.getLocalPort();
-        }
-
+    @BeforeAll
+    static void setUp() {
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .build());
+        port = app.port();
 
         app.get("/ping", (req, res) -> "pong");
         app.post("/echo", (req, res) -> {
@@ -53,9 +49,9 @@ class HttpServerConcurrencyTest {
                 .build();
     }
 
-    @AfterEach
-    void tearDown() {
-        if (app != null) app.stop();
+    @AfterAll
+    static void tearDown() {
+        if (app != null) app.stop().join();
     }
 
     // --- helpers ---
@@ -173,15 +169,13 @@ class HttpServerConcurrencyTest {
      */
     @Test
     void concurrent_lazyCompile_noRaceCondition() throws Exception {
-        int freshPort;
-        try (ServerSocket s = new ServerSocket(0)) {
-            freshPort = s.getLocalPort();
-        }
-
+        // Deliberately a brand-new app: this test is about compiling routes lazily on first
+        // use, so it must not share the class-scoped server.
         FlashApp freshApp = FlashApp.create(FlashConfiguration.builder()
-                .port(freshPort)
+                .port(0)
                 .host("127.0.0.1")
                 .build());
+        int freshPort = freshApp.port();
 
         for (int i = 0; i < 10; i++) {
             final int idx = i;

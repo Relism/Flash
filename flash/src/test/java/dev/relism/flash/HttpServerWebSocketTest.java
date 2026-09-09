@@ -13,7 +13,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -29,14 +28,11 @@ class HttpServerWebSocketTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            port = s.getLocalPort();
-        }
-
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .build());
+        port = app.port();
 
         app.ws("/chat", new WebSocketHandler() {
             @Override

@@ -35,18 +35,18 @@ class Http2SoakTest {
   @Test
   void sustainedMixedTrafficRetainsBoundedHeapAndCompletesRequests() throws Exception {
     long seconds = Long.getLong("flash.http2.soak.seconds", 600L);
-    int port = freePort();
     byte[] streamBody = new byte[8 * 1024];
     Arrays.fill(streamBody, (byte) 's');
     app =
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(100_000)
                 .h2MaxStreamsPerConnection(0)
                 .build());
+    int port = app.port();
     app.get("/get", (request, response) -> "get");
     app.post("/post", (request, response) -> request.body().bytes());
     app.get("/stream", (request, response) -> response.chunked(new ByteArrayInputStream(streamBody)));
@@ -182,9 +182,4 @@ class Http2SoakTest {
         payload);
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }

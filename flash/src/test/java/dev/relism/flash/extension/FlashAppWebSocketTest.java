@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.net.ServerSocket;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,14 +19,11 @@ class FlashAppWebSocketTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            port = s.getLocalPort();
-        }
-
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port)
+                .port(0)
                 .host("127.0.0.1")
                 .build());
+        port = app.port();
     }
 
     @AfterEach

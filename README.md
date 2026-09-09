@@ -8,6 +8,7 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | Module | Description |
 |---|---|
 | `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
+| `flash-testing` | JUnit 5 harness — boot an app on an ephemeral port, fake its services, assert on responses |
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
@@ -145,6 +146,7 @@ See extension-specific READMEs for full details:
 - [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
+- [`flash-testing`](flash-testing/docs/README.md)
 
 ## Error handlers
 
@@ -388,6 +390,110 @@ return res.streaming(stream -> {
 The API renders as chunked data and trailers on HTTP/1.1, and DATA plus trailing HEADERS on
 HTTP/2. Flash core supplies these transport primitives; a higher-level gRPC codec belongs in a
 future `flash-ext-grpc` extension.
+
+## Testing
+
+`flash-testing` boots a real app on an OS-assigned port for the duration of a test, and hands you
+a client pointed at it. Add it with test scope:
+
+```xml
+<dependency>
+    <groupId>dev.relism</groupId>
+    <artifactId>flash-testing</artifactId>
+    <version>${flash.version}</version>
+    <scope>test</scope>
+</dependency>
+```
+
+```java
+class UserRoutesTest {
+
+    @RegisterExtension
+    static FlashTest app = FlashTest.of(new BlogApp())
+            .mock(UserService.class, new InMemoryUserService());
+
+    @Test
+    void listsUsers() {
+        app.get("/api/users")
+           .expectStatus(200)
+           .expectHeader("content-type", "application/json")
+           .expectBodyContains("alice");
+    }
+}
+```
+
+`FlashTest.of` takes a `FlashApplication` — your app's routes, extensions and services expressed
+independently of which port they run on:
+
+```java
+public final class BlogApp implements FlashApplication {
+    @Override public void configure(FlashApp app) {
+        app.install(new JacksonExtension());
+        app.mount("/api", scope -> scope.scan("dev.blog.api"));
+    }
+}
+
+FlashApp.create(8080).apply(new BlogApp()).startAndBlock();   // production
+```
+
+It is a functional interface, so a lambda works too:
+`FlashTest.of(app -> app.get("/ping", (req, res) -> "pong"))`.
+
+### Requests
+
+The HTTP verb sends the request; `expect*` assertions chain and report the real response body on
+failure. `get` and `delete` skip the builder when there is nothing to add.
+
+```java
+app.get("/api/users").expectStatus(200);
+
+app.request()
+   .header("Authorization", "Bearer " + token)
+   .json("{\"name\":\"bob\"}")
+   .post("/api/users")
+   .expectStatus(201);
+
+try (FlashWebSocket socket = app.ws("/live")) {
+    socket.sendText("hello");
+    assertEquals("echo:hello", socket.awaitText(Duration.ofSeconds(2)));
+}
+```
+
+### Replacing services
+
+`mock` installs replacements after everything your app and its extensions declare, so a fake always
+wins. Any object will do — `flash-testing` depends on no mocking library, so a hand-written fake and
+a Mockito mock are equally welcome.
+
+### More than one server
+
+`FlashTest` is an ordinary object in a field, so a test class can hold as many as it needs and wire
+one from another in plain Java. Startup is lazy — reading `baseUri()` boots that server on the spot
+— so declaration order does the wiring:
+
+```java
+@RegisterExtension static FlashTest auth = FlashTest.of(new FakeOidcApp());
+@RegisterExtension static FlashTest api  = FlashTest.of(new BlogApp(auth.baseUri()));
+```
+
+### Scope
+
+A `static` field boots once for the test class; a non-static field boots a fresh app for every test.
+That is stock JUnit field semantics — the isolation switch is the keyword, not an option.
+
+### Configuration
+
+Full reference: [`flash-testing/docs`](flash-testing/docs/README.md), including the
+[limits](flash-testing/docs/limits.md) the harness deliberately does not cross.
+
+`profile` customises the `FlashConfiguration` — timeouts, HTTP/2 switches, buffer sizes. Host, port
+and the shutdown drain window are stamped afterwards, so a profile cannot break the harness;
+`listener(...)` and `tls(...)` are rejected because the harness owns the loopback listener it gives
+you a client for.
+
+```java
+FlashTest.of(new BlogApp()).profile(cfg -> cfg.http2CleartextEnabled(true));
+```
 
 ## Architecture
 

@@ -60,9 +60,6 @@ class HttpServerTlsTest {
         if (app != null) app.stop();
     }
 
-    private static int freePort() throws IOException {
-        try (ServerSocket s = new ServerSocket(0)) { return s.getLocalPort(); }
-    }
 
     private static String httpGet(SSLSocket socket, String path) throws IOException {
         socket.setSoTimeout(SOCKET_TIMEOUT_MS);
@@ -79,11 +76,11 @@ class HttpServerTlsTest {
     @Test
     void httpsRequest_servedOverModernTls(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -103,11 +100,11 @@ class HttpServerTlsTest {
         var ks = TestKeystores.build(dir, "sni.p12", "changeit",
                 TestKeystores.Entry.of("a", "a.test"),
                 TestKeystores.Entry.of("b", "b.test"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -143,11 +140,11 @@ class HttpServerTlsTest {
     @Test
     void mTls_requireRejectsClientWithNoCertificate(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit").clientAuth(ClientAuth.REQUIRE))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -180,11 +177,11 @@ class HttpServerTlsTest {
         SSLContext serverCtx = SSLContext.getInstance("TLS");
         serverCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(serverCtx).clientAuth(ClientAuth.REQUIRE))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -219,12 +216,12 @@ class HttpServerTlsTest {
     @Test
     void multipleListeners_plainAndTlsServeTheSameApp(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        int plainPort = freePort();
-        int tlsPort   = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .listener(new FlashConfiguration.Listener(plainPort, "127.0.0.1", null))
-                .listener(new FlashConfiguration.Listener(tlsPort, "127.0.0.1", TlsConfig.keystore(ks, "changeit")))
+                .listener(new FlashConfiguration.Listener(0, "127.0.0.1", null))
+                .listener(new FlashConfiguration.Listener(0, "127.0.0.1", TlsConfig.keystore(ks, "changeit")))
                 .build());
+        int plainPort = app.ports().get(0);
+        int tlsPort   = app.ports().get(1);
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -287,11 +284,11 @@ class HttpServerTlsTest {
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(managers, null, null);
 
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(ctx))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -364,11 +361,11 @@ class HttpServerTlsTest {
         SSLContext[] boxedCtx = new SSLContext[1];
         RecordingKeyManager recorder = buildRecordingContext(ks, boxedCtx);
 
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(boxedCtx[0]).applicationProtocols("acme-tls/1", "http/1.1"))
                 .build());
+        int port = app.port();
         app.get("/ping", (req, res) -> "pong");
         app.start();
 
@@ -422,11 +419,11 @@ class HttpServerTlsTest {
     @Test
     void request_isSecureAndSessionAvailableOverTls(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .build());
+        int port = app.port();
         app.get("/secure-info", (req, res) -> {
             SSLSession session = req.sslSession();
             return req.isSecure() + ":" + (session != null) + ":" + (session != null ? session.getCipherSuite() : "");
@@ -456,13 +453,13 @@ class HttpServerTlsTest {
         SSLContext serverCtx = SSLContext.getInstance("TLS");
         serverCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 // OPTIONAL, not REQUIRE: proves getPeerCertificates() works without also
                 // re-testing the REQUIRE-rejection path already covered elsewhere in this file.
                 .tls(TlsConfig.ofContext(serverCtx).clientAuth(ClientAuth.OPTIONAL))
                 .build());
+        int port = app.port();
         app.get("/secure-info", (req, res) -> {
             try {
                 X509Certificate peer = (X509Certificate) req.sslSession().getPeerCertificates()[0];
@@ -488,8 +485,8 @@ class HttpServerTlsTest {
 
     @Test
     void request_isNotSecureAndSessionIsNullOnPlainListener() throws Exception {
-        int port = freePort();
-        app = FlashApp.create(FlashConfiguration.builder().port(port).host("127.0.0.1").build());
+        app = FlashApp.create(FlashConfiguration.builder().port(0).host("127.0.0.1").build());
+        int port = app.port();
         app.get("/secure-info", (req, res) -> req.isSecure() + ":" + (req.sslSession() == null));
         app.start();
 
@@ -524,11 +521,11 @@ class HttpServerTlsTest {
     @Test
     void wss_sessionIsSecureAndExposesSslSession(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        int port = freePort();
         app = FlashApp.create(FlashConfiguration.builder()
-                .port(port).host("127.0.0.1")
+                .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .build());
+        int port = app.port();
 
         AtomicReference<Boolean> observedSecure = new AtomicReference<>();
         AtomicReference<SSLSession> observedSession = new AtomicReference<>();

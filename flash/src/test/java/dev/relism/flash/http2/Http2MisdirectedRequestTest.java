@@ -31,7 +31,6 @@ class Http2MisdirectedRequestTest {
 
   @Test
   void authorityOutsideSelectedCertificateReceives421(@TempDir Path directory) throws Exception {
-    int port = freePort();
     Path keystore =
         TestKeystores.build(
             directory,
@@ -42,10 +41,11 @@ class Http2MisdirectedRequestTest {
         FlashApp.create(
             FlashConfiguration.builder()
                 .host("127.0.0.1")
-                .port(port)
+                .port(0)
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
                 .build());
+    int port = app.port();
     app.get("/", (request, response) -> "must not run");
     app.start();
 
@@ -114,9 +114,4 @@ class Http2MisdirectedRequestTest {
     }
   }
 
-  private static int freePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 }
