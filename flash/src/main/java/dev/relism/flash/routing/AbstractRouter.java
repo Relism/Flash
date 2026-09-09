@@ -4,6 +4,7 @@ import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.models.*;
 import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
 import dev.relism.flash.Flash;
+import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.template.ErrorPages;
@@ -56,16 +57,55 @@ public abstract class AbstractRouter {
 
     protected ExceptionHandler exceptionHandler = Flash.DEV
             ? (ex, req, res) -> {
+                if (ex instanceof HttpException http) return renderHttpException(http, res);
                 res.status(500);
                 res.type(ContentType.TEXT_HTML);
                 return ErrorPages.renderException(req, ex);
             }
             : (ex, req, res) -> {
+                if (ex instanceof HttpException http) return renderHttpException(http, res);
                 log.error("Unhandled exception in {} {}", req.method(), req.path(), ex);
                 res.status(500);
                 res.type(ContentType.JSON);
                 return JSON_500;
             };
+
+    /**
+     * {@link HttpException} carries the status the caller meant; without this it reached the
+     * catch-all above and every one of them came back as 500 — including the 400s
+     * {@code RequestHelper} and {@code flash-ext-jackson} raise for malformed input.
+     *
+     * <p>Deliberately not pre-encoded like {@link #JSON_404}: the message is per-exception, and
+     * an error path that already unwound a stack does not need the allocation shaved.
+     */
+    private static byte[] renderHttpException(HttpException failure, Response res) {
+        res.status(failure.status());
+        res.type(ContentType.JSON);
+        String message = failure.getMessage();
+        StringBuilder out = new StringBuilder(48 + (message == null ? 0 : message.length()));
+        out.append("{\"error\":\"");
+        escapeJson(message == null ? "" : message, out);
+        out.append("\",\"status\":").append(failure.status()).append('}');
+        return out.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Minimal RFC 8259 string escaping — enough for an exception message. */
+    private static void escapeJson(String text, StringBuilder out) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"'  -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default   -> {
+                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
+                    else out.append(c);
+                }
+            }
+        }
+    }
 
     public SimpleHandler    getNotFoundHandler()  { return notFoundHandler; }
     public ExceptionHandler getExceptionHandler() { return exceptionHandler; }
