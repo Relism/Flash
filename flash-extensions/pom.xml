@@ -24,18 +24,41 @@
         <module>flash-ext-limiter</module>
         <module>flash-ext-web-bundler</module>
         <module>flash-ext-mcp</module>
+        <module>flash-ext-validation</module>
         <module>flash-ext-scheduler</module>
         <module>flash-ext-data-core</module>
         <module>flash-ext-data-jdbc</module>
         <module>flash-ext-data-hibernate</module>
+        <module>flash-ext-cache-core</module>
+        <module>flash-ext-cache-caffeine</module>
     </modules>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-validation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-cache-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-cache-caffeine</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
