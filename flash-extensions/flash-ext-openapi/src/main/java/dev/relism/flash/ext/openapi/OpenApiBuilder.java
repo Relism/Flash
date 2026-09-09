@@ -365,6 +365,9 @@ public final class OpenApiBuilder {
         return null;
     }
 
+    /** Resolved once: jakarta.validation is an optional dependency of this module. */
+    private static final boolean CONSTRAINTS_PRESENT = ConstraintHints.available();
+
     private static final class SchemaRegistry {
         private static final Set<Class<?>> SIMPLE = Set.of(
                 String.class, CharSequence.class,
@@ -476,8 +479,14 @@ public final class OpenApiBuilder {
                     if (jp.access() == Access.WRITE_ONLY) property.put("writeOnly", true);
                 }
 
+                // Constraints declared for flash-ext-validation also describe the contract, so
+                // mirror them here rather than making callers restate every rule as @Schema.
+                boolean constrainedRequired = CONSTRAINTS_PRESENT && ConstraintHints.apply(f, property);
+
                 properties.put(name, property);
-                if ((ps != null && ps.required()) || (sp != null && sp.required()) || (jp != null && jp.required())) required.add(name);
+                if (constrainedRequired
+                        || (ps != null && ps.required()) || (sp != null && sp.required()) || (jp != null && jp.required()))
+                    required.add(name);
             }
 
             if (!properties.isEmpty()) out.put("properties", properties);

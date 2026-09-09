@@ -39,6 +39,7 @@
         <jmh.version>1.37</jmh.version>
         <junit.version>5.11.0</junit.version>
         <caffeine.version>3.1.8</caffeine.version>
+        <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
     </properties>
 
@@ -67,6 +68,16 @@
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-validation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.validation</groupId>
+                <artifactId>jakarta.validation-api</artifactId>
+                <version>${jakarta.validation.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
