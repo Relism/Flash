@@ -9,7 +9,7 @@
 
 2. **Request-time**
    - Handler builds local `ViewModel`.
-   - Runtime injects globals under reserved `global` namespace and merges local model.
+   - Runtime merges globals and local model into one flat parameter map (fails fast on key collision).
    - jte renders template into `StringOutput`.
 
 3. **Static assets (optional, enabled by default)**

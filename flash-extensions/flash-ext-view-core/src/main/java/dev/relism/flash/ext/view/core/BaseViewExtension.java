@@ -15,6 +15,23 @@ import java.util.function.Function;
 public abstract class BaseViewExtension<TTarget> implements FlashExtension {
     private final List<GlobalValue> globals = new ArrayList<>();
 
+    protected BaseViewExtension() {}
+
+    /**
+     * Seeds this instance with globals carried over from a prior one. Subclasses whose
+     * fluent settings methods return a new instance (e.g. {@code JteExtension.templateRoot(...)})
+     * must route through this constructor — otherwise {@link #addGlobal} calls made before
+     * such a method silently vanish, since the new instance would start with an empty list.
+     */
+    protected BaseViewExtension(List<GlobalValue> seedGlobals) {
+        globals.addAll(seedGlobals);
+    }
+
+    /** Snapshot of globals registered so far — for subclasses to carry over into a new instance. */
+    protected final List<GlobalValue> globals() {
+        return List.copyOf(globals);
+    }
+
     public BaseViewExtension<TTarget> addGlobal(String key, Function<Request, Object> resolver) {
         String k = Objects.requireNonNull(key, "global key must not be null").trim();
         if (k.isEmpty()) {
@@ -34,7 +51,13 @@ public abstract class BaseViewExtension<TTarget> implements FlashExtension {
     @Override
     public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         ViewRuntimeBridge<TTarget> runtime = createRuntime(List.copyOf(globals));
-        ctx.provide(ViewRuntimeBridge.class, runtime);
+        try {
+            ctx.provide(ViewRuntimeBridge.class, runtime);
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException("Another flash-ext-view implementation is already installed in "
+                    + "this FlashApp. Only one view engine (e.g. ThymeleafExtension or JteExtension, not both) "
+                    + "can be active per app — install a single implementation.", e);
+        }
         ctx.addAnnotationProcessor(handlerClass -> {
             validateHandlerClass(handlerClass);
             return List.of();

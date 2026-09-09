@@ -1,6 +1,11 @@
 package dev.relism.flash.ext.view.jte;
 
+import dev.relism.flash.ext.view.core.RenderedView;
 import dev.relism.flash.ext.view.core.ViewModel;
+import dev.relism.flash.ext.view.core.ViewRuntimeBridge;
+import dev.relism.flash.ext.view.jte.model.HomePage;
+import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.http.ContentType;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.RequestHandler;
 import dev.relism.flash.models.Response;
@@ -87,6 +92,39 @@ class JteExtensionTest {
         assertEquals("/assets", settings.staticPrefix());
         assertTrue(settings.staticCorsEnabled());
         assertEquals("https://cdn.example.com", settings.staticCorsAllowOrigin());
+    }
+
+    @Test
+    void addGlobal_survives_subsequent_settings_builder_calls() throws Exception {
+        // addGlobal() before a chained settings method (templateRoot/serveStatics/...) used to
+        // be silently dropped: those methods return a *new* JteExtension instance, and the
+        // globals list lived on the instance, not the settings being carried forward.
+        JteExtension ext = new JteExtension(cfg -> cfg.developmentMode(true))
+                .addGlobal("appName", req -> "FlashLab")
+                .templateRoot("templates")
+                .serveStatics(false);
+
+        TestRegistrar app = new TestRegistrar();
+        FlashContext ctx = new FlashContext();
+        ext.configure(app, ctx);
+        ctx.complete();
+
+        @SuppressWarnings("unchecked")
+        ViewRuntimeBridge<JteTarget> runtime = (ViewRuntimeBridge<JteTarget>) ctx.require(ViewRuntimeBridge.class);
+
+        JteHandler handler = new JteHandler() {
+            @Override
+            public ViewModel render(Request req) {
+                return ViewModel.empty()
+                        .with("page", new HomePage("Flash + jte", "elorc"))
+                        .with("build", "dev");
+            }
+        };
+        JteTarget target = new JteTarget("pages/home.jte", ContentType.TEXT_HTML);
+        RenderedView out = runtime.render(handler, target, request("/", null, null, null),
+                new Response(200, ContentType.JSON));
+
+        assertTrue(out.body().contains("FlashLab"), "global registered before templateRoot() must survive");
     }
 
     @Test

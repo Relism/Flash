@@ -28,6 +28,21 @@ Register globals in extension setup:
 new JteExtension().addGlobal("appName", req -> "Flash")
 ```
 
-Globals are available under `global` namespace in templates.
+Globals are merged **flat** into the model — same level as local `ViewModel` keys, not
+under a `global.*` namespace. jte templates are statically typed, so each template declares
+one `@param` per global it actually uses, named exactly like the global key:
 
-`global` is reserved and cannot be used as local model key.
+```jte
+@param String appName
+
+<span>${appName}</span>
+```
+
+A template that doesn't declare `appName` simply never sees it — no need to declare every
+global on every page, only the ones a given template actually uses.
+
+A local `ViewModel` key that collides with a registered global name fails fast with
+`IllegalStateException` at render time, so a typo can't silently shadow a global.
+
+Every registered global is still resolved on **every** render regardless of whether the
+target template declares it, so keep resolvers cheap (no blocking I/O, no heavy allocation).

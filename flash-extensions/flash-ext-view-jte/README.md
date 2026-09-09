@@ -8,7 +8,7 @@ This module keeps jte semantics front and center:
 - `JteHandler`
 - `@Template`
 - `ViewModel` from `flash-ext-view-core`
-- `global.*` reserved namespace
+- globals merged flat into the model, one typed `@param` per global
 
 The extension mirrors `gg.jte.ContentType` into Flash HTTP content type:
 

@@ -29,31 +29,32 @@ public final class JteExtension extends BaseViewExtension<JteTarget> {
         this.settings = builder.build();
     }
 
-    private JteExtension(JteSettings settings) {
+    private JteExtension(JteSettings settings, List<GlobalValue> seedGlobals) {
+        super(seedGlobals);
         this.settings = settings;
     }
 
     public JteExtension templateRoot(String templateRoot) {
-        return new JteExtension(settings.toBuilder().templateRoot(templateRoot).build());
+        return new JteExtension(settings.toBuilder().templateRoot(templateRoot).build(), globals());
     }
 
     public JteExtension serveStatics(boolean serveStatics) {
-        return new JteExtension(settings.toBuilder().serveStatics(serveStatics).build());
+        return new JteExtension(settings.toBuilder().serveStatics(serveStatics).build(), globals());
     }
 
     public JteExtension staticPrefix(String staticPrefix) {
-        return new JteExtension(settings.toBuilder().staticPrefix(staticPrefix).build());
+        return new JteExtension(settings.toBuilder().staticPrefix(staticPrefix).build(), globals());
     }
 
     public JteExtension withStaticCors() {
-        return new JteExtension(settings.toBuilder().enableStaticCors(true).build());
+        return new JteExtension(settings.toBuilder().enableStaticCors(true).build(), globals());
     }
 
     public JteExtension staticCors(Consumer<JteSettings.Builder> corsConfig) {
         JteSettings.Builder builder = settings.toBuilder();
         builder.enableStaticCors(true);
         corsConfig.accept(builder);
-        return new JteExtension(builder.build());
+        return new JteExtension(builder.build(), globals());
     }
 
     @Override
