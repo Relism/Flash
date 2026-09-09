@@ -146,6 +146,7 @@ See extension-specific READMEs for full details:
 - [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
+- [`flash-testing`](flash-testing/docs/README.md)
 
 ## Error handlers
 
@@ -481,6 +482,9 @@ A `static` field boots once for the test class; a non-static field boots a fresh
 That is stock JUnit field semantics — the isolation switch is the keyword, not an option.
 
 ### Configuration
+
+Full reference: [`flash-testing/docs`](flash-testing/docs/README.md), including the
+[limits](flash-testing/docs/limits.md) the harness deliberately does not cross.
 
 `profile` customises the `FlashConfiguration` — timeouts, HTTP/2 switches, buffer sizes. Host, port
 and the shutdown drain window are stamped afterwards, so a profile cannot break the harness;
