@@ -36,7 +36,7 @@ Format: `<type>(<scope>): <short description>`
 | `chore` | Build, deps, tooling — no production code |
 | `ci` | Changes to GitHub Actions workflows |
 
-Allowed scopes: `core`, `ext-jackson`, `ext-openapi`, `ext-oidc`, `ext-routeviewer`,
+Allowed scopes: `core`, `testing`, `ext-jackson`, `ext-openapi`, `ext-oidc`, `ext-routeviewer`,
 `ext-view-core`, `ext-view-jte`, `ext-view-thymeleaf`, `ext-limiter`, `ext-web-bundler`,
 `ext-mcp`, `ext-data-core`, `ext-data-jdbc`, `ext-data-hibernate`, `release`, `deps`, `ci`.
 
@@ -85,6 +85,9 @@ chore(release): 2.1.0
 
 - Root POM: `flash-parent` — defines all dependency versions and plugin config.
 - `flash` module: the core framework JAR.
+- `flash-testing` module: JUnit 5 harness for testing Flash applications. Deliberately not
+  under `flash-extensions/` — it is not something you `install()`, and it carries
+  `junit-jupiter-api` at compile scope.
 - `flash-extensions` POM: aggregator for all extension modules.
 - Extensions live under `flash-extensions/flash-ext-*/`.
 - When adding a new extension:

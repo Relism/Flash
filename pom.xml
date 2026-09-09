@@ -11,6 +11,7 @@
 
     <modules>
         <module>flash</module>
+        <module>flash-testing</module>
         <module>flash-extensions</module>
     </modules>
 
@@ -36,6 +37,7 @@
         <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
         <maven.versions.plugin.version>2.18.0</maven.versions.plugin.version>
         <jmh.version>1.37</jmh.version>
+        <junit.version>5.11.0</junit.version>
         <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
     </properties>
 
@@ -58,6 +60,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -139,8 +146,13 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
-                <version>5.11.0</version>
+                <version>${junit.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-api</artifactId>
+                <version>${junit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
