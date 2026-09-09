@@ -165,10 +165,14 @@ public final class FlashTest implements BeforeAllCallback, AfterAllCallback,
     // ── JUnit lifecycle ──────────────────────────────────────────────────────
     // A static field receives class- AND method-level callbacks, so afterEach would otherwise
     // tear the server down after the first test. classScoped records which tier owns it.
+    //
+    // Neither hook starts anything: booting stays lazy, so a class holding several servers
+    // only pays for the ones a test actually touches, and an application whose configure()
+    // reads @TempDir sees it populated rather than null.
 
-    @Override public void beforeAll(ExtensionContext context)  { classScoped = true; ensureStarted(); }
+    @Override public void beforeAll(ExtensionContext context)  { classScoped = true; }
     @Override public void afterAll(ExtensionContext context)   { stop(); }
-    @Override public void beforeEach(ExtensionContext context) { if (!classScoped) ensureStarted(); }
+    @Override public void beforeEach(ExtensionContext context) { /* lazy */ }
     @Override public void afterEach(ExtensionContext context)  { if (!classScoped) stop(); }
 
     // ── Internals ────────────────────────────────────────────────────────────
