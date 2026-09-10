@@ -1,11 +1,12 @@
 package dev.relism.flash.ext.mcp;
 
-import dev.relism.flash.ext.oidc.Authenticated;
-import dev.relism.flash.ext.oidc.ClaimsHolder;
-import dev.relism.flash.ext.oidc.OidcMiddleware;
-import dev.relism.flash.ext.oidc.OidcUser;
-import dev.relism.flash.ext.oidc.RolesAllowed;
-import dev.relism.flash.ext.oidc.ScopesAllowed;
+import dev.relism.flash.ext.auth.AuthMiddleware;
+import dev.relism.flash.ext.auth.Authenticated;
+import dev.relism.flash.ext.auth.Claims;
+import dev.relism.flash.ext.auth.ClaimsHolder;
+import dev.relism.flash.ext.auth.RolesAllowed;
+import dev.relism.flash.ext.auth.ScopesAllowed;
+import dev.relism.flash.ext.oidc.OidcCredentialSource;
 import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.models.Request;
@@ -19,7 +20,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Lazy, isolated bridge to {@code flash-ext-oidc}.
+ * Lazy, isolated bridge to {@code flash-ext-oidc} and {@code flash-ext-auth-core}.
  *
  * <p>References to OIDC types only ever resolve when {@link #resolve}/{@link #compileToolPolicy}
  * are actually invoked — never at {@link McpExtension} class-load time — because they live in
@@ -34,7 +35,7 @@ import java.util.function.Supplier;
  * <p>Zero-config by design: when {@code flash-ext-oidc} is installed, everything an MCP OAuth2
  * resource server needs — issuer, canonical resource identifier, RFC 8707 audience binding, and
  * a spec-compliant {@code WWW-Authenticate} challenge (RFC 9728 §5.1) — is derived straight from
- * the installed {@link OidcMiddleware}, with no additional {@link McpConfig} calls.
+ * the installed {@link OidcCredentialSource}, with no additional {@link McpConfig} calls.
  * {@link McpConfig#resourceIdentifier(String)}/{@link McpConfig#authorizationServerIssuer(String)}
  * remain as explicit overrides for the rare case where that guess is wrong.
  */
@@ -51,20 +52,25 @@ final class McpOidcIntegration {
 
     /** Returns the resolved security bundle, or {@code null} if oidc is not installed. */
     static Resolved resolve(FlashContext ctx, McpConfig config) {
-        Optional<OidcMiddleware> oidc = ctx.find(OidcMiddleware.class);
-        if (oidc.isEmpty()) return null;
+        // Deliberately keyed on the OIDC source and not on AuthMiddleware: McpSecurity means
+        // "a real OAuth2 authorization server is protecting this endpoint", and an app that
+        // authenticates some other way must not satisfy REQUIRED by accident.
+        Optional<OidcCredentialSource> oidc = ctx.find(OidcCredentialSource.class);
+        Optional<AuthMiddleware> auth = ctx.find(AuthMiddleware.class);
+        if (oidc.isEmpty() || auth.isEmpty()) return null;
 
-        OidcMiddleware oidcMw = oidc.get();
+        OidcCredentialSource source = oidc.get();
+        AuthMiddleware authMw = auth.get();
         String resourceMetadataPath = "/.well-known/oauth-protected-resource" + config.rootPath();
         String issuer = config.authorizationServerIssuer() != null
-                ? config.authorizationServerIssuer() : oidcMw.issuer();
+                ? config.authorizationServerIssuer() : source.issuer();
         Function<Request, String> resourceId = req -> config.resourceIdentifier() != null
                 ? config.resourceIdentifier()
-                : OidcMiddleware.selfOrigin(req, oidcMw.selfScheme()) + config.rootPath();
+                : OidcCredentialSource.selfOrigin(req, source.selfScheme()) + config.rootPath();
 
-        Middleware protect = oidcMw.protect(resourceMetadataPath);
+        Middleware protect = authMw.withSource(source.withResourceMetadata(resourceMetadataPath)).protect();
         Middleware secured = Middleware.of(protect, audienceGuard(resourceId));
-        return new Resolved(secured, issuer, oidcMw.rolesClaimPath(), resourceId);
+        return new Resolved(secured, issuer, authMw.rolesClaimPath(), resourceId);
     }
 
     /**
@@ -73,7 +79,7 @@ final class McpOidcIntegration {
      */
     private static Middleware audienceGuard(Function<Request, String> resourceIdentifier) {
         return next -> (req, res) -> {
-            Map<String, Object> claims = ClaimsHolder.get();
+            Map<String, Object> claims = ClaimsHolder.map();
             String expected = resourceIdentifier.apply(req);
             if (claims != null && !audienceMatches(claims.get("aud"), expected)) {
                 log.warn("[flash-ext-mcp] Rejecting token (RFC 8707): aud={} does not include expected " +
@@ -100,7 +106,7 @@ final class McpOidcIntegration {
      * annotations. Called once per tool at boot ({@link McpRegistry#scan}), never on the
      * request hot path — the {@link Supplier} it returns is what runs per {@code tools/call},
      * closing over the already-normalized role/scope arrays so the hot path itself allocates
-     * nothing beyond what {@link OidcUser#hasRole}/{@link OidcUser#hasScope} already do.
+     * nothing beyond what {@link Claims#hasRole}/{@link Claims#hasScope} already do.
      *
      * <p>Fails fast at boot, not silently at request time, for the two ways this can be
      * misconfigured: the annotation present without OAuth2 actually protecting this MCP server
@@ -136,7 +142,7 @@ final class McpOidcIntegration {
         ScopesAllowed.Match scopeMatch = scopes != null ? scopes.match() : ScopesAllowed.Match.ALL;
 
         Supplier<String> check = () -> {
-            OidcUser user = ClaimsHolder.user();
+            Claims user = ClaimsHolder.current();
             if (user == null) return "not authenticated";
             if (requiredRoles.length > 0 && !hasAnyRole(user, rolesClaimPath, requiredRoles))
                 return "missing required role (any of: " + String.join(", ", requiredRoles) + ")";
@@ -147,12 +153,12 @@ final class McpOidcIntegration {
         return new McpAuthPolicy(check);
     }
 
-    private static boolean hasAnyRole(OidcUser user, String claimPath, String[] roles) {
+    private static boolean hasAnyRole(Claims user, String claimPath, String[] roles) {
         for (String role : roles) if (user.hasRole(claimPath, role)) return true;
         return false;
     }
 
-    private static boolean hasScopes(OidcUser user, String[] scopes, ScopesAllowed.Match match) {
+    private static boolean hasScopes(Claims user, String[] scopes, ScopesAllowed.Match match) {
         if (match == ScopesAllowed.Match.ALL) {
             for (String scope : scopes) if (!user.hasScope(scope)) return false;
             return true;

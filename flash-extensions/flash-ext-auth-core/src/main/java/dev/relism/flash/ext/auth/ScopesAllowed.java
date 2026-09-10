@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -6,11 +6,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Restricts a handler to callers whose token carries the required OAuth2 scopes.
+ * Restricts a handler to callers whose credential carries the required scopes.
  * Authentication is implicitly required.
  *
  * <p>Scopes are resolved from the configured claim paths in
- * {@link OidcConfig#scopeClaimPaths()} (default: {@code "scope,scp"}) and support
+ * {@link AuthConfig#scopeClaimPaths()} (default: {@code "scope,scp"}) and support
  * both standard formats:
  * <ul>
  *   <li>{@code scope}: space-separated string</li>

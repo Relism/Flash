@@ -4,6 +4,12 @@ import dev.relism.flash.ext.openapi.OpenApiContributor;
 import dev.relism.flash.ext.openapi.OpenApiContributorRegistry;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
+import dev.relism.flash.ext.auth.AuthConfig;
+import dev.relism.flash.ext.auth.AuthMiddleware;
+import dev.relism.flash.ext.auth.AuthPolicy;
+import dev.relism.flash.ext.auth.Authenticated;
+import dev.relism.flash.ext.auth.RolesAllowed;
+import dev.relism.flash.ext.auth.ScopesAllowed;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
@@ -28,7 +34,8 @@ import java.util.*;
  * <p>At {@link #provide}, the extension:
  * <ol>
  *   <li>Fetches the provider discovery document — fail-fast at startup.</li>
- *   <li>Provides {@link OidcMiddleware} and {@link JwtValidator} in the context.</li>
+ *   <li>Provides {@link AuthMiddleware}, {@link OidcCredentialSource} and {@link JwtValidator}
+ *       in the context.</li>
  *   <li>Registers annotation processors for {@link Authenticated}, {@link RolesAllowed}
  *       and {@link ScopesAllowed}.</li>
  * </ol>
@@ -56,7 +63,7 @@ import java.util.*;
  * }</pre>
  */
 public class OidcExtension implements FlashExtension {
-    private static final MiddlewareKey POLICY = MiddlewareKey.of("flash.oidc.policy");
+    private static final MiddlewareKey POLICY = MiddlewareKey.of("flash.auth.policy");
 
     private final OidcConfig config;
 
@@ -65,7 +72,8 @@ public class OidcExtension implements FlashExtension {
     private OidcStateStore       stateStore;
     private TokenClient          tokenClient;
     private JwtValidator         validator;
-    private OidcMiddleware       oidcMw;
+    private OidcCredentialSource source;
+    private AuthMiddleware       authMw;
 
     public OidcExtension(OidcConfig config) {
         this.config = config;
@@ -87,14 +95,19 @@ public class OidcExtension implements FlashExtension {
         validator   = new JwtValidator(meta.jwksUri(), config.issuer(), config.clientId(), config.algorithm(), http);
         stateStore  = new OidcStateStore();
         tokenClient = new TokenClient(http, config);
-        oidcMw      = new OidcMiddleware(validator, config, meta, tokenClient);
+        source      = new OidcCredentialSource(validator, config, meta, tokenClient);
+        authMw      = new AuthMiddleware(AuthConfig.builder()
+                .rolesClaimPath(config.rolesClaimPath())
+                .scopeClaimPaths(config.scopeClaimPaths())
+                .build(), source);
 
-        ctx.provide(OidcMiddleware.class, oidcMw);
-        ctx.provide(JwtValidator.class,   validator);
+        ctx.provide(AuthMiddleware.class,       authMw);
+        ctx.provide(OidcCredentialSource.class, source);
+        ctx.provide(JwtValidator.class,         validator);
 
         ctx.addAnnotationProcessor(handlerClass -> {
-            OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
-            return policy != null ? List.of(MiddlewareNode.of(POLICY, oidcMw.policyMiddleware(policy))) : List.of();
+            AuthPolicy policy = AuthPolicy.compileFromAnnotations(handlerClass);
+            return policy != null ? List.of(MiddlewareNode.of(POLICY, authMw.authorize(policy))) : List.of();
         });
         ctx.onReady(() -> registerRoutes(app, ctx));
     }
@@ -178,7 +191,7 @@ public class OidcExtension implements FlashExtension {
         // ── POST {prefix}/logout ──────────────────────────────────────────────
         // Invalidates the local session and redirects to end_session_endpoint.
         app.post(prefix + "/logout", (req, res) -> {
-            String sessionId   = OidcMiddleware.cookieValue(req, "oidc_session");
+            String sessionId   = OidcCredentialSource.cookieValue(req, "oidc_session");
             String idTokenHint = null;
 
             if (sessionId != null) {
@@ -253,7 +266,7 @@ public class OidcExtension implements FlashExtension {
 
     private String absoluteSelf(Request req, String uri) {
         if (!uri.startsWith("/")) return uri;
-        return OidcMiddleware.selfOrigin(req, config.selfScheme()) + uri;
+        return OidcCredentialSource.selfOrigin(req, config.selfScheme()) + uri;
     }
 
     private static String enc(String v) {
@@ -299,12 +312,12 @@ public class OidcExtension implements FlashExtension {
                         OpenApiOperationContribution.Builder out =
                                 OpenApiOperationContribution.builder();
 
-                        List<String> operationScopes = OidcAuthPolicy.openApiScopesFor(handlerClass);
+                        List<String> operationScopes = AuthPolicy.openApiScopesFor(handlerClass);
                         if (operationScopes != null) {
                             out.security(config.schemeName(), operationScopes);
                         }
 
-                        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(handlerClass);
+                        AuthPolicy policy = AuthPolicy.compileFromAnnotations(handlerClass);
                         if (policy == null || policy.optionalAuth()) return out.build();
 
                         out.response(401, OpenApiResponseContribution.of("Authentication required"));

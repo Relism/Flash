@@ -16,6 +16,7 @@
     <modules>
         <module>flash-ext-jackson</module>
         <module>flash-ext-openapi</module>
+        <module>flash-ext-auth-core</module>
         <module>flash-ext-oidc</module>
         <module>flash-ext-routeviewer</module>
         <module>flash-ext-view-core</module>
@@ -43,6 +44,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-auth-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

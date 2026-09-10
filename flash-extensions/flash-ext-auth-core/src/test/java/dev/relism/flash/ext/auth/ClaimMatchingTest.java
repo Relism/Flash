@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import org.junit.jupiter.api.Test;
 
@@ -23,15 +23,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ClaimMatchingTest {
 
-    private static OidcMiddleware middleware(String rolesPath, String scopePaths) {
-        return new OidcMiddleware(null, OidcConfig
-                .builder("https://idp.example.com", "client", "secret", "/auth/callback")
+    /** No credential source: every assertion here is about claims that are already resolved. */
+    private static AuthMiddleware middleware(String rolesPath, String scopePaths) {
+        return new AuthMiddleware(AuthConfig.builder()
                 .rolesClaimPath(rolesPath)
                 .scopeClaimPaths(scopePaths)
-                .build(), null, null);
+                .build(), null);
     }
 
-    private static OidcMiddleware middleware() {
+    private static AuthMiddleware middleware() {
         return middleware("realm_access.roles", "scope,scp");
     }
 
@@ -182,7 +182,7 @@ class ClaimMatchingTest {
 
     @Test
     void scopesAreLookedForInEveryConfiguredPathUntilOneMatches() {
-        OidcMiddleware mw = middleware("roles", "scope, scp , permissions.scopes");
+        AuthMiddleware mw = middleware("roles", "scope, scp , permissions.scopes");
         Map<String, Object> claims = Map.of(
                 "scp", List.of("payments:write"),
                 "permissions", Map.of("scopes", "orders:approve"));
@@ -196,14 +196,14 @@ class ClaimMatchingTest {
 
     @Test
     void blankScopePathsFallBackToScopeAndScp() {
-        OidcMiddleware mw = middleware("roles", "   ");
+        AuthMiddleware mw = middleware("roles", "   ");
         assertTrue(mw.scopesAllowed(Map.of("scope", "a"), new String[]{"a"}, ScopesAllowed.Match.ALL));
         assertTrue(mw.scopesAllowed(Map.of("scp", "b"), new String[]{"b"}, ScopesAllowed.Match.ALL));
     }
 
     @Test
     void aScopePathListOfOnlySeparatorsFallsBackToScopeAndScp() {
-        OidcMiddleware mw = middleware("roles", " , , ");
+        AuthMiddleware mw = middleware("roles", " , , ");
         assertTrue(mw.scopesAllowed(Map.of("scp", "b"), new String[]{"b"}, ScopesAllowed.Match.ALL));
     }
 }

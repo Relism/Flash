@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import org.junit.jupiter.api.Test;
 
@@ -6,7 +6,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class OidcAuthPolicyTest {
+class AuthPolicyTest {
 
     static class PlainHandler {}
 
@@ -33,12 +33,12 @@ class OidcAuthPolicyTest {
 
     @Test
     void compileFromAnnotations_noSecurityAnnotations_returnsNull() {
-        assertNull(OidcAuthPolicy.compileFromAnnotations(PlainHandler.class));
+        assertNull(AuthPolicy.compileFromAnnotations(PlainHandler.class));
     }
 
     @Test
     void compileFromAnnotations_authenticated_createsRequiredAuthPolicy() {
-        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(AuthenticatedHandler.class);
+        AuthPolicy policy = AuthPolicy.compileFromAnnotations(AuthenticatedHandler.class);
         assertNotNull(policy);
         assertFalse(policy.optionalAuth());
         assertEquals(0, policy.requiredRoles().length);
@@ -47,14 +47,14 @@ class OidcAuthPolicyTest {
 
     @Test
     void compileFromAnnotations_optionalAuth_createsOptionalPolicy() {
-        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(OptionalHandler.class);
+        AuthPolicy policy = AuthPolicy.compileFromAnnotations(OptionalHandler.class);
         assertNotNull(policy);
         assertTrue(policy.optionalAuth());
     }
 
     @Test
     void compileFromAnnotations_rolesAndScopes_areNormalizedAndMerged() {
-        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(CombinedHandler.class);
+        AuthPolicy policy = AuthPolicy.compileFromAnnotations(CombinedHandler.class);
         assertNotNull(policy);
         assertFalse(policy.optionalAuth());
         assertArrayEquals(new String[]{"admin"}, policy.requiredRoles());
@@ -64,7 +64,7 @@ class OidcAuthPolicyTest {
 
     @Test
     void compileFromAnnotations_scopesAny_preservesMatchModeAndDedupes() {
-        OidcAuthPolicy policy = OidcAuthPolicy.compileFromAnnotations(ScopesHandler.class);
+        AuthPolicy policy = AuthPolicy.compileFromAnnotations(ScopesHandler.class);
         assertNotNull(policy);
         assertArrayEquals(new String[]{"orders:write", "payments:write"}, policy.requiredScopes());
         assertEquals(ScopesAllowed.Match.ANY, policy.scopeMatch());
@@ -73,22 +73,22 @@ class OidcAuthPolicyTest {
     @Test
     void compileFromAnnotations_optionalCannotBeCombinedWithConstraints() {
         assertThrows(IllegalStateException.class,
-                () -> OidcAuthPolicy.compileFromAnnotations(InvalidOptionalHandler.class));
+                () -> AuthPolicy.compileFromAnnotations(InvalidOptionalHandler.class));
     }
 
     @Test
     void openApiScopesFor_returnsScopesWhenPresent() {
         assertEquals(List.of("orders:write", "payments:write"),
-                OidcAuthPolicy.openApiScopesFor(ScopesHandler.class));
+                AuthPolicy.openApiScopesFor(ScopesHandler.class));
     }
 
     @Test
     void openApiScopesFor_rolesOnly_returnsEmptyList() {
-        assertEquals(List.of(), OidcAuthPolicy.openApiScopesFor(RolesHandler.class));
+        assertEquals(List.of(), AuthPolicy.openApiScopesFor(RolesHandler.class));
     }
 
     @Test
     void openApiScopesFor_noSecurity_returnsNull() {
-        assertNull(OidcAuthPolicy.openApiScopesFor(PlainHandler.class));
+        assertNull(AuthPolicy.openApiScopesFor(PlainHandler.class));
     }
 }

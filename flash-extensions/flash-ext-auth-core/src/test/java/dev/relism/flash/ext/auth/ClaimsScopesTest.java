@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import org.junit.jupiter.api.Test;
 
@@ -7,11 +7,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class OidcUserScopesTest {
+class ClaimsScopesTest {
 
     @Test
     void scopes_readsStandardScopeString() {
-        OidcUser user = new OidcUser(Map.of("scope", "openid profile orders:read"));
+        Claims user = new Claims(Map.of("scope", "openid profile orders:read"));
 
         assertEquals(List.of("openid", "profile", "orders:read"), user.scopes());
         assertTrue(user.hasScope("orders:read"));
@@ -20,7 +20,7 @@ class OidcUserScopesTest {
 
     @Test
     void scopes_fallsBackToScpArray() {
-        OidcUser user = new OidcUser(Map.of("scp", List.of("orders:write", "payments:write")));
+        Claims user = new Claims(Map.of("scp", List.of("orders:write", "payments:write")));
 
         assertEquals(List.of("orders:write", "payments:write"), user.scopes());
         assertTrue(user.hasScope("payments:write"));
@@ -28,7 +28,7 @@ class OidcUserScopesTest {
 
     @Test
     void scopes_supportsCustomClaimPaths() {
-        OidcUser user = new OidcUser(Map.of("permissions", Map.of("scopes", List.of("a", "b"))));
+        Claims user = new Claims(Map.of("permissions", Map.of("scopes", List.of("a", "b"))));
 
         assertEquals(List.of("a", "b"), user.scopes("permissions.scopes"));
         assertTrue(user.hasScope("permissions.scopes", "a"));
@@ -37,7 +37,7 @@ class OidcUserScopesTest {
 
     @Test
     void scopes_combinesMultipleClaimPathsInOrder() {
-        OidcUser user = new OidcUser(Map.of(
+        Claims user = new Claims(Map.of(
                 "scope", "openid",
                 "scp", List.of("profile", "orders:read")
         ));

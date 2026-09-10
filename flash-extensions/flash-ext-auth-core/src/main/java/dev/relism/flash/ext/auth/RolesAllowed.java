@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -6,20 +6,19 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Restricts a handler to callers whose JWT contains at least one of the
- * specified roles. Authentication is implicitly required — no need to combine
- * with {@link Authenticated}.
+ * Restricts a handler to callers holding at least one of the named roles. Authentication is
+ * implied — there is no need to combine it with {@link Authenticated}.
  *
- * <p>Roles are read from the claim configured in {@link OidcConfig#rolesClaimPath()}
- * (default: {@code "roles"}). Nested paths like {@code "realm_access.roles"} are
- * supported with dot notation.
+ * <p>Roles are read from the claim path the installed credential source is configured with
+ * (Keycloak's is {@code realm_access.roles}; many providers use a flat {@code roles} or
+ * {@code groups}). Nested paths use dot notation.
  *
  * <pre>{@code
  * @Route(method = HttpMethod.DELETE, path = "/api/admin/blogs/{id}")
  * @RolesAllowed("admin")
  * public class DeleteBlog extends JacksonHandler { ... }
  *
- * // Multiple accepted roles (OR semantics — any one role is sufficient):
+ * // Multiple accepted roles (OR semantics — any one is sufficient):
  * @RolesAllowed({"admin", "editor"})
  * public class UpdateBlog extends JacksonHandler { ... }
  * }</pre>

@@ -4,6 +4,10 @@ import dev.relism.flash.ext.openapi.OpenApiContributorRegistry;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
 import dev.relism.flash.ext.openapi.OpenApiContributor;
+import dev.relism.flash.ext.auth.AuthPolicy;
+import dev.relism.flash.ext.auth.Authenticated;
+import dev.relism.flash.ext.auth.RolesAllowed;
+import dev.relism.flash.ext.auth.ScopesAllowed;
 import dev.relism.flash.extension.FlashContext;
 import org.junit.jupiter.api.Test;
 

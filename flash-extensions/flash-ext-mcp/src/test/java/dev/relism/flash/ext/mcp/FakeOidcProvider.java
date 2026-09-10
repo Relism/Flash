@@ -63,7 +63,7 @@ final class FakeOidcProvider implements AutoCloseable {
 
     /**
      * Same as {@link #signToken(String, String)}, plus a {@code scope} claim (space-delimited,
-     * matching {@link dev.relism.flash.ext.oidc.OidcUser#hasScope}'s default claim path) and a
+     * matching {@link dev.relism.flash.ext.auth.Claims#hasScope}'s default claim path) and a
      * Keycloak-shaped {@code realm_access.roles} claim (matching {@code McpConfig}'s default
      * {@code rolesClaimPath}) when {@code roles} is non-empty.
      */

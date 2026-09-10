@@ -1,43 +1,36 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 
 /**
- * Type-safe view over the JWT claims stored in {@link ClaimsHolder}.
+ * A typed view over one request's claims — whatever the {@link CredentialSource} that
+ * authenticated it produced. Obtained from {@link ClaimsHolder#current()}.
  *
- * <p>Obtainable from any protected context via {@link ClaimsHolder#user()}.
- * Class-based handlers that extend the {@code SessionHandler} hierarchy already
- * have a provisioned DB user in {@code currentUser}; {@code OidcUser} complements
- * that by giving access to the raw OIDC claims when needed, and is the primary
- * API for lambda routes.
+ * <p>The accessors name claim <em>keys</em>, not a protocol: {@code sub} is RFC 7519, and
+ * {@code email}, {@code name} and {@code preferred_username} are spelled the same way by every
+ * token issuer worth integrating. A source that uses different keys exposes them through
+ * {@link #claim(String)} or {@link #roles(String)}.
  *
  * <pre>{@code
- * // Lambda route (OidcMiddleware injected):
  * app.get("/api/whoami", (req, res) -> {
- *     OidcUser u = ClaimsHolder.user();
- *     return Map.of("sub", u.sub(), "email", u.email(), "roles", u.roles("realm_access.roles"), "scopes", u.scopes());
- * }, oidcMw.protect());
- *
- * // Class-based handler (currentUser is the DB entity; oidcUser() for raw claims):
- * protected Object handleAuthenticated(Request req, Response res) throws Exception {
- *     OidcUser u = oidcUser();           // same as ClaimsHolder.user()
- *     return json(res, currentUser);     // DB entity — provisioned from OIDC sub
- * }
+ *     Claims c = ClaimsHolder.current();
+ *     return Map.of("sub", c.sub(), "email", c.email(), "roles", c.roles("realm_access.roles"));
+ * }, auth.protect());
  * }</pre>
  */
-public final class OidcUser {
+public final class Claims {
 
     private final Map<String, Object> claims;
 
-    OidcUser(Map<String, Object> claims) {
+    Claims(Map<String, Object> claims) {
         this.claims = claims;
     }
 
-    // ── Common OIDC standard claims ───────────────────────────────────────────
+    // ── Common claims ─────────────────────────────────────────────────────────
 
-    /** Subject identifier — unique, stable user ID issued by the provider. */
+    /** Subject identifier — the stable, unique id of the caller. */
     public String sub() { return str("sub"); }
 
     /** User's email address ({@code email} claim). */
@@ -84,7 +77,7 @@ public final class OidcUser {
     // -- Scopes ---------------------------------------------------------------
 
     /**
-     * Resolves OAuth2 scopes from standard OIDC/OAuth claims using fallback order:
+     * Resolves scopes using the conventional fallback order:
      * {@code scope} then {@code scp}. Supports both space-separated string and list forms.
      */
     public List<String> scopes() {

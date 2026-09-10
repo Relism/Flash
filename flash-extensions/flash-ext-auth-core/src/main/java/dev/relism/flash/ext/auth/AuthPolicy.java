@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.oidc;
+package dev.relism.flash.ext.auth;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -7,13 +7,13 @@ import java.util.List;
  * Compiled authorization policy derived from handler annotations at mount time.
  * Immutable and allocation-free on the request hot path.
  */
-final class OidcAuthPolicy {
+public final class AuthPolicy {
 
     private static final String[] EMPTY = new String[0];
 
-    private static final OidcAuthPolicy AUTH_REQUIRED = new OidcAuthPolicy(
+    private static final AuthPolicy AUTH_REQUIRED = new AuthPolicy(
             false, EMPTY, EMPTY, ScopesAllowed.Match.ALL);
-    private static final OidcAuthPolicy AUTH_OPTIONAL = new OidcAuthPolicy(
+    private static final AuthPolicy AUTH_OPTIONAL = new AuthPolicy(
             true, EMPTY, EMPTY, ScopesAllowed.Match.ALL);
 
     private final boolean optionalAuth;
@@ -21,7 +21,7 @@ final class OidcAuthPolicy {
     private final String[] requiredScopes;
     private final ScopesAllowed.Match scopeMatch;
 
-    private OidcAuthPolicy(boolean optionalAuth,
+    private AuthPolicy(boolean optionalAuth,
                            String[] requiredRoles,
                            String[] requiredScopes,
                            ScopesAllowed.Match scopeMatch) {
@@ -31,19 +31,19 @@ final class OidcAuthPolicy {
         this.scopeMatch     = scopeMatch;
     }
 
-    static OidcAuthPolicy authenticated() { return AUTH_REQUIRED; }
+    public static AuthPolicy authenticated() { return AUTH_REQUIRED; }
 
-    static OidcAuthPolicy optional() { return AUTH_OPTIONAL; }
+    public static AuthPolicy optional() { return AUTH_OPTIONAL; }
 
-    static OidcAuthPolicy rolesAny(String... roles) {
-        return new OidcAuthPolicy(false, normalizeRequired("RolesAllowed", roles), EMPTY, ScopesAllowed.Match.ALL);
+    public static AuthPolicy rolesAny(String... roles) {
+        return new AuthPolicy(false, normalizeRequired("RolesAllowed", roles), EMPTY, ScopesAllowed.Match.ALL);
     }
 
-    static OidcAuthPolicy scopes(String[] scopes, ScopesAllowed.Match match) {
-        return new OidcAuthPolicy(false, EMPTY, normalizeRequired("ScopesAllowed", scopes), match);
+    public static AuthPolicy scopes(String[] scopes, ScopesAllowed.Match match) {
+        return new AuthPolicy(false, EMPTY, normalizeRequired("ScopesAllowed", scopes), match);
     }
 
-    static OidcAuthPolicy compileFromAnnotations(Class<?> handlerClass) {
+    public static AuthPolicy compileFromAnnotations(Class<?> handlerClass) {
         Authenticated auth = handlerClass.getAnnotation(Authenticated.class);
         RolesAllowed roles = handlerClass.getAnnotation(RolesAllowed.class);
         ScopesAllowed scopes = handlerClass.getAnnotation(ScopesAllowed.class);
@@ -60,10 +60,10 @@ final class OidcAuthPolicy {
                     + handlerClass.getName());
         }
 
-        return new OidcAuthPolicy(optionalAuth, requiredRoles, requiredScopes, scopeMatch);
+        return new AuthPolicy(optionalAuth, requiredRoles, requiredScopes, scopeMatch);
     }
 
-    static List<String> openApiScopesFor(Class<?> handlerClass) {
+    public static List<String> openApiScopesFor(Class<?> handlerClass) {
         Authenticated auth = handlerClass.getAnnotation(Authenticated.class);
         RolesAllowed roles = handlerClass.getAnnotation(RolesAllowed.class);
         ScopesAllowed scopes = handlerClass.getAnnotation(ScopesAllowed.class);
@@ -72,13 +72,13 @@ final class OidcAuthPolicy {
         return List.of(normalizeRequired("ScopesAllowed", scopes.value()));
     }
 
-    boolean optionalAuth() { return optionalAuth; }
+    public boolean optionalAuth() { return optionalAuth; }
 
-    String[] requiredRoles() { return requiredRoles; }
+    public String[] requiredRoles() { return requiredRoles; }
 
-    String[] requiredScopes() { return requiredScopes; }
+    public String[] requiredScopes() { return requiredScopes; }
 
-    ScopesAllowed.Match scopeMatch() { return scopeMatch; }
+    public ScopesAllowed.Match scopeMatch() { return scopeMatch; }
 
     private static String[] normalizeRequired(String annotation, String[] values) {
         if (values == null || values.length == 0)
