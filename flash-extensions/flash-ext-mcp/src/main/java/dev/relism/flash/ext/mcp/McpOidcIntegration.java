@@ -20,19 +20,19 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Lazy, isolated bridge to {@code flash-ext-oidc} and {@code flash-ext-auth-core}.
+ * Lazy, isolated bridge to {@code flash-ext-auth-oidc} and {@code flash-ext-auth-core}.
  *
  * <p>References to OIDC types only ever resolve when {@link #resolve}/{@link #compileToolPolicy}
  * are actually invoked — never at {@link McpExtension} class-load time — because they live in
  * this separate nested class. The caller wraps the invocation in {@code catch
  * (NoClassDefFoundError)}, exactly like {@code OidcExtension}'s own lazy bridge to {@code
  * flash-ext-openapi}. This is what lets {@code flash-ext-mcp} run standalone (MCP-only, no
- * OAuth2) when {@code flash-ext-oidc} is not even on the classpath. {@link Resolved}/{@link
+ * OAuth2) when {@code flash-ext-auth-oidc} is not even on the classpath. {@link Resolved}/{@link
  * McpAuthPolicy} carry only oidc-free types back out ({@link Middleware}, {@link String}, a
  * {@link Function}, a {@link Supplier}) so no other class in this package ever has to reference
  * an OIDC type.
  *
- * <p>Zero-config by design: when {@code flash-ext-oidc} is installed, everything an MCP OAuth2
+ * <p>Zero-config by design: when {@code flash-ext-auth-oidc} is installed, everything an MCP OAuth2
  * resource server needs — issuer, canonical resource identifier, RFC 8707 audience binding, and
  * a spec-compliant {@code WWW-Authenticate} challenge (RFC 9728 §5.1) — is derived straight from
  * the installed {@link OidcCredentialSource}, with no additional {@link McpConfig} calls.
@@ -123,7 +123,7 @@ final class McpOidcIntegration {
         if (!oidcActive) {
             throw new IllegalStateException(
                     "MCP tool \"" + toolClass.getSimpleName() + "\" declares @Authenticated/@RolesAllowed/" +
-                    "@ScopesAllowed, but this MCP server has no active OAuth2 protection — flash-ext-oidc " +
+                    "@ScopesAllowed, but this MCP server has no active OAuth2 protection — flash-ext-auth-oidc " +
                     "is not installed for it, or McpSecurity is NONE. These annotations require " +
                     "McpSecurity.AUTO/REQUIRED with an OidcExtension installed; install one, or remove the " +
                     "annotation from " + toolClass.getSimpleName() + ".");

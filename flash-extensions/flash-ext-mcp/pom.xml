@@ -19,7 +19,7 @@
         </dependency>
         <dependency>
             <groupId>dev.relism</groupId>
-            <artifactId>flash-ext-oidc</artifactId>
+            <artifactId>flash-ext-auth-oidc</artifactId>
             <optional>true</optional>
         </dependency>
         <dependency>

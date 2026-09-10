@@ -175,7 +175,7 @@ final class McpRegistry {
 
     /**
      * Isolated the same way {@link McpOidcIntegration#resolve} is — {@code
-     * NoClassDefFoundError} here means {@code flash-ext-oidc} genuinely isn't on the runtime
+     * NoClassDefFoundError} here means {@code flash-ext-auth-oidc} genuinely isn't on the runtime
      * classpath, in which case a tool couldn't have been compiled against
      * {@code @RolesAllowed}/{@code @ScopesAllowed} in the first place, so there's nothing to
      * check (and nothing lost: {@code oidcActive} is only ever {@code true} once {@link

@@ -26,7 +26,7 @@ import java.util.UUID;
 /**
  * Minimal, self-contained fake OIDC provider for tests: real discovery document, real JWKS
  * endpoint, real RS256-signed tokens — no network dependency beyond localhost, no mocking
- * framework. Exercises {@code flash-ext-oidc}'s actual discovery + JWKS + JWT validation path.
+ * framework. Exercises {@code flash-ext-auth-oidc}'s actual discovery + JWKS + JWT validation path.
  */
 final class FakeOidcProvider implements AutoCloseable {
 

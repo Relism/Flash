@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Exercises the actual OAuth2 resolution rules against a real {@code flash-ext-oidc}
+ * Exercises the actual OAuth2 resolution rules against a real {@code flash-ext-auth-oidc}
  * installation backed by {@link FakeOidcProvider} — real discovery, real JWKS, real RS256
  * tokens — plus the fail-fast/degrade behavior when oidc is absent.
  *

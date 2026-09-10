@@ -1,4 +1,4 @@
-# flash-ext-oidc
+# flash-ext-auth-oidc
 
 Full OIDC Authorization Code + PKCE flow for the Flash HTTP server.
 Supports Keycloak, Authelia, Auth0, Google, and any RFC 8414-compliant provider.
@@ -25,7 +25,7 @@ hot-path model (middleware compiled at mount time, no heavy runtime work).
 ```xml
 <dependency>
     <groupId>dev.relism</groupId>
-    <artifactId>flash-ext-oidc</artifactId>
+    <artifactId>flash-ext-auth-oidc</artifactId>
     <version>1.0-SNAPSHOT</version>
 </dependency>
 ```

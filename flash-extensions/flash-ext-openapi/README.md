@@ -123,7 +123,7 @@ Merge policy:
 
 ## OIDC interop
 
-When `flash-ext-oidc` is installed, OpenAPI integrates automatically:
+When `flash-ext-auth-oidc` is installed, OpenAPI integrates automatically:
 
 - security scheme under `components.securitySchemes`
 - per-operation `security`

@@ -91,7 +91,7 @@ public final class McpConfig {
         /**
          * Canonical URI of this MCP endpoint, used for RFC 8707 audience binding: tokens whose
          * {@code aud} claim does not include this value are rejected. Optional — when
-         * {@code flash-ext-oidc} is installed, this is auto-derived per request from the
+         * {@code flash-ext-auth-oidc} is installed, this is auto-derived per request from the
          * forwarded/{@code Host} headers (same resolution {@code OidcExtension} uses for its own
          * redirect URIs) and audience binding is enforced unconditionally. Set this explicitly
          * only to override that guess — a reverse proxy that forwards neither
@@ -102,7 +102,7 @@ public final class McpConfig {
         /**
          * Authorization server issuer URL, published in the RFC 9728 Protected Resource
          * Metadata document at {@code /.well-known/oauth-protected-resource{rootPath}}. Optional
-         * — when {@code flash-ext-oidc} is installed, this is auto-derived from its configured
+         * — when {@code flash-ext-auth-oidc} is installed, this is auto-derived from its configured
          * issuer. Set this explicitly only to override that (e.g. publishing a different issuer
          * than the one actually validating tokens).
          */

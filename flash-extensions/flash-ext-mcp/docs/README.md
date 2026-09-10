@@ -3,7 +3,7 @@
 `flash-ext-mcp` turns a Flash5 app into an [MCP](https://modelcontextprotocol.io) (Model Context
 Protocol) server: JSON-RPC 2.0 over the Streamable HTTP transport, tools/resources/prompts
 declared as plain classes and discovered at boot, optional OAuth2 protection built on
-`flash-ext-oidc`.
+`flash-ext-auth-oidc`.
 
 ## Quick Start
 
@@ -44,7 +44,7 @@ public class GetWeatherTool extends McpTool {
   `tools-resources-prompts.md`.
 - **Transport**: Streamable HTTP, `POST`-only, stateless in this revision — see `transport.md`
   for exactly what that means and why.
-- **Security**: optional, policy-driven OAuth2 via `flash-ext-oidc` — see `security.md`.
+- **Security**: optional, policy-driven OAuth2 via `flash-ext-auth-oidc` — see `security.md`.
 - **JSON**: this extension owns its JSON handling independently of `flash-ext-jackson` — see
   `jackson-interop.md` for why, and how a future opt-in reuse could work.
 

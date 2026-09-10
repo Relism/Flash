@@ -106,7 +106,7 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-oidc</artifactId>
+                <artifactId>flash-ext-auth-oidc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

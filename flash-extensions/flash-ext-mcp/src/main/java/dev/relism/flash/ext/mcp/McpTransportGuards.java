@@ -38,7 +38,7 @@ final class McpTransportGuards {
 
     /**
      * Safety net around the whole MCP route: translates {@link HttpException} (thrown by
-     * {@link #originGuard} or by {@code flash-ext-oidc}'s middleware) into a proper HTTP status
+     * {@link #originGuard} or by {@code flash-ext-auth-oidc}'s middleware) into a proper HTTP status
      * directly, instead of relying on the app's global exception handler — which defaults to a
      * generic 500 for every exception type unless the app owner overrides it (see
      * {@code AbstractRouter}'s default {@code exceptionHandler}). Keeps the MCP endpoint

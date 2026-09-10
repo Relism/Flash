@@ -2,6 +2,7 @@ package dev.relism.flash.ext.oidc;
 
 import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.ext.auth.CredentialSource;
+import dev.relism.flash.ext.auth.Session;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.models.Request;
 
@@ -20,7 +21,7 @@ import java.util.Optional;
  * <p>Resolution order on each request:
  * <ol>
  *   <li>{@code Authorization: Bearer ...} header — validated via JWKS ({@link JwtValidator}).</li>
- *   <li>{@code oidc_session} cookie — looked up in {@link OidcSessionStore}; transparently
+ *   <li>{@code oidc_session} cookie — looked up in {@link dev.relism.flash.ext.auth.SessionStore}; transparently
  *       refreshed if the access token is expired.</li>
  *   <li>Browser clients (no {@code Accept: application/json}) → redirect to
  *       {@code {routePrefix}/login?redirect={path}}.</li>
@@ -30,6 +31,24 @@ import java.util.Optional;
 public final class OidcCredentialSource implements CredentialSource {
 
     private static final String BEARER = "Bearer";
+
+    /**
+     * Keys this source stores its OAuth2 tokens under in {@link Session#attributes()}. Core keeps
+     * the session; the tokens inside it are nobody else's business.
+     */
+    static final String ACCESS_TOKEN  = "oidc.access_token";
+    static final String ID_TOKEN      = "oidc.id_token";
+    static final String REFRESH_TOKEN = "oidc.refresh_token";
+
+    /** The one place an OIDC session is built, so its attribute keys stay in one place too. */
+    static Session newSession(String id, String accessToken, String idToken, String refreshToken,
+                              Instant expiresAt, Map<String, Object> claims) {
+        Map<String, Object> attributes = new HashMap<>(3);
+        if (accessToken  != null) attributes.put(ACCESS_TOKEN,  accessToken);
+        if (idToken      != null) attributes.put(ID_TOKEN,      idToken);
+        if (refreshToken != null) attributes.put(REFRESH_TOKEN, refreshToken);
+        return new Session(id, claims, expiresAt, attributes);
+    }
 
     private final JwtValidator         validator;
     private final OidcConfig           config;
@@ -108,14 +127,14 @@ public final class OidcCredentialSource implements CredentialSource {
 
         String sessionId = cookieValue(req, "oidc_session");
         if (sessionId != null) {
-            Optional<OidcSession> found = config.sessionStore().find(sessionId);
+            Optional<Session> found = config.sessionStore().find(sessionId);
             if (found.isPresent()) {
-                OidcSession session = found.get();
-                if (!session.isAccessTokenExpired())
+                Session session = found.get();
+                if (!session.isExpired())
                     return session.claims();
-                if (session.refreshToken() != null) {
+                if (session.attributeAsString(REFRESH_TOKEN) != null) {
                     try {
-                        OidcSession refreshed = doRefresh(session);
+                        Session refreshed = doRefresh(session);
                         config.sessionStore().save(refreshed);
                         return refreshed.claims();
                     } catch (Exception ignored) { }
@@ -149,17 +168,17 @@ public final class OidcCredentialSource implements CredentialSource {
         // 2. Session cookie
         String sessionId = cookieValue(req, "oidc_session");
         if (sessionId != null) {
-            Optional<OidcSession> found = config.sessionStore().find(sessionId);
+            Optional<Session> found = config.sessionStore().find(sessionId);
             if (found.isPresent()) {
-                OidcSession session = found.get();
+                Session session = found.get();
 
-                if (!session.isAccessTokenExpired())
+                if (!session.isExpired())
                     return session.claims();
 
                 // Access token expired — try silent refresh
-                if (session.refreshToken() != null) {
+                if (session.attributeAsString(REFRESH_TOKEN) != null) {
                     try {
-                        OidcSession refreshed = doRefresh(session);
+                        Session refreshed = doRefresh(session);
                         config.sessionStore().save(refreshed);
                         return refreshed.claims();
                     } catch (Exception ignored) {
@@ -184,19 +203,17 @@ public final class OidcCredentialSource implements CredentialSource {
         return null;
     }
 
-    private OidcSession doRefresh(OidcSession old) throws Exception {
+    private Session doRefresh(Session old) throws Exception {
         OidcTokenResponse tokens = tokenClient.refresh(
-                meta.tokenEndpoint(), old.refreshToken());
+                meta.tokenEndpoint(), old.attributeAsString(REFRESH_TOKEN));
 
-        Map<String, Object> claims = mergeRefreshedClaims(tokens, old);
-
-        return new OidcSession(
+        return newSession(
                 old.id(),
                 tokens.accessToken(),
-                tokens.idToken() != null ? tokens.idToken() : old.idToken(),
-                tokens.refreshToken() != null ? tokens.refreshToken() : old.refreshToken(),
+                tokens.idToken() != null ? tokens.idToken() : old.attributeAsString(ID_TOKEN),
+                tokens.refreshToken() != null ? tokens.refreshToken() : old.attributeAsString(REFRESH_TOKEN),
                 Instant.now().plusSeconds(tokens.expiresIn()),
-                claims
+                mergeRefreshedClaims(tokens, old)
         );
     }
 
@@ -280,7 +297,7 @@ public final class OidcCredentialSource implements CredentialSource {
         return out.toString();
     }
 
-    private static Map<String, Object> mergeRefreshedClaims(OidcTokenResponse tokens, OidcSession old) {
+    private static Map<String, Object> mergeRefreshedClaims(OidcTokenResponse tokens, Session old) {
         Map<String, Object> merged = new HashMap<>();
         // Fall back to old claims first, then overlay fresh token claims
         merged.putAll(old.claims());

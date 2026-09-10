@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>Not wired to {@code flash-ext-jackson} on purpose: the MCP JSON-RPC envelope is internal
  * protocol plumbing, not a user-facing serialization concern, so this extension owns its
- * mapper independently — same reasoning {@code flash-ext-oidc} applies to its own JSON needs
+ * mapper independently — same reasoning {@code flash-ext-auth-oidc} applies to its own JSON needs
  * (see {@code json-smart} there). See {@code docs/jackson-interop.md} for the full rationale
  * and how a future opt-in reuse of a shared {@code ObjectMapper} could work.
  */

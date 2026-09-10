@@ -5,6 +5,8 @@ import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.Response;
 import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.routing.MiddlewareKey;
+import dev.relism.flash.routing.MiddlewareNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,13 @@ import java.util.Map;
  */
 public class AuthMiddleware {
 
+    /**
+     * Boot-time identity of the node annotation-driven authorization mounts under. Public so an
+     * extension that contributes its own middleware can order itself around authentication —
+     * {@code MiddlewareNode.of(...).afterIfPresent(AuthMiddleware.POLICY)}.
+     */
+    public static final MiddlewareKey POLICY = MiddlewareKey.of("flash.auth.policy");
+
     private final AuthConfig       config;
     private final CredentialSource source;
     private final String[]         roleClaimPathParts;
@@ -38,6 +47,26 @@ public class AuthMiddleware {
         this.source              = source;
         this.roleClaimPathParts  = splitClaimPath(config.rolesClaimPath());
         this.scopeClaimPathParts = splitClaimPaths(config.scopeClaimPaths());
+    }
+
+    /**
+     * Builds the middleware for {@code source}, publishes it in the context and registers the
+     * annotation processor that mounts {@link Authenticated}, {@link RolesAllowed} and
+     * {@link ScopesAllowed} on scanned handlers.
+     *
+     * <p>Every extension that contributes a {@link CredentialSource} calls this rather than
+     * repeating the wiring — the processor and the {@link #POLICY} key belong to one place.
+     */
+    public static AuthMiddleware install(FlashContext ctx, AuthConfig config, CredentialSource source) {
+        AuthMiddleware middleware = new AuthMiddleware(config, source);
+        ctx.provide(AuthMiddleware.class, middleware);
+        ctx.addAnnotationProcessor(handlerClass -> {
+            AuthPolicy policy = AuthPolicy.compileFromAnnotations(handlerClass);
+            return policy != null
+                    ? List.of(MiddlewareNode.of(POLICY, middleware.authorize(policy)))
+                    : List.of();
+        });
+        return middleware;
     }
 
     // -- Public API -----------------------------------------------------------

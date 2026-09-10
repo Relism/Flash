@@ -5,6 +5,7 @@ import dev.relism.flash.ext.openapi.OpenApiContributorRegistry;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
 import dev.relism.flash.ext.auth.AuthConfig;
+import dev.relism.flash.ext.auth.Session;
 import dev.relism.flash.ext.auth.AuthMiddleware;
 import dev.relism.flash.ext.auth.AuthPolicy;
 import dev.relism.flash.ext.auth.Authenticated;
@@ -13,8 +14,6 @@ import dev.relism.flash.ext.auth.ScopesAllowed;
 import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.extension.FlashExtension;
 import dev.relism.flash.extension.FlashRegistrar;
-import dev.relism.flash.routing.MiddlewareKey;
-import dev.relism.flash.routing.MiddlewareNode;
 import dev.relism.flash.models.Request;
 
 import javax.net.ssl.SSLContext;
@@ -63,7 +62,6 @@ import java.util.*;
  * }</pre>
  */
 public class OidcExtension implements FlashExtension {
-    private static final MiddlewareKey POLICY = MiddlewareKey.of("flash.auth.policy");
 
     private final OidcConfig config;
 
@@ -96,19 +94,14 @@ public class OidcExtension implements FlashExtension {
         stateStore  = new OidcStateStore();
         tokenClient = new TokenClient(http, config);
         source      = new OidcCredentialSource(validator, config, meta, tokenClient);
-        authMw      = new AuthMiddleware(AuthConfig.builder()
+        authMw      = AuthMiddleware.install(ctx, AuthConfig.builder()
                 .rolesClaimPath(config.rolesClaimPath())
                 .scopeClaimPaths(config.scopeClaimPaths())
                 .build(), source);
 
-        ctx.provide(AuthMiddleware.class,       authMw);
         ctx.provide(OidcCredentialSource.class, source);
         ctx.provide(JwtValidator.class,         validator);
 
-        ctx.addAnnotationProcessor(handlerClass -> {
-            AuthPolicy policy = AuthPolicy.compileFromAnnotations(handlerClass);
-            return policy != null ? List.of(MiddlewareNode.of(POLICY, authMw.authorize(policy))) : List.of();
-        });
         ctx.onReady(() -> registerRoutes(app, ctx));
     }
 
@@ -177,7 +170,7 @@ public class OidcExtension implements FlashExtension {
             }
 
             Map<String, Object> claims = mergeClaims(tokens);
-            OidcSession session = new OidcSession(
+            Session session = OidcCredentialSource.newSession(
                     UUID.randomUUID().toString(),
                     tokens.accessToken(), tokens.idToken(), tokens.refreshToken(),
                     Instant.now().plusSeconds(tokens.expiresIn()), claims);
@@ -195,8 +188,8 @@ public class OidcExtension implements FlashExtension {
             String idTokenHint = null;
 
             if (sessionId != null) {
-                OidcSession session = config.sessionStore().find(sessionId).orElse(null);
-                if (session != null) idTokenHint = session.idToken();
+                Session session = config.sessionStore().find(sessionId).orElse(null);
+                if (session != null) idTokenHint = session.attributeAsString(OidcCredentialSource.ID_TOKEN);
                 config.sessionStore().delete(sessionId);
             }
 

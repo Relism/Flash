@@ -10,7 +10,7 @@ import java.util.function.Supplier;
  *
  * <p>{@code check} is a closure, not a raw role/scope list — this is what lets this record (and
  * its only caller, {@link McpDispatcher}) stay free of any compile-time reference to a {@code
- * flash-ext-oidc} type, preserving the same classload isolation {@link McpOidcIntegration}'s
+ * flash-ext-auth-oidc} type, preserving the same classload isolation {@link McpOidcIntegration}'s
  * javadoc describes for the rest of the OIDC bridge. Only the plain-JDK {@link Supplier}
  * signature crosses the boundary; the closure itself, built once inside {@code
  * McpOidcIntegration}, is the only place that ever touches {@code OidcUser}/{@code ClaimsHolder}.

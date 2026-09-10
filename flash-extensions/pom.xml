@@ -17,7 +17,7 @@
         <module>flash-ext-jackson</module>
         <module>flash-ext-openapi</module>
         <module>flash-ext-auth-core</module>
-        <module>flash-ext-oidc</module>
+        <module>flash-ext-auth-oidc</module>
         <module>flash-ext-routeviewer</module>
         <module>flash-ext-view-core</module>
         <module>flash-ext-view-jte</module>

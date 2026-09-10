@@ -7,10 +7,10 @@ Allowed Client Scopes configuration `scopes_supported` needs to actually work.
 
 ## `McpSecurity`
 
-`McpConfig.security(...)` controls how the MCP endpoint reacts to `flash-ext-oidc` being
+`McpConfig.security(...)` controls how the MCP endpoint reacts to `flash-ext-auth-oidc` being
 installed (`ctx.find(OidcMiddleware.class)`), resolved once at boot in `McpExtension.routes()`:
 
-| Policy | `flash-ext-oidc` installed | `flash-ext-oidc` absent |
+| Policy | `flash-ext-auth-oidc` installed | `flash-ext-auth-oidc` absent |
 |---|---|---|
 | `REQUIRED` | protected | **boot fails** (`IllegalStateException`) |
 | `AUTO` (default) | protected | runs unprotected, logs a warning |
@@ -21,18 +21,18 @@ turns "someone forgot to wire up OAuth2" into a startup crash instead of a silen
 endpoint. `AUTO` is meant for local development, where spinning up a real identity provider is
 friction you don't want yet.
 
-## Why `flash-ext-oidc` is an *optional* Maven dependency, concretely
+## Why `flash-ext-auth-oidc` is an *optional* Maven dependency, concretely
 
 Maven's `<optional>true</optional>` only affects **transitive** propagation: consumers of
-`flash-ext-mcp` don't get `flash-ext-oidc` pulled in automatically unless they add it themselves.
-Within `flash-ext-mcp` itself, `flash-ext-oidc`'s classes are on the compile/test classpath as
+`flash-ext-mcp` don't get `flash-ext-auth-oidc` pulled in automatically unless they add it themselves.
+Within `flash-ext-mcp` itself, `flash-ext-auth-oidc`'s classes are on the compile/test classpath as
 normal — this extension can (and does) reference `OidcMiddleware`/`ClaimsHolder` directly in
 source.
 
 That reference is isolated in its own class, `McpOidcIntegration`, invoked only from inside a
 `catch (NoClassDefFoundError)` block. A bare class-literal like `OidcMiddleware.class` (which
 `ctx.find(OidcMiddleware.class)` needs) forces the JVM to resolve that type the moment it's
-evaluated — if `flash-ext-oidc` is not on the *runtime* classpath at all (a genuinely
+evaluated — if `flash-ext-auth-oidc` is not on the *runtime* classpath at all (a genuinely
 MCP-only install, no OAuth2 anywhere in the app), the first such reference throws
 `NoClassDefFoundError`. Keeping that reference inside a separate, lazily-loaded class means
 `McpExtension` itself loads and works fine standalone; only the attempt to actually use OIDC
@@ -45,7 +45,7 @@ When oidc is available and `security() != NONE`, `McpOidcIntegration` (an isolat
 lazily-loaded bridge — see its javadoc) derives everything an MCP OAuth2 resource server needs
 straight from the installed `OidcMiddleware`, with no additional `McpConfig` calls required:
 
-1. The MCP route is wrapped with `flash-ext-oidc`'s own `OidcMiddleware.protect(resourceMetadataPath)`
+1. The MCP route is wrapped with `flash-ext-auth-oidc`'s own `OidcMiddleware.protect(resourceMetadataPath)`
    — the same Bearer-token/JWKS validation path used everywhere else in Flash5, plus a
    `resource_metadata` challenge parameter (see below). No JWT parsing or JWKS handling is
    reimplemented here.
@@ -114,7 +114,7 @@ unaffected — this parameter is additive and MCP-specific.
 
 ## Per-tool `@RolesAllowed`/`@ScopesAllowed`
 
-`McpTool` subclasses can carry `flash-ext-oidc`'s `@RolesAllowed`/`@ScopesAllowed`:
+`McpTool` subclasses can carry `flash-ext-auth-oidc`'s `@RolesAllowed`/`@ScopesAllowed`:
 
 ```java
 @Tool(name = "delete_route", description = "Delete a route")
@@ -124,7 +124,7 @@ public class DeleteRouteTool extends McpTool {
 }
 ```
 
-This does **not** reuse `flash-ext-oidc`'s per-route middleware mechanism (`ctx.addAnnotationProcessor`,
+This does **not** reuse `flash-ext-auth-oidc`'s per-route middleware mechanism (`ctx.addAnnotationProcessor`,
 the thing that makes these annotations work on a `RequestHandler`) — it can't: every tool shares
 one HTTP route (`POST {rootPath}`), already wrapped by whatever `McpSecurity` resolved above, so
 there is no per-tool route to attach a different middleware chain to. Instead,
@@ -156,7 +156,7 @@ at `app.start()`.
 
 ## The `HttpException` safety net
 
-`flash-ext-oidc`'s middleware throws `HttpException.unauthorized()`/`forbidden()` on auth
+`flash-ext-auth-oidc`'s middleware throws `HttpException.unauthorized()`/`forbidden()` on auth
 failure. Flash5's core does **not** special-case `HttpException` in the default exception
 handler — the out-of-the-box `AbstractRouter` default always returns a generic `500`, regardless
 of the thrown exception's embedded status code; only an app that explicitly calls

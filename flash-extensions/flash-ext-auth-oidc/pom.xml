@@ -10,7 +10,7 @@
         <version>2.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>flash-ext-oidc</artifactId>
+    <artifactId>flash-ext-auth-oidc</artifactId>
 
     <dependencies>
         <dependency>

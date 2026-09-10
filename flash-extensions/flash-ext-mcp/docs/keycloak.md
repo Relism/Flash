@@ -1,7 +1,7 @@
 # Keycloak cookbook
 
 `security.md` covers the OAuth2 mechanics `McpOidcIntegration` implements against any
-`flash-ext-oidc`-compatible provider. This is the Keycloak-specific setup: the exact Admin
+`flash-ext-auth-oidc`-compatible provider. This is the Keycloak-specific setup: the exact Admin
 Console configuration for a working MCP OAuth2 flow with open Dynamic Client Registration
 (DCR) — no pre-registered clients, any MCP client self-registers on first connect.
 

@@ -1,5 +1,8 @@
 package dev.relism.flash.ext.oidc;
 
+import dev.relism.flash.ext.auth.InMemorySessionStore;
+import dev.relism.flash.ext.auth.SessionStore;
+
 /**
  * Full OIDC client configuration. Build via
  * {@link #builder(String, String, String, String)} or {@link #fromEnv()}.
@@ -50,7 +53,7 @@ public final class OidcConfig {
     private final String           scopeClaimPaths;
     private final String           algorithm;
     private final String           postLogoutRedirectUri;
-    private final OidcSessionStore sessionStore;
+    private final SessionStore sessionStore;
     private final boolean          insecureTls;
     private final ClientAuthMethod clientAuthMethod;
     private final String           schemeName;
@@ -68,7 +71,7 @@ public final class OidcConfig {
         this.algorithm             = b.algorithm;
         this.postLogoutRedirectUri = b.postLogoutRedirectUri;
         this.sessionStore          = b.sessionStore != null ? b.sessionStore
-                                                            : new InMemoryOidcSessionStore();
+                                                            : new InMemorySessionStore();
         this.insecureTls           = b.insecureTls;
         this.clientAuthMethod      = b.clientAuthMethod;
         this.schemeName            = b.schemeName != null ? b.schemeName : deriveScheme(this.issuer);
@@ -88,7 +91,7 @@ public final class OidcConfig {
     public String           scopeClaimPaths()       { return scopeClaimPaths; }
     public String           algorithm()             { return algorithm; }
     public String           postLogoutRedirectUri() { return postLogoutRedirectUri; }
-    public OidcSessionStore sessionStore()          { return sessionStore; }
+    public SessionStore sessionStore()          { return sessionStore; }
     /** If {@code true}, TLS certificate validation is skipped. <b>Never use in production.</b> */
     public boolean          insecureTls()           { return insecureTls; }
     public ClientAuthMethod clientAuthMethod()       { return clientAuthMethod; }
@@ -190,7 +193,7 @@ public final class OidcConfig {
         private String           scopeClaimPaths       = "scope,scp";
         private String           algorithm             = "RS256";
         private String           postLogoutRedirectUri = "/";
-        private OidcSessionStore sessionStore;
+        private SessionStore sessionStore;
         private boolean          insecureTls           = false;
         private ClientAuthMethod clientAuthMethod       = ClientAuthMethod.POST;
         private String           schemeName            = null;
@@ -218,8 +221,8 @@ public final class OidcConfig {
         public Builder algorithm(String algorithm)                  { this.algorithm = algorithm;                         return this; }
         /** Where to redirect after logout (default: {@code /}). */
         public Builder postLogoutRedirectUri(String uri)            { this.postLogoutRedirectUri = uri;                   return this; }
-        /** Custom session store (default: {@link InMemoryOidcSessionStore}). */
-        public Builder sessionStore(OidcSessionStore store)         { this.sessionStore = store;                          return this; }
+        /** Custom session store (default: {@link InMemorySessionStore}). */
+        public Builder sessionStore(SessionStore store)         { this.sessionStore = store;                          return this; }
         /**
          * Disables TLS certificate verification for all HTTP calls made by this extension.
          * <b>Only use in development with self-signed certificates — never in production.</b>

@@ -24,7 +24,7 @@ see `tools-resources-prompts.md` — and the fixed `TextContent`/`TextResourceCo
 as a `JsonNode` tree, not as a databound class, for the same reason — a JSON-RPC tool call's
 arguments aren't a DTO with getters/setters, they're a dynamic, per-tool-defined bag of values.
 
-This mirrors how `flash-ext-oidc` already handles its own internal JSON needs (`json-smart` for
+This mirrors how `flash-ext-auth-oidc` already handles its own internal JSON needs (`json-smart` for
 token-endpoint responses) independently of `flash-ext-jackson` — extensions with protocol-level
 JSON needs that are shaped by a spec, not by user code, own that JSON handling themselves rather
 than routing it through the app's general-purpose JSON extension.
