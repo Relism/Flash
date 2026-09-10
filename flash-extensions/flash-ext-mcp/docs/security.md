@@ -16,6 +16,24 @@ installed (`ctx.find(OidcMiddleware.class)`), resolved once at boot in `McpExten
 | `AUTO` (default) | protected | runs unprotected, logs a warning |
 | `NONE` | never protected, even if oidc is installed elsewhere in the app | runs unprotected |
 
+### Guarding `/mcp` without OAuth2
+
+`McpSecurity` only ever answers "is `flash-ext-auth-oidc` installed". An app that authenticates
+some other way sets `McpSecurity.NONE` and supplies its own guard:
+
+```java
+McpConfig.builder("my-server")
+    .toolsPackage("com.example.mcp")
+    .security(McpSecurity.NONE)
+    .middleware(myAuthMiddleware.protect())
+    .build();
+```
+
+`McpConfig.middleware(...)` runs after the transport guards and after whatever `McpSecurity`
+resolved to, so it composes with OAuth2 protection rather than replacing it — the same hook is how
+you add rate limiting, audit logging or tracing to the endpoint. It never satisfies `REQUIRED`,
+which still asks for a real authorization server.
+
 Use `REQUIRED` for anything you intend to run in production reachable over the network — it
 turns "someone forgot to wire up OAuth2" into a startup crash instead of a silently open
 endpoint. `AUTO` is meant for local development, where spinning up a real identity provider is

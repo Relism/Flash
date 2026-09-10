@@ -6,6 +6,11 @@ Supports Keycloak, Authelia, Auth0, Google, and any RFC 8414-compliant provider.
 Standards alignment focuses on OIDC Core + OAuth2 bearer APIs while preserving Flash's
 hot-path model (middleware compiled at mount time, no heavy runtime work).
 
+This extension is the OpenID Connect **credential source** for
+[`flash-ext-auth-core`](../flash-ext-auth-core/docs/README.md), which owns everything downstream of
+identifying the caller. Shorter guides live in [`docs/`](docs/README.md), including
+[migration notes](docs/interop.md#migrating-from-flash-ext-oidc) from `flash-ext-oidc`.
+
 ## What it provides
 
 | Component | Description |
@@ -13,12 +18,13 @@ hot-path model (middleware compiled at mount time, no heavy runtime work).
 | `GET  {prefix}/login` | Starts the OIDC flow: builds the authorization URL with PKCE + state, redirects |
 | `GET  {prefix}/callback` | Exchanges the code, validates the ID token, creates a session, redirects |
 | `POST {prefix}/logout` | Invalidates the session, redirects to the provider's `end_session_endpoint` |
-| `@Authenticated` | Annotation: protects a class-based handler (redirects browsers, 401 for API clients) |
-| `@RolesAllowed(...)` | Annotation: protects with role check (OR semantics) |
-| `@ScopesAllowed(...)` | Annotation: protects with scope check (`ALL` default, `ANY` optional) |
-| `OidcMiddleware` | Programmatic middleware for lambda routes |
-| `ClaimsHolder` / `OidcUser` | Thread-local user info accessible from any protected handler |
+| `OidcCredentialSource` | The `CredentialSource` this extension contributes to `flash-ext-auth-core` |
 | `JwtValidator` | JWKS-backed JWT validator (PKCE + key rotation + caching) |
+
+`@Authenticated`, `@RolesAllowed`, `@ScopesAllowed`, `AuthMiddleware`, `ClaimsHolder` and `Claims`
+belong to [`flash-ext-auth-core`](../flash-ext-auth-core/docs/README.md) and work the same behind
+any credential source. Installing this extension brings them in and wires them up — you do not
+install auth-core yourself.
 
 ## Dependencies
 
@@ -26,11 +32,11 @@ hot-path model (middleware compiled at mount time, no heavy runtime work).
 <dependency>
     <groupId>dev.relism</groupId>
     <artifactId>flash-ext-auth-oidc</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>2.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
-Transitive: `nimbus-jose-jwt`, `json-smart`.
+Transitive: `flash-ext-auth-core`, `nimbus-jose-jwt`, `json-smart`.
 Optional: `flash-ext-openapi` — if present, OIDC security schemes are added to the OpenAPI spec automatically.
 
 ## Installation
@@ -98,7 +104,7 @@ OidcConfig.builder("https://auth.example.com", "my-client", "secret", "/auth/cal
 | `.scopeClaimPaths("scope,scp")` | `"scope,scp"` | Comma-separated claim paths used to resolve OAuth scopes |
 | `.algorithm("RS256")` | `"RS256"` | JWS algorithm for token validation |
 | `.postLogoutRedirectUri("/")` | `"/"` | Where to redirect after logout |
-| `.sessionStore(store)` | `InMemoryOidcSessionStore` | Custom session store (see below) |
+| `.sessionStore(store)` | `InMemorySessionStore` | Custom session store (see below) |
 | `.clientAuthMethod(ClientAuthMethod.POST)` | `POST` | `POST` = credentials in body; `BASIC` = `Authorization: Basic` |
 | `.insecureTls()` | `false` | Disables TLS certificate verification — **development only** |
 | `.schemeName("myscheme")` | derived from issuer | OpenAPI security scheme name |
@@ -130,7 +136,7 @@ OIDC_CLIENT_AUTH_METHOD    default: POST
 public class MePage extends JacksonHandler {
     @Override
     public Object handle(Request req, Response res) {
-        OidcUser u = ClaimsHolder.user();
+        Claims u = ClaimsHolder.current();
         return json(res, Map.of("sub", u.sub(), "email", u.email()));
     }
 }
@@ -166,49 +172,50 @@ Annotation composition rules:
 
 ### Lambda routes (manual middleware)
 
-For lambda routes, pass the middleware as a varargs argument. Retrieve `OidcMiddleware`
+For lambda routes, pass the middleware as a varargs argument. Retrieve `AuthMiddleware`
 from the context inside another extension's `routes()` phase, or after `start()`:
 
 ```java
-OidcMiddleware oidc = app.ctx().require(OidcMiddleware.class);
+AuthMiddleware auth = app.ctx().require(AuthMiddleware.class);
 
 // Authentication only
 app.get("/api/me", (req, res) -> {
-    OidcUser u = ClaimsHolder.user();   // never null here
+    Claims u = ClaimsHolder.current();   // never null here
     return Map.of("sub", u.sub(), "email", u.email());
-}, oidc.protect());
+}, auth.protect());
 
 // Authentication + role check
 app.delete("/api/admin/users/{id}", (req, res) -> {
-    OidcUser u = ClaimsHolder.user();
+    Claims u = ClaimsHolder.current();
     // ...
-}, oidc.requireRole("admin"));
+}, auth.requireRole("admin"));
 
 // Multiple roles (OR): passes if user holds any one of them
-app.get("/api/reports", (req, res) -> { ... }, oidc.requireRole("admin", "reports-viewer"));
+app.get("/api/reports", (req, res) -> { ... }, auth.requireRole("admin", "reports-viewer"));
 
 // Require all listed scopes
-app.post("/api/orders", (req, res) -> { ... }, oidc.requireScopes("orders:write", "payments:write"));
+app.post("/api/orders", (req, res) -> { ... }, auth.requireScopes("orders:write", "payments:write"));
 
 // Require at least one listed scope
-app.post("/api/payments", (req, res) -> { ... }, oidc.requireAnyScope("payments:write", "payments:admin"));
+app.post("/api/payments", (req, res) -> { ... }, auth.requireAnyScope("payments:write", "payments:admin"));
 ```
 
-`oidc.protect()` / `oidc.requireRole(...)` / `oidc.requireScopes(...)` return a `Middleware` — a composable
-`Handler → Handler` wrapper. Flash applies middleware right-to-left so the OIDC check
+`auth.protect()` / `auth.requireRole(...)` / `auth.requireScopes(...)` return a `Middleware` — a composable
+`Handler → Handler` wrapper. Flash applies middleware right-to-left so the authentication check
 runs before your handler.
 
 ## Accessing the authenticated user
 
 `ClaimsHolder` holds the JWT claims for the current request in a `ThreadLocal`.
-It is populated by the OIDC middleware before your handler runs and cleared in the
-`finally` block afterward. It is safe with virtual threads (each request gets its
+It is populated by `AuthMiddleware` — from `flash-ext-auth-core` — once this source has
+authenticated the request, and cleared in the `finally` block afterward. Nothing outside that
+module can write to it. It is safe with virtual threads (each request gets its
 own virtual thread, so `ThreadLocal` values are naturally isolated).
 
-### OidcUser (preferred)
+### Claims (preferred)
 
 ```java
-OidcUser u = ClaimsHolder.user();   // never null inside a protected handler
+Claims u = ClaimsHolder.current();   // never null inside a protected handler
 
 String sub      = u.sub();          // unique user ID
 String email    = u.email();
@@ -241,7 +248,7 @@ Map<String, Object> all = u.claims();
 ### Raw access (escape hatch)
 
 ```java
-Map<String, Object> claims = ClaimsHolder.get();
+Map<String, Object> claims = ClaimsHolder.map();
 String email = ClaimsHolder.claim("email");
 ```
 
@@ -340,7 +347,7 @@ Quick path to test `@ScopesAllowed` end-to-end:
    - Include it in `OidcConfig.scopes(...)`, e.g. `"openid profile email orders:write"`
 5. **Protect a handler**
    - `@ScopesAllowed("orders:write")` on class-based handlers
-   - or `oidc.requireScopes("orders:write")` for lambda routes
+   - or `auth.requireScopes("orders:write")` for lambda routes
 6. **Verify behavior**
    - token with scope -> 200
    - token without scope -> 403 + `WWW-Authenticate: ... insufficient_scope`
@@ -354,24 +361,29 @@ Useful token inspection flow while testing:
 
 ## Session store
 
-The default `InMemoryOidcSessionStore` is sufficient for single-instance deployments.
-For clustered deployments, implement `OidcSessionStore`:
+Sessions live in `flash-ext-auth-core`'s `Session`/`SessionStore`; this extension keeps its
+access, id and refresh tokens in `Session.attributes()` under its own keys, so renewal stays here
+and core carries no OAuth2 vocabulary. See
+[`../flash-ext-auth-core/docs/sessions.md`](../flash-ext-auth-core/docs/sessions.md).
+
+The default `InMemorySessionStore` is sufficient for single-instance deployments.
+For clustered deployments, implement `SessionStore`:
 
 ```java
-public interface OidcSessionStore {
-    void              save(OidcSession session);
-    Optional<OidcSession> find(String sessionId);
+public interface SessionStore {
+    void              save(Session session);
+    Optional<Session> find(String sessionId);
     void              delete(String sessionId);
 }
 ```
 
 ```java
 OidcConfig.builder(...)
-    .sessionStore(new RedisOidcSessionStore(redisClient))
+    .sessionStore(new RedisSessionStore(redisClient))
     .build()
 ```
 
-`OidcSession` fields: `id`, `accessToken`, `idToken`, `refreshToken`, `expiresAt` (`Instant`), `claims` (merged map).
+`Session` fields: `id`, `accessToken`, `idToken`, `refreshToken`, `expiresAt` (`Instant`), `claims` (merged map).
 
 ## Logout
 
@@ -401,7 +413,7 @@ Authorization: Bearer <access_token>
 ```
 
 The token must be a JWT (opaque tokens are not supported). Claims are available via
-`ClaimsHolder.user()` as usual.
+`ClaimsHolder.current()` as usual.
 
 ## Multi-tenant
 
@@ -420,7 +432,7 @@ app.install(new OidcExtension(tenantA))
 ```
 
 To reference a specific tenant's middleware on lambda routes, keep the extension instances
-and retrieve `OidcMiddleware` from context after `start()`:
+and retrieve `AuthMiddleware` from context after `start()`:
 
 ```java
 OidcExtension extA = new OidcExtension(tenantA);
@@ -432,10 +444,10 @@ FlashApp app = FlashApp.create(8080)
     .start()
     .join();    // wait for bind
 
-OidcMiddleware mwA = app.ctx().require(OidcMiddleware.class);  // last registered = tenantB
+AuthMiddleware mwA = app.ctx().require(AuthMiddleware.class);  // last registered = tenantB
 ```
 
-> **Note:** because both extensions register `OidcMiddleware.class` in the same context,
+> **Note:** because both extensions register `AuthMiddleware.class` in the same context,
 > only the last one wins under that key. For multi-tenant setups, use distinct context
 > keys or provide middleware under a wrapper/alias type, or use lambda routes with explicit
 > middleware captured from the extension instance before `install()`.

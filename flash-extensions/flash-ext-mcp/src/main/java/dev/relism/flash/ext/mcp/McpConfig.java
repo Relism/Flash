@@ -1,5 +1,7 @@
 package dev.relism.flash.ext.mcp;
 
+import dev.relism.flash.routing.Middleware;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,6 +30,7 @@ public final class McpConfig {
     private final String authorizationServerIssuer;
     private final List<String> allowedOrigins;
     private final List<String> scopesSupported;
+    private final List<Middleware> middleware;
 
     private McpConfig(Builder b) {
         this.name = b.name;
@@ -40,6 +43,7 @@ public final class McpConfig {
         this.authorizationServerIssuer = b.authorizationServerIssuer;
         this.allowedOrigins = List.copyOf(b.allowedOrigins);
         this.scopesSupported = List.copyOf(b.scopesSupported);
+        this.middleware = List.copyOf(b.middleware);
     }
 
     String name()                     { return name; }
@@ -52,6 +56,7 @@ public final class McpConfig {
     String authorizationServerIssuer() { return authorizationServerIssuer; }
     List<String> allowedOrigins()     { return allowedOrigins; }
     List<String> scopesSupported()    { return scopesSupported; }
+    List<Middleware> middleware()     { return middleware; }
 
     public static Builder builder(String name) { return new Builder(name); }
 
@@ -66,6 +71,7 @@ public final class McpConfig {
         private String authorizationServerIssuer;
         private final List<String> allowedOrigins = new ArrayList<>();
         private final List<String> scopesSupported = new ArrayList<>();
+        private final List<Middleware> middleware = new ArrayList<>();
 
         private Builder(String name) {
             if (name == null || name.isBlank())
@@ -127,6 +133,22 @@ public final class McpConfig {
          * the same way regardless of what a client requested.
          */
         public Builder scopesSupported(String... scopes) { this.scopesSupported.addAll(List.of(scopes)); return this; }
+
+        /**
+         * Middleware to run on the MCP route, in the order given, after the transport guards and
+         * after whatever {@link McpSecurity} resolved to. Rate limiting, audit logging, tracing —
+         * anything that is routine on every other Flash route and had no way in here.
+         *
+         * <p>It runs on an authenticated request when OAuth2 protection is active, and is the only
+         * thing standing in front of the endpoint when it is not: {@link McpSecurity#NONE} plus a
+         * middleware of your own is how an app that authenticates some other way guards
+         * {@code /mcp}. It never satisfies {@link McpSecurity#REQUIRED}, which still asks for a
+         * real authorization server.
+         */
+        public Builder middleware(Middleware... middleware) {
+            this.middleware.addAll(List.of(middleware));
+            return this;
+        }
 
         public McpConfig build() {
             if (toolsPackage == null || toolsPackage.isBlank())

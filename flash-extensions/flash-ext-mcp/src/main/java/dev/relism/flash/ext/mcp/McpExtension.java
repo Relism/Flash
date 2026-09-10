@@ -65,10 +65,11 @@ public class McpExtension implements FlashExtension {
                 secured == null ? null : secured.rolesClaimPath());
         McpDispatcher dispatcher = new McpDispatcher(registry, config.name(), config.version(), config.instructions());
 
-        List<Middleware> chain = new ArrayList<>(3);
+        List<Middleware> chain = new ArrayList<>(3 + config.middleware().size());
         chain.add(McpTransportGuards.httpExceptionGuard());
         chain.add(McpTransportGuards.originGuard(config.allowedOrigins()));
         if (secured != null) chain.add(secured.security());
+        chain.addAll(config.middleware());
 
         app.post(config.rootPath(), (req, res) -> { dispatcher.handle(req, res); return null; },
                 chain.toArray(Middleware[]::new));
