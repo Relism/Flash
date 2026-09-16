@@ -43,7 +43,7 @@ import java.util.Map;
  * <h3>Lambda routes (via Guard)</h3>
  * <pre>{@code
  * app.install(new LimiterExtension(
- *     new LimiterConfig().registerResolver("auth_user", req -> ClaimsHolder.user().sub())));
+ *     new LimiterConfig().registerResolver("auth_user", req -> SecurityIdentity.current().principal().name())));
  *
  * // inside a FlashContext.onReady(...) callback:
  * Guard guard = ctx.require(Guard.class);

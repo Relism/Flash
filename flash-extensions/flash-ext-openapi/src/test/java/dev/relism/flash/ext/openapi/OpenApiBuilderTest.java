@@ -101,6 +101,15 @@ class OpenApiBuilderTest {
         }
     }
 
+    @GET("/plain")
+    @ApiOperation(summary = "Plain")
+    static class PlainHandler extends RequestHandler {
+        @Override
+        public Object handle(Request request, Response response) {
+            return null;
+        }
+    }
+
     @Schema(name = "UserDTO", title = "User model", description = "DTO", deprecated = true)
     @JsonIgnoreProperties({"ignoredByType"})
     static class UserDto {
@@ -339,6 +348,34 @@ class OpenApiBuilderTest {
         Map<String, Object> headers = cast(resp200.get("headers"));
         Map<String, Object> header = cast(headers.get("X-RateLimit-Limit"));
         assertEquals("new", header.get("description"));
+    }
+
+    @Test
+    void contributor_merges_into_the_default_response_of_an_operation_without_annotations() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override
+            public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .allResponses(OpenApiResponseContribution.builder()
+                                .header("X-Trace", Map.of("schema", Map.of("type", "string")))
+                                .build())
+                        .response(401, OpenApiResponseContribution.of("Authentication required"))
+                        .build();
+            }
+        });
+        b.setContributorRegistry(registry);
+        b.addOperation(OpenApiBuilder.routeOf(PlainHandler.class), PlainHandler.class.getAnnotation(ApiOperation.class), PlainHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> responses = cast(getOperation(spec, "/plain", "get").get("responses"));
+        Map<String, Object> resp200 = cast(responses.get("200"));
+        Map<String, Object> resp401 = cast(responses.get("401"));
+        Map<String, Object> headers = cast(resp200.get("headers"));
+        assertEquals("OK", resp200.get("description"));
+        assertTrue(headers.containsKey("X-Trace"));
+        assertEquals("Authentication required", resp401.get("description"));
     }
 
     private static Map<String, Object> getOperation(Map<String, Object> spec, String path, String method) {

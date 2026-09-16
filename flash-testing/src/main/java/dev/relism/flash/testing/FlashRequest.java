@@ -7,6 +7,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * A request being built against a {@link FlashTest} server. The HTTP verb is terminal — it
@@ -38,6 +39,12 @@ public final class FlashRequest {
     /** Adds a header. Repeatable — a name may be sent more than once. */
     public FlashRequest header(String name, String value) {
         request.header(name, value);
+        return this;
+    }
+
+    /** Applies {@code customizer} — how an extension's test kit attaches a credential, for instance. */
+    public FlashRequest with(Consumer<FlashRequest> customizer) {
+        customizer.accept(this);
         return this;
     }
 

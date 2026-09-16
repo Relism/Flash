@@ -16,7 +16,11 @@
     <modules>
         <module>flash-ext-jackson</module>
         <module>flash-ext-openapi</module>
-        <module>flash-ext-oidc</module>
+        <module>flash-ext-security-core</module>
+        <module>flash-ext-security-oidc</module>
+        <module>flash-ext-security-apikey</module>
+        <module>flash-ext-security-form</module>
+        <module>flash-ext-security-test</module>
         <module>flash-ext-routeviewer</module>
         <module>flash-ext-view-core</module>
         <module>flash-ext-view-jte</module>
@@ -47,6 +51,11 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-security-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-cache-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -59,6 +68,12 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-security-test</artifactId>
+                <version>${project.version}</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>

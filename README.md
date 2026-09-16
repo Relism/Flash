@@ -11,8 +11,12 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-testing` | JUnit 5 harness — boot an app on an ephemeral port, fake its services, assert on responses |
 | `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
-| `flash-extensions/flash-ext-oidc` | OIDC Authorization Code + PKCE flow |
-| `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, optional OAuth2 via flash-ext-oidc |
+| `flash-extensions/flash-ext-security-core` | Security: authentication chain, annotations, sessions, OpenAPI |
+| `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |
+| `flash-extensions/flash-ext-security-apikey` | API keys |
+| `flash-extensions/flash-ext-security-form` | Password sign-in |
+| `flash-extensions/flash-ext-security-test` | Test identities, fake OpenID Provider |
+| `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, secured by flash-ext-security-core |
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
@@ -146,7 +150,11 @@ FlashApp.create(8080)
 See extension-specific READMEs for full details:
 - [`flash-ext-jackson`](flash-extensions/flash-ext-jackson/README.md)
 - [`flash-ext-openapi`](flash-extensions/flash-ext-openapi/README.md)
-- [`flash-ext-oidc`](flash-extensions/flash-ext-oidc/README.md)
+- [`flash-ext-security-core`](flash-extensions/flash-ext-security-core/docs/README.md)
+- [`flash-ext-security-oidc`](flash-extensions/flash-ext-security-oidc/docs/README.md)
+- [`flash-ext-security-apikey`](flash-extensions/flash-ext-security-apikey/docs/README.md)
+- [`flash-ext-security-form`](flash-extensions/flash-ext-security-form/docs/README.md)
+- [`flash-ext-security-test`](flash-extensions/flash-ext-security-test/docs/README.md)
 - [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)

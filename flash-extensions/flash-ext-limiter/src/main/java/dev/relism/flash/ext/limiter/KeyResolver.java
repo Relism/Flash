@@ -11,7 +11,7 @@ import dev.relism.flash.models.Request;
  *
  * <pre>{@code
  * conf.registerResolver("ip",       req -> req.header("X-Forwarded-For"));
- * conf.registerResolver("auth_user", req -> ClaimsHolder.user().sub());
+ * conf.registerResolver("auth_user", req -> SecurityIdentity.current().principal().name());
  * }</pre>
  */
 @FunctionalInterface

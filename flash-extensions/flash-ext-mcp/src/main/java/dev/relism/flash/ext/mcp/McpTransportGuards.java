@@ -19,7 +19,7 @@ final class McpTransportGuards {
      * allowed through — only a <em>present but disallowed</em> value is rejected.
      *
      * <p>If {@code allowedOrigins} is empty, validation is skipped and a boot-time warning is
-     * logged — same graceful-degradation shape as {@link McpSecurity#AUTO}.
+     * logged.
      */
     static Middleware originGuard(List<String> allowedOrigins) {
         if (allowedOrigins.isEmpty()) {
@@ -38,7 +38,7 @@ final class McpTransportGuards {
 
     /**
      * Safety net around the whole MCP route: translates {@link HttpException} (thrown by
-     * {@link #originGuard} or by {@code flash-ext-oidc}'s middleware) into a proper HTTP status
+     * {@link #originGuard} or by {@code flash-ext-security-core}) into a proper HTTP status
      * directly, instead of relying on the app's global exception handler — which defaults to a
      * generic 500 for every exception type unless the app owner overrides it (see
      * {@code AbstractRouter}'s default {@code exceptionHandler}). Keeps the MCP endpoint

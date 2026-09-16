@@ -194,6 +194,35 @@ public class Request {
      */
     public List<String> headers() { checkActive(); return requestLine.getHeaders().all(); }
 
+    /**
+     * The scheme and authority the client addressed, e.g. {@code https://example.com}: from
+     * {@code X-Forwarded-Proto}/{@code X-Forwarded-Host} when present, otherwise the connection and
+     * the {@code Host} header. Only meaningful behind a proxy that sets or strips those headers.
+     */
+    public String origin() {
+        String proto = header("X-Forwarded-Proto");
+        String host = header("X-Forwarded-Host");
+        return (proto != null ? proto : isSecure() ? "https" : "http") + "://" + (host != null ? host : header("Host"));
+    }
+
+    /**
+     * Returns the value of cookie {@code name}, or {@code null} if the request does not carry it.
+     * Reads the {@code Cookie} header in place; only the returned value is allocated.
+     */
+    public String cookie(String name) {
+        String cookies = header("Cookie");
+        if (cookies == null) return null;
+        for (int at = cookies.indexOf(name); at >= 0; at = cookies.indexOf(name, at + 1)) {
+            int eq = at + name.length();
+            if (eq < cookies.length() && cookies.charAt(eq) == '='
+                    && (at == 0 || cookies.charAt(at - 1) == ' ' || cookies.charAt(at - 1) == ';')) {
+                int end = cookies.indexOf(';', eq + 1);
+                return cookies.substring(eq + 1, end < 0 ? cookies.length() : end);
+            }
+        }
+        return null;
+    }
+
     // ── Path parameters ───────────────────────────────────────────────────────
 
     /**

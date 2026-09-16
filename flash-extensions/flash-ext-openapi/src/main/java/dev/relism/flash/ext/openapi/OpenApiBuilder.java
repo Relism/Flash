@@ -176,7 +176,8 @@ public final class OpenApiBuilder {
         }
 
         if (responseByCode.isEmpty()) {
-            responseByCode.put(200, Map.of("description", "OK"));
+            // Mutable: contributors merge descriptions and headers into it.
+            responseByCode.put(200, new LinkedHashMap<>(Map.of("description", "OK")));
         }
 
         applyContributorResponses(responseByCode, cls);

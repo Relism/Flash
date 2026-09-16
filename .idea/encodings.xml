@@ -17,8 +17,8 @@
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-jackson/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-limiter/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-limiter/src/main/resources" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-oidc/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-security-oidc/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-security-oidc/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-openapi/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/flash-extensions/flash-ext-routeviewer/src/main/java" charset="UTF-8" />
