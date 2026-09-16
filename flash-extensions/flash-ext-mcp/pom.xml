@@ -19,8 +19,7 @@
         </dependency>
         <dependency>
             <groupId>dev.relism</groupId>
-            <artifactId>flash-ext-auth-oidc</artifactId>
-            <optional>true</optional>
+            <artifactId>flash-ext-security-core</artifactId>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -41,6 +40,22 @@
         <dependency>
             <groupId>dev.relism</groupId>
             <artifactId>flash-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-security-test</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-security-oidc</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-security-apikey</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

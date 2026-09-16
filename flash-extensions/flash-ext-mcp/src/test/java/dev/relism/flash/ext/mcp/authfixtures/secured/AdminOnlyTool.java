@@ -5,10 +5,10 @@ import dev.relism.flash.ext.mcp.TextContent;
 import dev.relism.flash.ext.mcp.Tool;
 import dev.relism.flash.ext.mcp.ToolArguments;
 import dev.relism.flash.ext.mcp.ToolResponse;
-import dev.relism.flash.ext.auth.RolesAllowed;
+import dev.relism.flash.ext.security.RolesAllowed;
 
 @Tool(name = "admin_only", description = "Only callable with the admin role")
-@RolesAllowed("admin")
+@RolesAllowed(value = "admin", on = "project")
 public class AdminOnlyTool extends McpTool {
 
     @Override

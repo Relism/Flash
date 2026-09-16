@@ -102,7 +102,7 @@ public record RouteRecord(
 
     /**
      * Strips the synthetic lambda suffix ({@code $$Lambda/0x...}) from class names
-     * so that {@code OidcMiddleware$$Lambda/0x0000019c381f} becomes {@code OidcMiddleware}.
+     * so that {@code SecurityExtension$$Lambda/0x0000019c381f} becomes {@code SecurityExtension}.
      */
     private static List<String> buildMiddlewareNames(List<Class<? extends Middleware>> chain) {
         List<String> names = new ArrayList<>(chain.size());

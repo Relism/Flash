@@ -1,17 +1,11 @@
 package dev.relism.flash.ext.mcp;
 
-/**
- * OAuth2 requirement policy for the MCP endpoint, resolved against whether
- * {@code flash-ext-auth-oidc} is installed ({@code ctx.find(OidcMiddleware.class)}).
- */
+/** Whether the MCP endpoint requires an authenticated caller. */
 public enum McpSecurity {
 
-    /** Fail fast at boot if {@code flash-ext-auth-oidc} is not installed — never expose an unprotected MCP endpoint. */
+    /** The default: every call is authenticated by {@code flash-ext-security-core}, which must be installed. */
     REQUIRED,
 
-    /** Protect the endpoint if {@code flash-ext-auth-oidc} is installed; otherwise run unprotected and log a warning. */
-    AUTO,
-
-    /** Never protect the endpoint, even if {@code flash-ext-auth-oidc} is installed elsewhere in the app. */
+    /** A public endpoint. Tools declaring security annotations fail the boot. */
     NONE
 }

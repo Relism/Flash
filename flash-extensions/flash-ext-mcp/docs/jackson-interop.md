@@ -24,7 +24,7 @@ see `tools-resources-prompts.md` — and the fixed `TextContent`/`TextResourceCo
 as a `JsonNode` tree, not as a databound class, for the same reason — a JSON-RPC tool call's
 arguments aren't a DTO with getters/setters, they're a dynamic, per-tool-defined bag of values.
 
-This mirrors how `flash-ext-auth-oidc` already handles its own internal JSON needs (`json-smart` for
+This mirrors how `flash-ext-security-oidc` handles its own JSON needs (Nimbus's parser for
 token-endpoint responses) independently of `flash-ext-jackson` — extensions with protocol-level
 JSON needs that are shaped by a spec, not by user code, own that JSON handling themselves rather
 than routing it through the app's general-purpose JSON extension.
@@ -44,8 +44,7 @@ Nothing here rules out a later, additive convenience layer: `McpExtension.routes
 that shared mapper as the backing for an escape hatch such as `ToolArguments.as(Class<T>)` or
 for a tool that wants to `ToolResponse.success(someRecord)` and have it serialized with the
 app's own conventions — falling back to a locally-constructed default `ObjectMapper` when
-`flash-ext-jackson` isn't installed, the same "prefer shared, degrade to sane default" shape
-already used for `McpSecurity.AUTO`. That would be purely additive on top of the
+`flash-ext-jackson` isn't installed. That would be purely additive on top of the
 `JsonGenerator`-based envelope/content writing described above, not a replacement for it — the
 fixed-shape protocol plumbing has no reason to ever go through databinding, regardless of what
 convenience layer gets added around it.

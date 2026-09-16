@@ -121,15 +121,11 @@ Merge policy:
 - contributor collisions use **last-wins**
 - manual `@APIResponse` description always wins over contributors for the same status
 
-## OIDC interop
+## Security interop
 
-When `flash-ext-auth-oidc` is installed, OpenAPI integrates automatically:
-
-- security scheme under `components.securitySchemes`
-- per-operation `security`
-- auto responses (class-based handlers):
-  - `401 Authentication required`
-  - `403` role/scope required messages when applicable
+With `flash-ext-security-core` installed, every registered mechanism's scheme lands under
+`components.securitySchemes`, and every operation carrying a security annotation lists them as
+`security` alternatives with automatic `401` and — for roles or scopes — `403` responses.
 
 Manual `@APIResponse` for the same status code always wins.
 

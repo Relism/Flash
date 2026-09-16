@@ -21,8 +21,8 @@ import java.util.Map;
  * <pre>{@code
  * LimiterConfig conf = new LimiterConfig()
  *     .registerResolver("auth_user", req -> {
- *         // custom logic — e.g. extract sub from ClaimsHolder
- *         return ClaimsHolder.exists() ? ClaimsHolder.user().sub() : "anonymous";
+ *         // custom logic — e.g. key by the authenticated caller
+ *         return SecurityIdentity.current() != null ? SecurityIdentity.current().principal().name() : "anonymous";
  *     });
  *
  * app.install(new LimiterExtension(conf));

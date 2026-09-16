@@ -35,11 +35,11 @@ conf.registerResolver("ip", req -> {
 LimiterConfig conf = new LimiterConfig();
 ```
 
-### By authenticated user (OIDC / ClaimsHolder)
+### By authenticated user
 
 ```java
 conf.registerResolver("auth_user", req ->
-    ClaimsHolder.exists() ? ClaimsHolder.user().sub() : "anonymous");
+    SecurityIdentity.current() != null ? SecurityIdentity.current().principal().name() : "anonymous");
 ```
 
 Requests from unauthenticated users share the `"anonymous"` bucket. If you want
@@ -88,7 +88,7 @@ returns the same key for the same user regardless of endpoint; the limit is set 
 
 ```java
 conf.registerResolver("auth_user", req ->
-    ClaimsHolder.exists() ? ClaimsHolder.user().sub() : "anon");
+    SecurityIdentity.current() != null ? SecurityIdentity.current().principal().name() : "anon");
 ```
 
 ```java

@@ -3,7 +3,7 @@
 `flash-ext-mcp` turns a Flash5 app into an [MCP](https://modelcontextprotocol.io) (Model Context
 Protocol) server: JSON-RPC 2.0 over the Streamable HTTP transport, tools/resources/prompts
 declared as plain classes and discovered at boot, optional OAuth2 protection built on
-`flash-ext-auth-oidc`.
+`flash-ext-security-core`.
 
 ## Quick Start
 
@@ -44,7 +44,7 @@ public class GetWeatherTool extends McpTool {
   `tools-resources-prompts.md`.
 - **Transport**: Streamable HTTP, `POST`-only, stateless in this revision — see `transport.md`
   for exactly what that means and why.
-- **Security**: optional, policy-driven OAuth2 via `flash-ext-auth-oidc` — see `security.md`.
+- **Security**: authenticated by `flash-ext-security-core`, an OAuth2 protected resource when OIDC is installed — see `security.md`.
 - **JSON**: this extension owns its JSON handling independently of `flash-ext-jackson` — see
   `jackson-interop.md` for why, and how a future opt-in reuse could work.
 
@@ -53,6 +53,4 @@ public class GetWeatherTool extends McpTool {
 - [`tools-resources-prompts.md`](tools-resources-prompts.md) — defining tools, resources, prompts
 - [`transport.md`](transport.md) — Streamable HTTP scope, session/SSE limitations, Origin validation
 - [`security.md`](security.md) — `McpSecurity` policy, OAuth2 resolution, RFC 9728 / RFC 8707
-- [`keycloak.md`](keycloak.md) — Keycloak-specific setup cookbook: Dynamic Client Registration,
-  the RFC 8707 audience mapper gotcha, and how to verify/debug it
 - [`jackson-interop.md`](jackson-interop.md) — why this extension does not depend on `flash-ext-jackson`

@@ -2,6 +2,8 @@ package dev.relism.flash.ext.mcp;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import dev.relism.flash.exceptions.InitializationException;
+import dev.relism.flash.ext.security.SecurityExtension;
+import dev.relism.flash.ext.security.SecurityPolicy;
 import dev.relism.flash.extension.FlashContext;
 
 import java.io.IOException;
@@ -25,7 +27,7 @@ final class McpRegistry {
     private static final String EMPTY_ARRAY = "[]";
 
     /** {@code policy} is {@code null} unless the tool carries @RolesAllowed/@ScopesAllowed. */
-    record RegisteredTool(String name, McpTool instance, McpAuthPolicy policy) {}
+    record RegisteredTool(String name, McpTool instance, SecurityPolicy policy) {}
     record RegisteredResource(String uri, McpResource instance) {}
     record RegisteredPrompt(String name, McpPrompt instance) {}
 
@@ -39,15 +41,8 @@ final class McpRegistry {
 
     private McpRegistry() {}
 
-    /**
-     * @param oidcActive    whether this MCP server's route is actually OAuth2-protected right
-     *                      now (see {@link McpOidcIntegration#resolve}) — gates whether
-     *                      {@code @RolesAllowed}/{@code @ScopesAllowed} on a tool are honored or
-     *                      rejected at boot as a misconfiguration; see
-     *                      {@link McpOidcIntegration#compileToolPolicy}.
-     * @param rolesClaimPath claim path resolved from the installed OIDC extension.
-     */
-    static McpRegistry scan(String packageName, FlashContext ctx, boolean oidcActive, String rolesClaimPath) {
+    /** @param security {@code null} for a server running with {@link McpSecurity#NONE} */
+    static McpRegistry scan(String packageName, FlashContext ctx, SecurityExtension security) {
         McpPackageScanner.ScanResult found = McpPackageScanner.scan(packageName);
         McpRegistry registry = new McpRegistry();
 
@@ -55,7 +50,9 @@ final class McpRegistry {
             Tool ann = cls.getAnnotation(Tool.class);
             McpTool instance = instantiate(cls);
             instance.bind(ctx);
-            McpAuthPolicy policy = compileToolPolicy(cls, oidcActive, rolesClaimPath);
+            if (security == null && SecurityPolicy.of(cls) != null)
+                throw new InitializationException("MCP tool \"" + ann.name() + "\" declares security annotations, but the server runs with McpSecurity.NONE");
+            SecurityPolicy policy = security == null ? null : security.policy(cls);
             if (registry.tools.putIfAbsent(ann.name(), new RegisteredTool(ann.name(), instance, policy)) != null)
                 throw new InitializationException("Duplicate MCP tool name: \"" + ann.name() + "\"");
         }
@@ -171,24 +168,6 @@ final class McpRegistry {
             gen.writeEndObject();
         }
         gen.writeEndArray();
-    }
-
-    /**
-     * Isolated the same way {@link McpOidcIntegration#resolve} is — {@code
-     * NoClassDefFoundError} here means {@code flash-ext-auth-oidc} genuinely isn't on the runtime
-     * classpath, in which case a tool couldn't have been compiled against
-     * {@code @RolesAllowed}/{@code @ScopesAllowed} in the first place, so there's nothing to
-     * check (and nothing lost: {@code oidcActive} is only ever {@code true} once {@link
-     * McpOidcIntegration#resolve} has already succeeded once this boot, which proves those
-     * types resolve fine).
-     */
-    private static McpAuthPolicy compileToolPolicy(Class<? extends McpTool> cls, boolean oidcActive,
-                                                     String rolesClaimPath) {
-        try {
-            return McpOidcIntegration.compileToolPolicy(cls, oidcActive, rolesClaimPath);
-        } catch (NoClassDefFoundError e) {
-            return null;
-        }
     }
 
     private static <T> T instantiate(Class<T> cls) {

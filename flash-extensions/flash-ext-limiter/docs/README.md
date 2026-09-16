@@ -36,7 +36,7 @@ FlashApp.create(8080)
 // With custom resolvers
 LimiterConfig conf = new LimiterConfig()
     .registerResolver("auth_user", req ->
-        ClaimsHolder.exists() ? ClaimsHolder.user().sub() : "anonymous");
+        SecurityIdentity.current() != null ? SecurityIdentity.current().principal().name() : "anonymous");
 
 FlashApp.create(8080)
     .install(new LimiterExtension(conf))
