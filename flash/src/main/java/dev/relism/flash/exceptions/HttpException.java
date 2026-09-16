@@ -32,7 +32,12 @@ public class HttpException extends RuntimeException {
     }
 
     public static HttpException forbidden() {
-        return new HttpException(403, "Forbidden");
+        return forbidden("Forbidden");
+    }
+
+    /** Refused with a reason the caller may be told — why the credential is not enough, never what it would take. */
+    public static HttpException forbidden(String message) {
+        return new HttpException(403, message);
     }
 
     public static HttpException notFound(String what) {
