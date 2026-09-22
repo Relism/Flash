@@ -64,6 +64,13 @@ class OidcExtensionTest {
                 .expectStatus(401).expectHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
     }
 
+    /** RFC 9068: an access token says so in its typ. An ID token is the client's, never a bearer credential. */
+    @Test
+    void anIdTokenIsNotAnAccessToken() {
+        app.request().header("Authorization", "Bearer " + provider.idToken("bob", Map.of("aud", "app"))).get("/me")
+                .expectStatus(401).expectHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+    }
+
     /** Not rejected as invalid: an issuer this application does not know is some other mechanism's business. */
     @Test
     void aTokenFromAnUnknownIssuerIsNotThisMechanisms() {

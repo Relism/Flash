@@ -7,7 +7,9 @@ import java.util.Map;
  * API call receives for it, and — for OAuth — the issuer that grants it.
  *
  * @param definition the OpenAPI Security Scheme Object, verbatim
- * @param issuer     the authorization server's issuer identifier, {@code null} for anything else
+ * @param issuer     the authorization server's issuer identifier — {@code "/"} when the application is its own,
+ *                   at whatever {@link SecurityExtension#origin(dev.relism.flash.models.Request)} it is reached by;
+ *                   {@code null} for anything else
  */
 public record SecurityScheme(String name, Map<String, Object> definition, String challenge, String issuer) {
 

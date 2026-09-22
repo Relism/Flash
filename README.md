@@ -15,6 +15,7 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |
 | `flash-extensions/flash-ext-security-apikey` | API keys |
 | `flash-extensions/flash-ext-security-form` | Password sign-in |
+| `flash-extensions/flash-ext-security-oauth-server` | OAuth 2.1 authorization server for the application's own users and resources |
 | `flash-extensions/flash-ext-security-test` | Test identities, fake OpenID Provider |
 | `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, secured by flash-ext-security-core |
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |

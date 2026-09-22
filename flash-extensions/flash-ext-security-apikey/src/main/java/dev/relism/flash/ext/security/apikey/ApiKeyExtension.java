@@ -15,6 +15,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.List;
 
 /**
  * API keys sent as {@code Authorization: Bearer <prefix>_<id>.<secret>}. The prefix makes a key
@@ -63,8 +64,8 @@ public final class ApiKeyExtension<G> implements FlashExtension, AuthenticationM
     }
 
     @Override
-    public SecurityScheme scheme() {
-        return SecurityScheme.bearer("apiKey", prefix + "_<id>.<secret>");
+    public List<SecurityScheme> schemes() {
+        return List.of(SecurityScheme.bearer("apiKey", prefix + "_<id>.<secret>"));
     }
 
     @Override

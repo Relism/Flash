@@ -1,6 +1,8 @@
 package dev.relism.flash.ext.mcp;
 
 import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.ext.security.AuthenticationEntryPoint;
+import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.ext.security.SecurityExtension;
 import dev.relism.flash.ext.security.SecurityIdentity;
 import dev.relism.flash.ext.security.SecurityPolicy;
@@ -38,6 +40,7 @@ import java.util.Objects;
 public class McpExtension implements FlashExtension {
 
     private final McpConfig config;
+    private volatile List<SecurityScheme> schemes;
 
     public McpExtension(McpConfig config) {
         this.config = config;
@@ -65,16 +68,19 @@ public class McpExtension implements FlashExtension {
 
     private void protect(FlashRegistrar<?> app, SecurityExtension security, List<Middleware> chain) {
         String metadataPath = "/.well-known/oauth-protected-resource" + config.rootPath();
-        chain.add(security.enforce(SecurityPolicy.AUTHENTICATED, (req, res) -> {
-            List<String> issuers = issuers(security);
-            res.header("WWW-Authenticate", issuers.isEmpty()
-                    ? String.join(", ", security.schemes().stream().map(SecurityScheme::challenge).toList())
-                    : "Bearer resource_metadata=\"" + req.origin() + metadataPath + "\"");
+        List<AuthenticationMechanism> only = config.mechanisms();
+        AuthenticationEntryPoint anonymous = (req, res) -> {
+            List<SecurityScheme> schemes = schemes(security);
+            res.header("WWW-Authenticate", issuers(schemes, null).isEmpty()
+                    ? String.join(", ", schemes.stream().map(SecurityScheme::challenge).toList())
+                    : "Bearer resource_metadata=\"" + security.origin(req) + metadataPath + "\"");
             throw HttpException.unauthorized();
-        }));
+        };
+        chain.add(only.isEmpty() ? security.enforce(SecurityPolicy.AUTHENTICATED, anonymous)
+                : security.enforce(SecurityPolicy.AUTHENTICATED, anonymous, only));
         if (config.requireTokenAudience()) {
             chain.add(next -> (req, res) -> {
-                String resource = req.origin() + config.rootPath();
+                String resource = security.origin(req) + config.rootPath();
                 if (!SecurityIdentity.current().principal().hasAudience(resource)) {
                     log.warn("[flash-ext-mcp] Rejected a token not issued for {} (RFC 8707) — the authorization server must put it in aud", resource);
                     throw HttpException.forbidden();
@@ -85,14 +91,24 @@ public class McpExtension implements FlashExtension {
             log.warn("[flash-ext-mcp] Token audience validation (RFC 8707) is DISABLED for {} — every token a registered issuer signs is accepted.", config.rootPath());
         }
         app.get(metadataPath, (req, res) -> {
-            List<String> issuers = issuers(security);
+            List<String> issuers = issuers(schemes(security), security.origin(req));
             if (issuers.isEmpty()) throw HttpException.notFound("Protected resource metadata");
             res.type(ContentType.JSON);
-            return McpResourceMetadata.build(req.origin() + config.rootPath(), issuers, config.scopesSupported());
+            return McpResourceMetadata.build(security.origin(req) + config.rootPath(), issuers, config.scopesSupported());
         });
     }
 
-    private static List<String> issuers(SecurityExtension security) {
-        return security.schemes().stream().map(SecurityScheme::issuer).filter(Objects::nonNull).toList();
+    /** Resolved at the first request, once every mechanism has registered — which may be after this extension was ready. */
+    private List<SecurityScheme> schemes(SecurityExtension security) {
+        if (schemes == null) {
+            schemes = config.mechanisms().isEmpty() ? security.schemes()
+                    : config.mechanisms().stream().flatMap(mechanism -> mechanism.schemes().stream()).toList();
+        }
+        return schemes;
+    }
+
+    /** {@code "/"} is the application's own authorization server, at {@code origin}. */
+    private static List<String> issuers(List<SecurityScheme> schemes, String origin) {
+        return schemes.stream().map(SecurityScheme::issuer).filter(Objects::nonNull).map(issuer -> issuer.equals("/") ? origin : issuer).toList();
     }
 }

@@ -195,14 +195,12 @@ public class Request {
     public List<String> headers() { checkActive(); return requestLine.getHeaders().all(); }
 
     /**
-     * The scheme and authority the client addressed, e.g. {@code https://example.com}: from
-     * {@code X-Forwarded-Proto}/{@code X-Forwarded-Host} when present, otherwise the connection and
-     * the {@code Host} header. Only meaningful behind a proxy that sets or strips those headers.
+     * The scheme and authority the client addressed, e.g. {@code https://example.com}: the connection's
+     * scheme and the {@code Host} header. The client chooses both, so nothing that must not be misled
+     * reads this alone; it reads an origin the application configured, falling back to this one.
      */
     public String origin() {
-        String proto = header("X-Forwarded-Proto");
-        String host = header("X-Forwarded-Host");
-        return (proto != null ? proto : isSecure() ? "https" : "http") + "://" + (host != null ? host : header("Host"));
+        return (isSecure() ? "https" : "http") + "://" + header("Host");
     }
 
     /**

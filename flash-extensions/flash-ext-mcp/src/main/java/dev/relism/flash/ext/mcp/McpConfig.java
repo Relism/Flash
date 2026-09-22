@@ -1,5 +1,6 @@
 package dev.relism.flash.ext.mcp;
 
+import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.routing.Middleware;
 
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ public final class McpConfig {
     private final List<String> allowedOrigins;
     private final List<String> scopesSupported;
     private final List<Middleware> middleware;
+    private final List<AuthenticationMechanism> mechanisms;
 
     private McpConfig(Builder b) {
         this.name = b.name;
@@ -42,6 +44,7 @@ public final class McpConfig {
         this.allowedOrigins = List.copyOf(b.allowedOrigins);
         this.scopesSupported = List.copyOf(b.scopesSupported);
         this.middleware = List.copyOf(b.middleware);
+        this.mechanisms = List.copyOf(b.mechanisms);
     }
 
     String name()                     { return name; }
@@ -54,6 +57,7 @@ public final class McpConfig {
     List<String> allowedOrigins()     { return allowedOrigins; }
     List<String> scopesSupported()    { return scopesSupported; }
     List<Middleware> middleware()     { return middleware; }
+    List<AuthenticationMechanism> mechanisms() { return mechanisms; }
 
     public static Builder builder(String name) { return new Builder(name); }
 
@@ -68,6 +72,7 @@ public final class McpConfig {
         private final List<String> allowedOrigins = new ArrayList<>();
         private final List<String> scopesSupported = new ArrayList<>();
         private final List<Middleware> middleware = new ArrayList<>();
+        private final List<AuthenticationMechanism> mechanisms = new ArrayList<>();
 
         private Builder(String name) {
             if (name == null || name.isBlank())
@@ -107,6 +112,15 @@ public final class McpConfig {
 
         /** Published as {@code scopes_supported} in the RFC 9728 metadata, so OAuth clients request them. */
         public Builder scopesSupported(String... scopes) { this.scopesSupported.addAll(List.of(scopes)); return this; }
+
+        /**
+         * The only mechanisms that authenticate the endpoint, and the only issuers its RFC 9728 metadata
+         * names: any other credential, the session cookie included, is none here. Default: the whole chain.
+         */
+        public Builder mechanisms(AuthenticationMechanism... mechanisms) {
+            this.mechanisms.addAll(List.of(mechanisms));
+            return this;
+        }
 
         /** Runs on the MCP route after the transport guards and authentication — rate limiting, auditing, tracing. */
         public Builder middleware(Middleware... middleware) {

@@ -47,10 +47,29 @@ On a handler or an MCP tool class:
 Mechanisms are tried in registration order, then the session cookie. The first to return a
 principal wins. When none does:
 
-- a browser (`Accept: text/html`) is redirected to the only login method, or to `loginPage` when there are several;
+- a browser (`Accept: text/html`) is redirected to `loginPage` when one is set, otherwise to the only
+  login method when it is a redirect, otherwise to `/login`;
 - anything else gets `401` with every mechanism's challenge in `WWW-Authenticate`.
 
 `entryPoint(...)` replaces that, e.g. to pick an identity provider from the user's email domain.
+
+`enforce(policy, entryPoint, mechanisms)` restricts a route to some mechanisms: any other credential,
+the session cookie included, is no credential there — a bearer-only endpoint a browser's cookie must
+not reach.
+
+## Origin
+
+`origin("https://app.example")` is where the application is served. Session cookies, sign-in
+callbacks and token audiences are built from `origin(req)`: the configured origin, or the request's
+own scheme and `Host` when none is. `X-Forwarded-*` is never read: the client can send anything, and
+an origin taken from it lets a caller choose which audience a token must have. Configure it in every
+deployment; the fallback is for development and tests.
+
+## Addresses someone else chose
+
+`PublicUrl.require(url)` refuses anything that is not https on a public address. Call it before the
+server fetches a URL a customer or a client supplied — an identity provider, a metadata document — or
+that fetch becomes a request forgery against the server's own network.
 
 ## Sessions
 
@@ -78,7 +97,7 @@ security.mechanism(new AuthenticationMechanism() {
         if (p == null) throw new AuthenticationFailedException(null);  // mine, and invalid
         return p;
     }
-    public SecurityScheme scheme() { return SecurityScheme.bearer("key", "opaque"); }
+    public List<SecurityScheme> schemes() { return List.of(SecurityScheme.bearer("key", "opaque")); }
 });
 ```
 

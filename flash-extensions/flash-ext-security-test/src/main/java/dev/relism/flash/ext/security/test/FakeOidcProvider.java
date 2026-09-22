@@ -1,5 +1,6 @@
 package dev.relism.flash.ext.security.test;
 
+import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -76,7 +77,7 @@ public final class FakeOidcProvider implements AutoCloseable {
             Map<String, Object> id = new HashMap<>(claims);
             id.put("aud", "app");
             if (nonce != null) id.put("nonce", nonce);
-            send(ex, 200, JSONObjectUtils.toJSONString(Map.of("access_token", token(subject, claims), "id_token", token(subject, id),
+            send(ex, 200, JSONObjectUtils.toJSONString(Map.of("access_token", token(subject, claims), "id_token", idToken(subject, id),
                     "refresh_token", UUID.randomUUID().toString(), "expires_in", expiresIn, "scope", "openid email")));
         });
         server.start();
@@ -106,13 +107,22 @@ public final class FakeOidcProvider implements AutoCloseable {
         return this;
     }
 
-    /** A signed token for {@code subject}, valid five minutes, with {@code claims} added. */
+    /** A signed access token for {@code subject}, valid five minutes, with {@code claims} added — {@code typ} {@code at+jwt} (RFC 9068). */
     public String token(String subject, Map<String, Object> claims) {
+        return sign(new JOSEObjectType("at+jwt"), subject, claims);
+    }
+
+    /** A signed ID token for {@code subject}, which a resource server must never take for an access token. */
+    public String idToken(String subject, Map<String, Object> claims) {
+        return sign(JOSEObjectType.JWT, subject, claims);
+    }
+
+    private String sign(JOSEObjectType type, String subject, Map<String, Object> claims) {
         try {
             JWTClaimsSet.Builder set = new JWTClaimsSet.Builder().issuer(issuer).subject(subject)
                     .issueTime(new Date()).expirationTime(new Date(System.currentTimeMillis() + 300_000));
             claims.forEach(set::claim);
-            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), set.build());
+            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(type).keyID(key.getKeyID()).build(), set.build());
             jwt.sign(new RSASSASigner(key));
             return jwt.serialize();
         } catch (Exception e) {
