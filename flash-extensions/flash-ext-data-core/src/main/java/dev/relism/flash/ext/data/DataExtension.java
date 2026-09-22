@@ -34,6 +34,7 @@ public final class DataExtension implements FlashExtension {
 
     @Override
     public void configure(FlashRegistrar<?> app, FlashContext ctx) {
+        ctx.onClose(txManager::close);
         ctx.provide(Tx.class, tx);
         ctx.provide(TxManager.class, txManager);
         if (data != null) ctx.provide(Data.class, data);
