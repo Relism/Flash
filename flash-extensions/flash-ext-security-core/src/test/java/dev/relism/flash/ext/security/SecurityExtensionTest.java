@@ -2,6 +2,7 @@ package dev.relism.flash.ext.security;
 
 import dev.relism.flash.ext.openapi.OpenApiExtension;
 import dev.relism.flash.models.Request;
+import dev.relism.flash.testing.FlashResponse;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -9,7 +10,9 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.time.Instant;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SecurityExtensionTest {
 
@@ -29,8 +32,8 @@ class SecurityExtensionTest {
         }
 
         @Override
-        public SecurityScheme scheme() {
-            return SecurityScheme.bearer("key", "opaque");
+        public java.util.List<SecurityScheme> schemes() {
+            return java.util.List.of(SecurityScheme.bearer("key", "opaque"));
         }
     };
 
@@ -45,6 +48,8 @@ class SecurityExtensionTest {
             .install(security)
             .install(new OpenApiExtension("/openapi", "test", "1"))
             .get("/me", (req, res) -> SecurityIdentity.current().principal().name(), security.enforce(SecurityPolicy.AUTHENTICATED))
+            .get("/key-only", (req, res) -> SecurityIdentity.current().principal().name(), security.enforce(SecurityPolicy.AUTHENTICATED,
+                    (req, res) -> { throw dev.relism.flash.exceptions.HttpException.unauthorized(); }, java.util.List.of(KEY)))
             .post("/login", (req, res) -> {
                 security.signIn(req, res, new KeyPrincipal("carol", Set.of()), Instant.now().minusSeconds(1));
                 return "signed in";
@@ -74,6 +79,19 @@ class SecurityExtensionTest {
         app.request().header("Accept", "text/html").get("/me?tab=keys")
                 .expectStatus(302)
                 .expectHeader("Location", "/auth/key/login?redirect=%2Fme%3Ftab%3Dkeys");
+    }
+
+    /** An application's own page may know ways in the list does not, so a configured one always wins. */
+    @Test
+    void aConfiguredLoginPageWinsOverTheOnlyLoginMethod() {
+        SecurityExtension paged = new SecurityExtension().loginPage("/sign-in")
+                .loginMethod(new LoginMethod("key", "Key", "/auth/key/login", LoginMethod.Kind.REDIRECT));
+        FlashTest own = FlashTest.of(flash -> flash.install(paged).get("/me", (req, res) -> "me", paged.enforce(SecurityPolicy.AUTHENTICATED)));
+        try {
+            own.request().header("Accept", "text/html").get("/me").expectStatus(302).expectHeader("Location", "/sign-in?redirect=%2Fme");
+        } finally {
+            own.app().stop().join();
+        }
     }
 
     @Test
@@ -106,6 +124,37 @@ class SecurityExtensionTest {
         app.request().header("Cookie", session).get("/me").expectStatus(200).expectBody("carol");
         app.request().header("Cookie", session).post("/auth/logout").expectStatus(303).expectHeader("Location", "/");
         app.request().header("Cookie", session).get("/me").expectStatus(401);
+    }
+
+    /** A route restricted to one mechanism takes that credential and nothing else, not even a signed-in browser. */
+    @Test
+    void aRouteRestrictedToAMechanismIgnoresTheSession() {
+        String cookie = app.request().post("/login").expectStatus(200).header("Set-Cookie");
+        String session = cookie.substring(0, cookie.indexOf(';'));
+
+        app.request().header("Cookie", session).get("/me").expectStatus(200);
+        app.request().header("Cookie", session).get("/key-only").expectStatus(401);
+        app.request().header("Authorization", "Key alice").get("/key-only").expectStatus(200).expectBody("alice");
+    }
+
+    /** The client chooses its Host and any X-Forwarded-* it likes: only a configured origin is the application's own. */
+    @Test
+    void theOriginIsConfiguredNeverTakenFromForwardedHeaders() {
+        String forwarded = app.request().header("X-Forwarded-Proto", "https").header("X-Forwarded-Host", "evil.example")
+                .post("/login").expectStatus(200).header("Set-Cookie");
+        assertFalse(forwarded.contains("Secure"), forwarded);
+
+        SecurityExtension served = new SecurityExtension().origin("https://app.example/");
+        FlashTest configured = FlashTest.of(flash -> flash.install(served).post("/login", (req, res) -> {
+            served.signIn(req, res, new KeyPrincipal("carol", Set.of()));
+            return served.origin(req);
+        }));
+        try {
+            FlashResponse login = configured.request().post("/login").expectStatus(200).expectBody("https://app.example");
+            assertTrue(login.header("Set-Cookie").contains("; Secure"));
+        } finally {
+            configured.app().stop().join();
+        }
     }
 
     @Test

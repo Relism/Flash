@@ -14,9 +14,9 @@ authenticate `/mcp` exactly as they authenticate every other route.
 When a registered mechanism publishes an OAuth2 issuer — `flash-ext-security-oidc` does — the endpoint
 behaves as the MCP authorization spec requires, with nothing to configure:
 
-- `GET /.well-known/oauth-protected-resource/mcp` serves RFC 9728 metadata: the `resource` (derived per
-  request from `X-Forwarded-Proto`/`-Host` or `Host`), every issuer as `authorization_servers`, and
-  `scopes_supported` when `McpConfig.scopesSupported(...)` is set;
+- `GET /.well-known/oauth-protected-resource/mcp` serves RFC 9728 metadata: the `resource` (the
+  application's `SecurityExtension.origin(...)` plus the path), every issuer as `authorization_servers`,
+  and `scopes_supported` when `McpConfig.scopesSupported(...)` is set;
 - an anonymous call gets `401` with `WWW-Authenticate: Bearer resource_metadata="…"`;
 - a token whose `aud` does not include the resource is `403` (RFC 8707) and logged at `WARN`. Credentials
   that are not audience-bound, such as API keys, are unaffected.
@@ -30,6 +30,17 @@ client registration policies relaxed for the trusted hosts.
 mint a resource audience at all — Keycloak ignores RFC 8707's `resource` parameter, so a deployment that
 cannot add the mapper has no other way in. Every token a registered issuer signs is then accepted on the
 endpoint, and the boot logs say so.
+
+## Which credentials
+
+By default every mechanism in the chain authenticates `/mcp`, and the session cookie too.
+`McpConfig.mechanisms(...)` narrows that to the ones named: nothing else is a credential on the endpoint,
+and only their issuers are published — so a client is sent to exactly the authorization server the
+endpoint trusts.
+
+```java
+McpConfig.builder("app").toolsPackage("com.example.tools").mechanisms(authorizationServer).build();
+```
 
 ## Tool policies
 

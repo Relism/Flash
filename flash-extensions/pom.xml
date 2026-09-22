@@ -20,6 +20,7 @@
         <module>flash-ext-security-oidc</module>
         <module>flash-ext-security-apikey</module>
         <module>flash-ext-security-form</module>
+        <module>flash-ext-security-oauth-server</module>
         <module>flash-ext-security-test</module>
         <module>flash-ext-routeviewer</module>
         <module>flash-ext-view-core</module>

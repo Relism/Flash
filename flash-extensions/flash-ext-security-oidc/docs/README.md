@@ -15,9 +15,13 @@ Discovery runs at boot, so an unreachable provider fails the start rather than t
 ## Bearer tokens
 
 `Authorization: Bearer <jwt>` is matched to its provider by `iss`, then verified against that
-provider's keys (RS/PS/ES algorithms, `typ` `JWT` or `at+jwt`, `iss`, `sub`, `exp`). One parse, one map
-lookup, however many providers are configured. A token from an unconfigured issuer is left to other
-mechanisms; a token from a configured one that fails verification is `401 invalid_token`.
+provider's keys (RS/PS/ES algorithms, `iss`, `sub`, `exp`). One parse, one map lookup, however many
+providers are configured. A token from an unconfigured issuer is left to other mechanisms; a token from
+a configured one that fails verification is `401 invalid_token`.
+
+Only an access token is a bearer credential, and RFC 9068 is how one says so: its `typ` is `at+jwt`.
+An ID token — `typ` `JWT` — is the client's proof of sign-in and never passes. Keycloak emits `at+jwt`
+once the client's `access.token.header.type.rfc9068` attribute is `true`.
 
 ## Sign-in
 
@@ -30,8 +34,8 @@ The PKCE verifier, nonce and state travel in a short-lived `HttpOnly` cookie sco
 so sign-in needs no server-side state and works across instances. The session's principal is renewed
 with the refresh token when its access token expires; `POST /auth/logout` ends it and continues to the
 provider's `end_session_endpoint`. The client authenticates with `client_secret_basic`. Register
-`{origin}/auth/oidc/{id}/callback` as a redirect URI and `{origin}/` as a post-logout redirect URI;
-behind a proxy, forward `X-Forwarded-Proto` and `X-Forwarded-Host`.
+`{origin}/auth/oidc/{id}/callback` as a redirect URI and `{origin}/` as a post-logout redirect URI,
+where `{origin}` is `SecurityExtension.origin(...)`.
 
 Each provider is listed at `/auth/methods` (`"kind":"redirect"`) and published to OpenAPI as an
 `openIdConnect` scheme.
@@ -45,7 +49,7 @@ oidc.unregister("acme");
 ```
 
 Discovery runs inside `register`, which refuses a provider — or any endpoint its discovery names — that
-is not https on a public address: registration makes the server fetch URLs someone else chose.
+is not https on a public address (`PublicUrl`): registration makes the server fetch URLs someone else chose.
 `allowLocalProviders()` lifts that for development. Registered providers serve bearer tokens and
 `/auth/oidc/{id}/login` immediately, but are not listed at `/auth/methods` or in OpenAPI: which provider
 a given user signs in with is the application's decision — typically an `AuthenticationEntryPoint` that

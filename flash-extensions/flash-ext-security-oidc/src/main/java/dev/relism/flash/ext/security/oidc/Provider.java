@@ -12,9 +12,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import dev.relism.flash.ext.security.PublicUrl;
 
-import java.net.Inet6Address;
-import java.net.InetAddress;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -48,17 +47,17 @@ final class Provider {
     Provider(OidcProvider config, boolean guarded) {
         this.config = config;
         try {
-            if (guarded) requirePublic(config.discoveryUrl());
+            if (guarded) PublicUrl.require(config.discoveryUrl());
             Map<String, Object> discovery = JSONObjectUtils.parse(HTTP.send(HttpRequest.newBuilder(URI.create(config.discoveryUrl())).build(),
                     HttpResponse.BodyHandlers.ofString()).body());
-            if (guarded) for (String key : new String[]{"authorization_endpoint", "token_endpoint", "jwks_uri"}) requirePublic((String) discovery.get(key));
+            if (guarded) for (String key : new String[]{"authorization_endpoint", "token_endpoint", "jwks_uri"}) PublicUrl.require((String) discovery.get(key));
             issuer = (String) discovery.get("issuer");
             authorizationEndpoint = (String) discovery.get("authorization_endpoint");
             tokenEndpoint = (String) discovery.get("token_endpoint");
             endSessionEndpoint = (String) discovery.get("end_session_endpoint");
             JWKSource<SecurityContext> keys = JWKSourceBuilder.create(URI.create((String) discovery.get("jwks_uri")).toURL()).retrying(true).build();
-            accessTokens = processor(keys, null, new JOSEObjectType("at+jwt"));
-            idTokens = processor(keys, config.clientId(), null);
+            accessTokens = processor(keys, null, new DefaultJOSEObjectTypeVerifier<>(new JOSEObjectType("at+jwt"), new JOSEObjectType("application/at+jwt")));
+            idTokens = processor(keys, config.clientId(), DefaultJOSEObjectTypeVerifier.JWT);
         } catch (Exception e) {
             if (e instanceof IllegalArgumentException rejected) throw rejected;
             throw new IllegalStateException("OIDC discovery failed for " + config.discoveryUrl(), e);
@@ -136,29 +135,17 @@ final class Provider {
         }
     }
 
-    /** ponytail: resolved once here and again by the HTTP client, so DNS rebinding between the two is not covered. */
-    private static void requirePublic(String url) throws Exception {
-        URI uri = URI.create(url);
-        if (!"https".equals(uri.getScheme())) throw new IllegalArgumentException("Not https: " + url);
-        for (InetAddress address : InetAddress.getAllByName(uri.getHost())) {
-            if (address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isLinkLocalAddress() || address.isAnyLocalAddress()
-                    || address.isMulticastAddress() || (address instanceof Inet6Address && (address.getAddress()[0] & 0xfe) == 0xfc)) {
-                throw new IllegalArgumentException("Not a public address: " + url);
-            }
-        }
-    }
-
     static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
-    private DefaultJWTProcessor<SecurityContext> processor(JWKSource<SecurityContext> keys, String audience, JOSEObjectType type) {
+    private DefaultJWTProcessor<SecurityContext> processor(JWKSource<SecurityContext> keys, String audience, DefaultJOSEObjectTypeVerifier<SecurityContext> type) {
         Set<JWSAlgorithm> algorithms = new HashSet<>(JWSAlgorithm.Family.RSA);
         algorithms.addAll(JWSAlgorithm.Family.EC);
         DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
         processor.setJWSKeySelector(new JWSVerificationKeySelector<>(algorithms, keys));
         processor.setJWTClaimsSetVerifier(new DefaultJWTClaimsVerifier<>(audience, new JWTClaimsSet.Builder().issuer(issuer).build(), Set.of("sub", "exp")));
-        if (type != null) processor.setJWSTypeVerifier(new DefaultJOSEObjectTypeVerifier<>(JOSEObjectType.JWT, type, null));
+        processor.setJWSTypeVerifier(type);
         return processor;
     }
 }

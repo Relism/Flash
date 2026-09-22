@@ -1,6 +1,10 @@
 package dev.relism.flash.ext.mcp;
 
+import dev.relism.flash.ext.security.AuthenticationMechanism;
+import dev.relism.flash.ext.security.Principal;
 import dev.relism.flash.ext.security.SecurityExtension;
+import dev.relism.flash.ext.security.SecurityScheme;
+import dev.relism.flash.models.Request;
 import dev.relism.flash.ext.security.apikey.ApiKey;
 import dev.relism.flash.ext.security.apikey.ApiKeyExtension;
 import dev.relism.flash.ext.security.apikey.GeneratedApiKey;
@@ -13,6 +17,7 @@ import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -31,6 +36,27 @@ class McpSecurityTest {
             .install(apiKeys)
             .install(new McpExtension(McpConfig.builder("secure").toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured")
                     .scopesSupported("openid", "email").build())));
+
+    static final OidcExtension oidc = new OidcExtension(OidcProvider.of("fake", provider.issuer(), "app", "secret"));
+
+    /** Another issuer the application trusts, which the restricted endpoint below must neither accept nor advertise. */
+    static final AuthenticationMechanism elsewhere = new AuthenticationMechanism() {
+        @Override public Principal authenticate(Request req) {
+            return "Other".equals(req.header("Authorization")) ? () -> "other" : null;
+        }
+        @Override public List<SecurityScheme> schemes() {
+            return List.of(SecurityScheme.openIdConnect("other", "https://other.example"));
+        }
+    };
+
+    /** Only the OIDC provider authenticates this endpoint, however many mechanisms the application has. */
+    @RegisterExtension
+    static final FlashTest restricted = FlashTest.of(flash -> flash
+            .install(new SecurityExtension().mechanism(elsewhere))
+            .install(oidc)
+            .install(apiKeys)
+            .install(new McpExtension(McpConfig.builder("restricted").toolsPackage("dev.relism.flash.ext.mcp.fixtures")
+                    .mechanisms(oidc).requireTokenAudience(false).build())));
 
     /** The same chain with the RFC 8707 check turned off, for an authorization server that cannot mint a resource audience. */
     @RegisterExtension
@@ -81,6 +107,28 @@ class McpSecurityTest {
         relaxed.request().with(provider.bearer("u", Map.of("aud", "https://elsewhere.example/mcp"))).header("Accept", "application/json")
                 .json("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")
                 .post("/mcp").expectStatus(200).expectBodyContains("protocolVersion");
+    }
+
+    /** The resource is the application's own origin: a forwarded header naming another host cannot make its tokens good here. */
+    @Test
+    void aForwardedHostCannotChooseTheResource() {
+        app.request().with(provider.bearer("u", Map.of("aud", "https://evil.example/mcp")))
+                .header("X-Forwarded-Proto", "https").header("X-Forwarded-Host", "evil.example").header("Accept", "application/json")
+                .json("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}").post("/mcp").expectStatus(403);
+    }
+
+    @Test
+    void anEndpointRestrictedToSomeMechanismsAcceptsAndAdvertisesOnlyThem() {
+        restricted.get("/.well-known/oauth-protected-resource/mcp").expectStatus(200)
+                .expectBody("{\"resource\":\"http://127.0.0.1:" + restricted.port() + "/mcp\",\"authorization_servers\":[\"" + provider.issuer() + "\"]}");
+        Consumer<FlashRequest> key = request -> request.header("Authorization", "Bearer " + KEY.token());
+        Consumer<FlashRequest> other = request -> request.header("Authorization", "Other");
+        for (Consumer<FlashRequest> refused : List.of(key, other)) {
+            restricted.request().with(refused).header("Accept", "application/json")
+                    .json("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}").post("/mcp").expectStatus(401);
+        }
+        restricted.request().with(provider.bearer("u", Map.of())).header("Accept", "application/json")
+                .json("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}").post("/mcp").expectStatus(200);
     }
 
     /** An API key is not audience-bound: the same chain authenticates agents that never saw an authorization server. */

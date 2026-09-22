@@ -19,8 +19,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -84,7 +86,7 @@ public final class OidcExtension implements FlashExtension, AuthenticationMechan
      * Checks a provider before trusting it: discovery, the client ID and secret, and the redirect URI a
      * sign-in from {@code origin} will send. Registers nothing, and holds {@link #register}'s address rules.
      *
-     * @param origin where users will sign in from, as {@link Request#origin()} gives it
+     * @param origin where users will sign in from, as {@link SecurityExtension#origin(Request)} gives it
      * @throws IllegalArgumentException naming what the provider refused
      * @throws IllegalStateException the provider could not be reached
      */
@@ -111,10 +113,15 @@ public final class OidcExtension implements FlashExtension, AuthenticationMechan
         ctx.onReady(() -> {
             security = ctx.require(SecurityExtension.class).mechanism(this).refresher(OidcPrincipal.class, this::refresh);
             for (OidcProvider config : configured) {
-                security.scheme(SecurityScheme.openIdConnect(config.id(), byId.get(config.id()).issuer))
-                        .loginMethod(new LoginMethod(config.id(), config.name(), "/auth/oidc/" + config.id() + "/login", LoginMethod.Kind.REDIRECT));
+                security.loginMethod(new LoginMethod(config.id(), config.name(), "/auth/oidc/" + config.id() + "/login", LoginMethod.Kind.REDIRECT));
             }
         });
+    }
+
+    /** One per configured provider; one registered at runtime is the application's to name, never listed. */
+    @Override
+    public List<SecurityScheme> schemes() {
+        return Arrays.stream(configured).map(config -> SecurityScheme.openIdConnect(config.id(), byId.get(config.id()).issuer)).toList();
     }
 
     // -- Bearer access tokens -------------------------------------------------
@@ -150,9 +157,9 @@ public final class OidcExtension implements FlashExtension, AuthenticationMechan
         String nonce = random(16);
         res.header("Set-Cookie", FLOW + "=" + state + "." + verifier + "." + nonce + "."
                 + BASE64URL.encodeToString(localPath(req.query("redirect")).getBytes(StandardCharsets.UTF_8))
-                + "; Path=/auth/oidc; Max-Age=600; HttpOnly; SameSite=Lax" + (req.origin().startsWith("https") ? "; Secure" : ""));
+                + "; Path=/auth/oidc; Max-Age=600; HttpOnly; SameSite=Lax" + (security.origin(req).startsWith("https") ? "; Secure" : ""));
         String challenge = BASE64URL.encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-        res.redirect(provider.authorizeUrl(callbackUri(req.origin(), provider.config.id()), state, nonce, challenge));
+        res.redirect(provider.authorizeUrl(callbackUri(security.origin(req), provider.config.id()), state, nonce, challenge));
         return null;
     }
 
@@ -169,13 +176,13 @@ public final class OidcExtension implements FlashExtension, AuthenticationMechan
         if (req.query("error") != null) throw HttpException.badRequest("The identity provider refused sign-in: " + req.query("error"));
         try {
             Map<String, Object> tokens = provider.token("grant_type=authorization_code&code=" + Provider.encode(req.query("code"))
-                    + "&redirect_uri=" + Provider.encode(callbackUri(req.origin(), provider.config.id())) + "&code_verifier=" + flow[1]);
+                    + "&redirect_uri=" + Provider.encode(callbackUri(security.origin(req), provider.config.id())) + "&code_verifier=" + flow[1]);
             String idToken = (String) tokens.get("id_token");
             Map<String, Object> claims = sessionClaims(provider.verifyIdToken(idToken), tokens);
             if (!flow[2].equals(claims.get("nonce"))) throw new IllegalStateException("nonce mismatch");
             String logout = provider.endSessionEndpoint == null ? null : provider.endSessionEndpoint
                     + (provider.endSessionEndpoint.indexOf('?') < 0 ? '?' : '&') + "client_id=" + Provider.encode(provider.config.clientId())
-                    + "&id_token_hint=" + idToken + "&post_logout_redirect_uri=" + Provider.encode(req.origin() + "/");
+                    + "&id_token_hint=" + idToken + "&post_logout_redirect_uri=" + Provider.encode(security.origin(req) + "/");
             OidcPrincipal principal = new OidcPrincipal(provider.config.id(), (String) claims.get("sub"), claims,
                     (String) tokens.get("access_token"), (String) tokens.get("refresh_token"), logout);
             security.signIn(req, res, principal, expiry(tokens));

@@ -60,7 +60,8 @@ public class SecurityExtension implements FlashExtension {
     private AuthenticationEntryPoint entryPoint = this::commence;
     private SessionStore sessions = new InMemorySessionStore();
     private Duration sessionTimeout = Duration.ofHours(12);
-    private String loginPage = "/login";
+    private String loginPage;
+    private String origin;
 
     // -- Configuration --------------------------------------------------------
 
@@ -92,9 +93,22 @@ public class SecurityExtension implements FlashExtension {
         return this;
     }
 
-    /** Where a browser signs in, unless the only {@link LoginMethod} is a redirect it can follow directly. */
+    /**
+     * Where a browser signs in. Unset: straight to the only {@link LoginMethod} when it is a redirect, {@code /login}
+     * otherwise. Set it when the application's page knows ways in the list does not, like a provider picked by email.
+     */
     public SecurityExtension loginPage(String loginPage) {
         this.loginPage = loginPage;
+        return this;
+    }
+
+    /**
+     * Where the application is served, e.g. {@code https://app.example}: what session cookies, sign-in
+     * callbacks and token audiences are built from. Unset, each request's own {@link Request#origin()}
+     * is used, which the client chooses — set it wherever that matters, which is every deployment.
+     */
+    public SecurityExtension origin(String origin) {
+        this.origin = origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin;
         return this;
     }
 
@@ -102,13 +116,10 @@ public class SecurityExtension implements FlashExtension {
 
     public synchronized SecurityExtension mechanism(AuthenticationMechanism mechanism) {
         mechanisms = append(mechanisms, mechanism);
-        return mechanism.scheme() == null ? this : scheme(mechanism.scheme());
-    }
-
-    /** Documents and challenges for a credential beyond the one {@link AuthenticationMechanism#scheme()} names. */
-    public synchronized SecurityExtension scheme(SecurityScheme scheme) {
-        schemes = append(schemes, scheme);
-        challenges = challenges == null ? scheme.challenge() : challenges + ", " + scheme.challenge();
+        for (SecurityScheme scheme : mechanism.schemes()) {
+            schemes = append(schemes, scheme);
+            challenges = challenges == null ? scheme.challenge() : challenges + ", " + scheme.challenge();
+        }
         return this;
     }
 
@@ -136,17 +147,27 @@ public class SecurityExtension implements FlashExtension {
 
     // -- Runtime --------------------------------------------------------------
 
+    /** The configured {@link #origin(String)}, or the one {@code req} names when none is. */
+    public String origin(Request req) {
+        return origin != null ? origin : req.origin();
+    }
+
     /**
      * The caller, or {@code null} when no mechanism recognises a credential.
      *
      * @throws AuthenticationFailedException a mechanism recognised one and rejected it
      */
     public SecurityIdentity authenticate(Request req) {
-        for (AuthenticationMechanism mechanism : mechanisms) {
+        return authenticate(req, null);
+    }
+
+    /** {@code only} restricts the chain to those mechanisms, without the session; {@code null} is every one of them and the session. */
+    private SecurityIdentity authenticate(Request req, AuthenticationMechanism[] only) {
+        for (AuthenticationMechanism mechanism : only != null ? only : mechanisms) {
             Principal principal = mechanism.authenticate(req);
             if (principal != null) return new SecurityIdentity(principal, this, req);
         }
-        Principal principal = sessionPrincipal(req);
+        Principal principal = only != null ? null : sessionPrincipal(req);
         return principal == null ? null : new SecurityIdentity(principal, this, req);
     }
 
@@ -168,10 +189,23 @@ public class SecurityExtension implements FlashExtension {
 
     /** {@code anonymous} answers a caller without credentials on this route instead of the configured entry point. */
     public Middleware enforce(SecurityPolicy policy, AuthenticationEntryPoint anonymous) {
+        return guard(policy, anonymous, null);
+    }
+
+    /**
+     * A route only {@code mechanisms} authenticate: every other credential, the session cookie included,
+     * is no credential at all here — a bearer route that must not be reached with a browser's cookie or
+     * with another mechanism's token.
+     */
+    public Middleware enforce(SecurityPolicy policy, AuthenticationEntryPoint anonymous, List<AuthenticationMechanism> mechanisms) {
+        return guard(policy, anonymous, mechanisms.toArray(AuthenticationMechanism[]::new));
+    }
+
+    private Middleware guard(SecurityPolicy policy, AuthenticationEntryPoint anonymous, AuthenticationMechanism[] only) {
         return next -> (req, res) -> {
             SecurityIdentity identity;
             try {
-                identity = authenticate(req);
+                identity = authenticate(req, only);
             } catch (AuthenticationFailedException rejected) {
                 if (policy.required) {
                     if (rejected.challenge() != null) res.header(WWW_AUTHENTICATE, rejected.challenge());
@@ -209,7 +243,7 @@ public class SecurityExtension implements FlashExtension {
         RANDOM.nextBytes(id);
         Session session = new Session(Base64.getUrlEncoder().withoutPadding().encodeToString(id), principal, expiresAt);
         sessions.save(session);
-        res.header("Set-Cookie", COOKIE + "=" + session.id() + "; Path=/; HttpOnly; SameSite=Lax" + (req.origin().startsWith("https") ? "; Secure" : ""));
+        res.header("Set-Cookie", COOKIE + "=" + session.id() + "; Path=/; HttpOnly; SameSite=Lax" + (origin(req).startsWith("https") ? "; Secure" : ""));
     }
 
     /** Ends the caller's session and returns where the browser goes next. */
@@ -251,8 +285,9 @@ public class SecurityExtension implements FlashExtension {
     private Object commence(Request req, Response res) {
         LoginMethod[] methods = loginMethods;
         String accept = req.header("Accept");
-        if (methods.length > 0 && accept != null && accept.contains("text/html")) {
-            String login = methods.length == 1 && methods[0].kind() == LoginMethod.Kind.REDIRECT ? methods[0].url() : loginPage;
+        if ((loginPage != null || methods.length > 0) && accept != null && accept.contains("text/html")) {
+            String login = loginPage != null ? loginPage
+                    : methods.length == 1 && methods[0].kind() == LoginMethod.Kind.REDIRECT ? methods[0].url() : "/login";
             ByteView query = req.getRequestLine().getQuery();
             byte[] raw = new byte[query == null ? 0 : query.length()];
             for (int i = 0; i < raw.length; i++) raw[i] = query.byteAt(i);
