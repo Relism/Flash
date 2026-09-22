@@ -17,6 +17,9 @@ class ViteExtensionTest {
     static final FlashTest app = FlashTest.of(flash -> flash.install(new ViteExtension()));
 
     @RegisterExtension
+    static final FlashTest everything = FlashTest.of(flash -> flash.install(new ViteExtension().navigationOnly(false)));
+
+    @RegisterExtension
     static final FlashTest nested = FlashTest.of(flash -> flash.install(new ViteExtension().basePath("/app/")));
 
     @Test
@@ -41,11 +44,19 @@ class ViteExtensionTest {
         for (String route : new String[]{"/content/2", "/users/ada.lovelace"}) {
             app.request().header("Accept", NAVIGATION).get(route).expectStatus(200).expectHeader("Cache-Control", "no-cache").expectBodyContains("spa");
         }
+        app.request().header("Sec-Fetch-Mode", "navigate").get("/content/2").expectStatus(200).expectBodyContains("spa");
         app.request().header("Accept", "application/json").get("/api/nope").expectStatus(404);
         app.request().header("Accept", "*/*").get("/assets/missing.js").expectStatus(404);
         app.get("/content/2").expectStatus(404);
         app.get("/").expectStatus(200).expectBodyContains("spa");
         nested.get("/app").expectStatus(200).expectBodyContains("spa");
+    }
+
+    /** Opted out of the navigation check, every GET that is no file gets the page, as nginx's try_files would. */
+    @Test
+    void withoutTheNavigationCheckEveryMissGetsTheIndex() {
+        everything.request().header("Accept", "application/json").get("/api/nope").expectStatus(200).expectBodyContains("spa");
+        everything.get("/assets/missing.js").expectStatus(200).expectBodyContains("spa");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package dev.relism.flash.ext.vite;
 
+import dev.relism.fpr.core.ByteView;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,24 +34,41 @@ class AssetsTest {
             }
         }
         try (URLClassLoader loader = new URLClassLoader(new URL[]{jar.toUri().toURL()}, null)) {
-            assertEquals(Set.of("/", "/index.html", "/assets/a-12345678.css"), new Assets(loader, "/").byPath.keySet());
+            assertEquals(Set.of("/", "/index.html", "/assets/a-12345678.css"), new Assets(loader, "/", true).byPath.keySet());
         }
     }
 
     @Test
     void noBuildFailsTheBootNamingThePlugin() throws IOException {
         try (URLClassLoader empty = new URLClassLoader(new URL[0], null)) {
-            assertTrue(assertThrows(IllegalStateException.class, () -> new Assets(empty, "/")).getMessage().contains("flash-ext-vite-maven-plugin"));
+            assertTrue(assertThrows(IllegalStateException.class, () -> new Assets(empty, "/", true)).getMessage().contains("flash-ext-vite-maven-plugin"));
         }
     }
 
     @Test
     void gzipIsAcceptedUnlessRefused() {
-        assertTrue(Assets.acceptsGzip("gzip, deflate, br"));
-        assertTrue(Assets.acceptsGzip("br;q=1.0, gzip;q=0.5"));
-        assertFalse(Assets.acceptsGzip("gzip;q=0, br"));
-        assertFalse(Assets.acceptsGzip("gzip;q=0.000"));
-        assertFalse(Assets.acceptsGzip("br"));
+        assertTrue(Assets.acceptsGzip(view("gzip, deflate, br")));
+        assertTrue(Assets.acceptsGzip(view("br;q=1.0, GZIP;q=0.5")));
+        assertFalse(Assets.acceptsGzip(view("gzip;q=0, br")));
+        assertFalse(Assets.acceptsGzip(view("gzip;q=0.000")));
+        assertFalse(Assets.acceptsGzip(view("br")));
         assertFalse(Assets.acceptsGzip(null));
+    }
+
+    @Test
+    void searchingIgnoresAsciiCaseAndFindsTheFirstMatch() {
+        byte[] html = "text/html".getBytes();
+        assertEquals(0, Assets.indexOf(view("Text/HTML,*/*"), html, 0));
+        assertEquals(12, Assets.indexOf(view("application/text/html"), html, 0));
+        assertEquals(-1, Assets.indexOf(view("text/htm"), html, 0));
+        assertEquals(-1, Assets.indexOf(null, html, 0));
+    }
+
+    private static ByteView view(String text) {
+        byte[] bytes = text.getBytes();
+        return new ByteView() {
+            @Override public int length() { return bytes.length; }
+            @Override public byte byteAt(int i) { return bytes[i]; }
+        };
     }
 }

@@ -20,6 +20,7 @@ public final class ViteExtension implements FlashExtension {
     private Path root = Path.of("web");
     private int devPort = 5173;
     private String basePath = "/";
+    private boolean navigationOnly = true;
 
     /** The Vite project, {@code web} (relative to the working directory) by default. Read in DEV only. */
     public ViteExtension root(Path root) {
@@ -40,13 +41,23 @@ public final class ViteExtension implements FlashExtension {
         return this;
     }
 
+    /**
+     * Whether only a browser navigation to a path that is no file gets {@code index.html}, {@code
+     * true} by default, so an API call to a missing route gets a 404 rather than the page. {@code
+     * false} serves the page for every such {@code GET}, as nginx's {@code try_files} would.
+     */
+    public ViteExtension navigationOnly(boolean navigationOnly) {
+        this.navigationOnly = navigationOnly;
+        return this;
+    }
+
     @Override
     public void configure(FlashRegistrar<?> app, FlashContext ctx) {
         if (Flash.DEV) {
             ctx.onClose(new DevServer(root, devPort)::close);
             return;
         }
-        Assets assets = new Assets(ViteExtension.class.getClassLoader(), basePath);
+        Assets assets = new Assets(ViteExtension.class.getClassLoader(), basePath, navigationOnly);
         String everything = "/".equals(basePath) ? "/**" : basePath + "/**";
         ctx.onReady(() -> {
             app.get(everything, (req, res) -> {

@@ -55,6 +55,7 @@ in agreement.
 | `root(Path)` | `web` | The Vite project, relative to the working directory. DEV only. |
 | `devPort(int)` | `5173` | Vite's port in DEV. |
 | `basePath(String)` | `/` | Where the frontend is served. Vite's `base` must match it. |
+| `navigationOnly(boolean)` | `true` | Only browser navigations fall back to `index.html` (see below). `false` gives every `GET` that matches no file the page, as nginx's `try_files` does, which also turns API 404s into the page. Rarely wanted. |
 
 | Plugin parameter | Default | |
 |---|---|---|
@@ -103,10 +104,17 @@ prefers specific routes over the wildcard.
 | `basePath` itself (`/`) | `index.html`, whatever the client accepts |
 | a built file under `assets/` | `Cache-Control: public, max-age=31536000, immutable`, no `ETag` (it is never asked for again) |
 | any other built file (`index.html`, `favicon.svg`, …) | `Cache-Control: no-cache`, revalidated by `ETag` |
-| no such file, and `Accept` names `text/html` (a browser navigating to `/content/2`) | `index.html`, so the client-side router takes it |
+| no such file, and the request is a navigation | `index.html`, so the client-side router takes it |
 | no such file otherwise (a `fetch` to `/api/typo`, a missing script) | the app's own `404` |
 | `If-None-Match` with the current `ETag` | `304` with `ETag` and `Cache-Control`, no body |
 | `HEAD` | the `GET` headers, `Content-Length` included, no body |
+
+A navigation is what a browser sends when a person opens a URL: `Sec-Fetch-Mode: navigate`, which
+every current browser sets for exactly this purpose, or an `Accept` that names `text/html`, which
+covers older browsers, crawlers and `curl -H 'Accept: text/html'`. The check reads the header bytes
+in place and allocates nothing. This is stricter than Vite's own dev-server fallback, which also
+takes `Accept: */*` and so gives `fetch('/api/typo')` the page. It is the same rule service
+workers use for their navigation fallback. With `navigationOnly(false)` the check is skipped.
 
 A `.gz` beside a file is its gzipped form: the plugin writes one for every text file of 1 KB and
 more, and it is sent to clients whose `Accept-Encoding` allows gzip (`gzip;q=0` does not), with

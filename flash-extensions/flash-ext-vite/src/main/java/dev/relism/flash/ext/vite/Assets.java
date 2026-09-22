@@ -5,6 +5,7 @@ import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.models.PreEncodedHeader;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.Response;
+import dev.relism.fpr.core.ByteView;
 
 import java.io.IOException;
 import java.net.URI;
@@ -59,13 +60,22 @@ final class Assets {
             Map.entry("otf", "font/otf"),
             Map.entry("wasm", "application/wasm"));
 
-    record Asset(byte[] raw, byte[] gzip, byte[] type, PreEncodedHeader cache, PreEncodedHeader etag, String tag) {}
+    private static final byte[] HTML = ascii("text/html");
+    private static final byte[] GZIP_TOKEN = ascii("gzip");
+    private static final byte[] Q = ascii("q=");
+
+    record Asset(byte[] raw, byte[] gzip, byte[] type, PreEncodedHeader cache, PreEncodedHeader etag, byte[] tag) {}
 
     final Map<String, Asset> byPath;
     private final Asset index;
+    private final boolean navigationOnly;
 
-    /** Every file under {@link ViteExtension#CLASSPATH} on {@code loader}'s classpath, routed under {@code basePath}. */
-    Assets(ClassLoader loader, String basePath) {
+    /**
+     * Every file under {@link ViteExtension#CLASSPATH} on {@code loader}'s classpath, routed under
+     * {@code basePath}; {@code navigationOnly} as in {@link ViteExtension#navigationOnly}.
+     */
+    Assets(ClassLoader loader, String basePath, boolean navigationOnly) {
+        this.navigationOnly = navigationOnly;
         URL index = loader.getResource(ViteExtension.CLASSPATH + "/index.html");
         if (index == null) {
             throw new IllegalStateException("No built frontend on the classpath (" + ViteExtension.CLASSPATH + "/index.html): "
@@ -107,22 +117,20 @@ final class Assets {
     }
 
     /**
-     * The asset at the request's path. A path that is none is a client-side route when a browser
-     * navigates to it ({@code Accept} names HTML), so it gets {@code index.html}; for anything
-     * else, an API call or a missing script, it is the app's own 404.
+     * The asset at the request's path. A path that is none gets {@code index.html} when a browser
+     * navigates to it, so the client-side router takes it; anything else, an API call or a missing
+     * script, gets the app's own 404. Headers are read as bytes, so nothing here allocates.
      */
     void serve(Request req, Response res) {
         Asset asset = byPath.get(req.path());
         if (asset == null) {
-            String accept = req.header("Accept");
-            if (accept == null || !accept.contains("text/html")) throw HttpException.notFound(req.path());
+            if (navigationOnly && !navigation(req)) throw HttpException.notFound(req.path());
             asset = index;
         }
         res.header(asset.cache);
         if (asset.etag != null) {
             res.header(asset.etag);
-            String known = req.header("If-None-Match");
-            if (known != null && known.contains(asset.tag)) {
+            if (indexOf(req.headerView("If-None-Match"), asset.tag, 0) >= 0) {
                 res.status(HttpStatus.NOT_MODIFIED);
                 return;
             }
@@ -130,7 +138,7 @@ final class Assets {
         res.type(asset.type);
         if (asset.gzip != null) {
             res.header(VARY);
-            if (acceptsGzip(req.header("Accept-Encoding"))) {
+            if (acceptsGzip(req.headerView("Accept-Encoding"))) {
                 res.header(GZIP).body(asset.gzip);
                 return;
             }
@@ -138,21 +146,42 @@ final class Assets {
         res.body(asset.raw);
     }
 
+    /** What browsers send when a person opens a URL: {@code Sec-Fetch-Mode}, or {@code Accept} naming HTML for older clients. */
+    static boolean navigation(Request req) {
+        return req.headerEquals("Sec-Fetch-Mode", "navigate") || indexOf(req.headerView("Accept"), HTML, 0) >= 0;
+    }
+
     /** Listed in {@code Accept-Encoding}, and not with a q of zero. */
-    static boolean acceptsGzip(String accept) {
-        if (accept == null) return false;
-        int at = accept.indexOf("gzip");
+    static boolean acceptsGzip(ByteView accept) {
+        int at = indexOf(accept, GZIP_TOKEN, 0);
         if (at < 0) return false;
-        int end = accept.indexOf(',', at);
-        if (end < 0) end = accept.length();
-        int q = accept.indexOf("q=", at);
+        int end = at;
+        while (end < accept.length() && accept.byteAt(end) != ',') end++;
+        int q = indexOf(accept, Q, at);
         if (q < 0 || q > end) return true;
         for (int i = q + 2; i < end; i++) {
-            char c = accept.charAt(i);
+            byte c = accept.byteAt(i);
             if (c >= '1' && c <= '9') return true;
             if (c != '0' && c != '.') break;
         }
         return false;
+    }
+
+    /**
+     * Where lowercase {@code needle} starts in {@code view} at or after {@code from}, ASCII case
+     * ignored, or -1 (also for a missing header). Folding with {@code | 0x20} leaves digits, quotes
+     * and slashes as they are, which is all the needles here contain besides letters.
+     */
+    static int indexOf(ByteView view, byte[] needle, int from) {
+        if (view == null) return -1;
+        outer:
+        for (int i = from, last = view.length() - needle.length; i <= last; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if ((view.byteAt(i + j) | 0x20) != needle[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
     }
 
     /**
@@ -161,10 +190,14 @@ final class Assets {
      */
     private static Asset asset(String path, byte[] raw, byte[] gzip) {
         String extension = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
-        byte[] type = TYPES.getOrDefault(extension, "application/octet-stream").getBytes(StandardCharsets.US_ASCII);
+        byte[] type = ascii(TYPES.getOrDefault(extension, "application/octet-stream"));
         if (path.startsWith("assets/")) return new Asset(raw, gzip, type, IMMUTABLE, null, null);
         String tag = "\"" + HexFormat.of().formatHex(sha1(raw)) + "\"";
-        return new Asset(raw, gzip, type, REVALIDATE, new PreEncodedHeader("ETag", tag), tag);
+        return new Asset(raw, gzip, type, REVALIDATE, new PreEncodedHeader("ETag", tag), ascii(tag));
+    }
+
+    private static byte[] ascii(String text) {
+        return text.getBytes(StandardCharsets.US_ASCII);
     }
 
     private static byte[] sha1(byte[] raw) {
