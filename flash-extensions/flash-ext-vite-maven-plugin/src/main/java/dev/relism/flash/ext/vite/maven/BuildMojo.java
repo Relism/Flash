@@ -8,21 +8,29 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
+import java.util.zip.Deflater;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Builds the Vite project and packages the result where {@code ViteExtension} serves it from in
- * production. Bound to {@code prepare-package}: tests never need Node, a packaged jar always has
- * its frontend.
+ * production, with a maximally gzipped {@code .gz} beside each text file, so the server compresses
+ * nothing. Bound to {@code prepare-package}: tests never need Node, a packaged jar always has its
+ * frontend.
  */
 @Mojo(name = "build", defaultPhase = LifecyclePhase.PREPARE_PACKAGE, threadSafe = true)
 public final class BuildMojo extends AbstractMojo {
+
+    /** Formats that are not compressed already; images and woff gain nothing from gzip. */
+    private static final Set<String> COMPRESSIBLE = Set.of("html", "js", "mjs", "css", "json", "map", "webmanifest", "txt", "xml", "svg", "ttf", "otf", "wasm");
 
     /** The Vite project. */
     @Parameter(property = "flash.vite.root", defaultValue = "${project.basedir}/web")
@@ -61,12 +69,28 @@ public final class BuildMojo extends AbstractMojo {
             }
             Files.createDirectories(target.getParent());
             try (Stream<Path> built = Files.walk(dist)) {
-                for (Path from : built.toList()) Files.copy(from, target.resolve(dist.relativize(from).toString()));
+                for (Path from : built.toList()) {
+                    Path to = target.resolve(dist.relativize(from).toString());
+                    Files.copy(from, to);
+                    if (Files.isRegularFile(to)) gzip(to);
+                }
             }
         } catch (IOException e) {
             throw new MojoExecutionException("Cannot copy " + dist + " to " + target, e);
         }
         getLog().info("Packaged " + dist + " as " + ViteExtension.CLASSPATH + "/");
+    }
+
+    /** Only worth it from 1 KB, and only kept when it is smaller. */
+    private static void gzip(Path file) throws IOException {
+        String name = file.getFileName().toString();
+        if (!COMPRESSIBLE.contains(name.substring(name.lastIndexOf('.') + 1).toLowerCase()) || Files.size(file) < 1024) return;
+        byte[] raw = Files.readAllBytes(file);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(raw.length / 2);
+        try (GZIPOutputStream zip = new GZIPOutputStream(out) {{ def.setLevel(Deflater.BEST_COMPRESSION); }}) {
+            zip.write(raw);
+        }
+        if (out.size() < raw.length) Files.write(file.resolveSibling(name + ".gz"), out.toByteArray());
     }
 
     private static void run(Path project, List<String> command) throws MojoExecutionException {

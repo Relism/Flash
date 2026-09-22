@@ -33,7 +33,7 @@ class AssetsTest {
             }
         }
         try (URLClassLoader loader = new URLClassLoader(new URL[]{jar.toUri().toURL()}, null)) {
-            assertEquals(Set.of("/index.html", "/assets/a-12345678.css"), new Assets(loader, "/").byPath.keySet());
+            assertEquals(Set.of("/", "/index.html", "/assets/a-12345678.css"), new Assets(loader, "/").byPath.keySet());
         }
     }
 

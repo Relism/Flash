@@ -1,13 +1,12 @@
 package dev.relism.flash.ext.vite;
 
+import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.models.PreEncodedHeader;
 import dev.relism.flash.models.Request;
 import dev.relism.flash.models.Response;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -22,13 +21,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Stream;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * The built frontend, read once from the classpath at boot and served from memory: every byte a
- * response carries, headers included, is prepared here, so serving allocates nothing.
+ * response carries, headers included, is prepared here, so serving allocates nothing. Compression
+ * happened at build time: a {@code .gz} beside a file is its gzipped form.
  */
 final class Assets {
 
@@ -61,9 +59,6 @@ final class Assets {
             Map.entry("otf", "font/otf"),
             Map.entry("wasm", "application/wasm"));
 
-    /** Formats that are not compressed already; the rest (images, woff) gain nothing from gzip. */
-    private static final Set<String> COMPRESSIBLE = Set.of("html", "js", "mjs", "css", "json", "map", "webmanifest", "txt", "xml", "svg", "ttf", "otf", "wasm");
-
     record Asset(byte[] raw, byte[] gzip, byte[] type, PreEncodedHeader cache, PreEncodedHeader etag, String tag) {}
 
     final Map<String, Asset> byPath;
@@ -92,7 +87,10 @@ final class Assets {
             try (Stream<Path> files = Files.walk(root)) {
                 for (Path file : files.filter(Files::isRegularFile).toList()) {
                     String relative = root.relativize(file).toString().replace('\\', '/');
-                    assets.put(prefix + "/" + relative, asset(relative, Files.readAllBytes(file)));
+                    if (relative.endsWith(".gz")) continue;
+                    Path gzip = file.resolveSibling(file.getFileName() + ".gz");
+                    assets.put(prefix + "/" + relative, asset(relative, Files.readAllBytes(file),
+                            Files.isRegularFile(gzip) ? Files.readAllBytes(gzip) : null));
                 }
             } finally {
                 if (opened != null) opened.close();
@@ -100,29 +98,34 @@ final class Assets {
         } catch (IOException | URISyntaxException e) {
             throw new IllegalStateException("Cannot read the built frontend at " + index, e);
         }
+        // The root is the app itself, whatever the client accepts.
+        Asset root = assets.get(prefix + "/index.html");
+        assets.put(prefix + "/", root);
+        if (!prefix.isEmpty()) assets.put(prefix, root);
         this.byPath = Map.copyOf(assets);
-        this.index = byPath.get(prefix + "/index.html");
+        this.index = root;
     }
 
     /**
-     * The asset at the request's path; a path with no file extension is a client-side route and
-     * gets {@code index.html}, one with an extension that matches nothing is a 404.
+     * The asset at the request's path. A path that is none is a client-side route when a browser
+     * navigates to it ({@code Accept} names HTML), so it gets {@code index.html}; for anything
+     * else, an API call or a missing script, it is the app's own 404.
      */
     void serve(Request req, Response res) {
-        String path = req.path();
-        Asset asset = byPath.get(path);
+        Asset asset = byPath.get(req.path());
         if (asset == null) {
-            if (path.lastIndexOf('.') > path.lastIndexOf('/')) {
-                res.status(HttpStatus.NOT_FOUND);
-                return;
-            }
+            String accept = req.header("Accept");
+            if (accept == null || !accept.contains("text/html")) throw HttpException.notFound(req.path());
             asset = index;
         }
-        res.header(asset.cache).header(asset.etag);
-        String known = req.header("If-None-Match");
-        if (known != null && known.contains(asset.tag)) {
-            res.status(HttpStatus.NOT_MODIFIED);
-            return;
+        res.header(asset.cache);
+        if (asset.etag != null) {
+            res.header(asset.etag);
+            String known = req.header("If-None-Match");
+            if (known != null && known.contains(asset.tag)) {
+                res.status(HttpStatus.NOT_MODIFIED);
+                return;
+            }
         }
         res.type(asset.type);
         if (asset.gzip != null) {
@@ -152,24 +155,16 @@ final class Assets {
         return false;
     }
 
-    /** Vite puts every content-hashed file under {@code assets/}: those never change, the rest revalidate. */
-    private static Asset asset(String path, byte[] raw) {
+    /**
+     * Vite puts every content-hashed file under {@code assets/}: those never change, so they are
+     * cached for good and never revalidated, and need no ETag. The rest revalidate by one.
+     */
+    private static Asset asset(String path, byte[] raw, byte[] gzip) {
         String extension = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
         byte[] type = TYPES.getOrDefault(extension, "application/octet-stream").getBytes(StandardCharsets.US_ASCII);
-        byte[] gzip = COMPRESSIBLE.contains(extension) && raw.length >= 1024 ? gzip(raw) : null;
+        if (path.startsWith("assets/")) return new Asset(raw, gzip, type, IMMUTABLE, null, null);
         String tag = "\"" + HexFormat.of().formatHex(sha1(raw)) + "\"";
-        return new Asset(raw, gzip != null && gzip.length < raw.length ? gzip : null, type,
-                path.startsWith("assets/") ? IMMUTABLE : REVALIDATE, new PreEncodedHeader("ETag", tag), tag);
-    }
-
-    private static byte[] gzip(byte[] raw) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(raw.length / 2);
-        try (GZIPOutputStream zip = new GZIPOutputStream(out)) {
-            zip.write(raw);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return out.toByteArray();
+        return new Asset(raw, gzip, type, REVALIDATE, new PreEncodedHeader("ETag", tag), tag);
     }
 
     private static byte[] sha1(byte[] raw) {

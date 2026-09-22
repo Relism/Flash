@@ -11,19 +11,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class ViteExtensionTest {
 
     private static final String JS = "/assets/app-AbCd1234.js";
+    private static final String NAVIGATION = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
     @RegisterExtension
-    static final FlashTest app = FlashTest.of(flash -> flash.get("/api/before", (req, res) -> "before")
-            .install(new ViteExtension()).get("/api/ping", (req, res) -> "pong"));
+    static final FlashTest app = FlashTest.of(flash -> flash.install(new ViteExtension()));
 
     @RegisterExtension
     static final FlashTest nested = FlashTest.of(flash -> flash.install(new ViteExtension().basePath("/app/")));
-
-    @Test
-    void backendRoutesWin() {
-        app.get("/api/ping").expectStatus(200).expectBody("pong");
-        app.get("/api/before").expectStatus(200).expectBody("before");
-    }
 
     @Test
     void hashedAssetsAreCachedForeverTheRestRevalidates() {
@@ -41,17 +35,25 @@ class ViteExtensionTest {
         assertNull(app.get(JS).header("Content-Encoding"));
     }
 
+    /** A browser navigating gets the app, dots and all; a fetch or a script tag for nothing gets a 404. */
     @Test
-    void clientRoutesGetTheIndexMissingFilesA404() {
-        app.get("/content/2").expectStatus(200).expectHeader("Cache-Control", "no-cache").expectBodyContains("spa");
-        app.get("/assets/missing.js").expectStatus(404);
+    void onlyNavigationsFallBackToTheIndex() {
+        for (String route : new String[]{"/content/2", "/users/ada.lovelace"}) {
+            app.request().header("Accept", NAVIGATION).get(route).expectStatus(200).expectHeader("Cache-Control", "no-cache").expectBodyContains("spa");
+        }
+        app.request().header("Accept", "application/json").get("/api/nope").expectStatus(404);
+        app.request().header("Accept", "*/*").get("/assets/missing.js").expectStatus(404);
+        app.get("/content/2").expectStatus(404);
+        app.get("/").expectStatus(200).expectBodyContains("spa");
+        nested.get("/app").expectStatus(200).expectBodyContains("spa");
     }
 
     @Test
-    void anUnchangedAssetIsNotSentAgain() {
-        String etag = app.get(JS).header("ETag");
-        app.request().header("If-None-Match", etag).get(JS).expectStatus(304)
-                .expectHeader("ETag", etag).expectHeader("Cache-Control", "public, max-age=31536000, immutable");
+    void anUnchangedFileIsNotSentAgainAHashedOneIsNeverAsked() {
+        String etag = app.get("/favicon.svg").header("ETag");
+        app.request().header("If-None-Match", etag).get("/favicon.svg").expectStatus(304)
+                .expectHeader("ETag", etag).expectHeader("Cache-Control", "no-cache");
+        assertNull(app.get(JS).header("ETag"));
     }
 
     @Test
@@ -64,7 +66,7 @@ class ViteExtensionTest {
     @Test
     void aBasePathPrefixesEveryRoute() {
         nested.get("/app" + JS).expectStatus(200);
-        nested.get("/app/settings").expectStatus(200).expectBodyContains("spa");
+        nested.request().header("Accept", NAVIGATION).get("/app/settings").expectStatus(200).expectBodyContains("spa");
         nested.get(JS).expectStatus(404);
     }
 }

@@ -9,6 +9,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** A package.json whose build script stands in for Vite's. Needs npm on the PATH. */
@@ -22,7 +23,7 @@ class BuildMojoTest {
         assumeTrue(onPath(), "npm is not on the PATH");
         Path web = Files.createDirectories(dir.resolve("web"));
         Files.writeString(web.resolve("package.json"), """
-                {"name":"t","private":true,"scripts":{"build":"node -e \\"const f=require('fs');f.mkdirSync('dist/assets',{recursive:true});f.writeFileSync('dist/index.html','built');f.writeFileSync('dist/assets/a-12345678.js','1')\\""}}
+                {"name":"t","private":true,"scripts":{"build":"node -e \\"const f=require('fs');f.mkdirSync('dist/assets',{recursive:true});f.writeFileSync('dist/index.html','built');f.writeFileSync('dist/assets/a-12345678.js','1');f.writeFileSync('dist/assets/b-12345678.js','x'.repeat(4096))\\""}}
                 """);
         Path classes = dir.resolve("classes");
         Files.createDirectories(classes.resolve("flash-vite"));
@@ -33,6 +34,9 @@ class BuildMojoTest {
         assertEquals("built", Files.readString(classes.resolve("flash-vite/index.html")));
         assertEquals("1", Files.readString(classes.resolve("flash-vite/assets/a-12345678.js")));
         assertFalse(Files.exists(classes.resolve("flash-vite/stale.js")));
+        // Big enough to gzip, and it shrinks; the 1-byte file is left alone.
+        assertTrue(Files.size(classes.resolve("flash-vite/assets/b-12345678.js.gz")) < 4096);
+        assertFalse(Files.exists(classes.resolve("flash-vite/assets/a-12345678.js.gz")));
     }
 
     @Test

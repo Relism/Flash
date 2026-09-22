@@ -91,29 +91,31 @@ server: {
 
 Anywhere `Flash.DEV` is false, the build is read once at boot from `flash-vite/` on the classpath,
 whether that is a directory (`target/classes`) or a jar. A missing build fails the boot and names
-the plugin. Everything a response carries is prepared at boot, headers included, so serving
-allocates nothing.
+the plugin. Compression already happened in the build, so boot only reads files and hashes the few
+that revalidate: about 50 ms for a 500-file app. Everything a response carries is prepared at
+boot, headers included, so serving allocates nothing.
 
 `GET` and `HEAD` on `basePath/**` answer as follows. Backend routes still win, because Flash
 prefers specific routes over the wildcard.
 
 | Request | Answer |
 |---|---|
-| a built file under `assets/` | `Cache-Control: public, max-age=31536000, immutable` |
+| `basePath` itself (`/`) | `index.html`, whatever the client accepts |
+| a built file under `assets/` | `Cache-Control: public, max-age=31536000, immutable`, no `ETag` (it is never asked for again) |
 | any other built file (`index.html`, `favicon.svg`, …) | `Cache-Control: no-cache`, revalidated by `ETag` |
-| a path with no file extension (`/content/2`) | `index.html`, so the client-side router takes it |
-| a path with an extension that matches no file | `404` |
+| no such file, and `Accept` names `text/html` (a browser navigating to `/content/2`) | `index.html`, so the client-side router takes it |
+| no such file otherwise (a `fetch` to `/api/typo`, a missing script) | the app's own `404` |
 | `If-None-Match` with the current `ETag` | `304` with `ETag` and `Cache-Control`, no body |
 | `HEAD` | the `GET` headers, `Content-Length` included, no body |
 
-Text formats of 1 KB and more (html, js, css, json, svg, fonts, wasm, …) are gzipped once at boot
-and sent to clients whose `Accept-Encoding` allows gzip (`gzip;q=0` does not), with
-`Vary: Accept-Encoding`. Images and woff are sent as they are, because they are compressed already.
+A `.gz` beside a file is its gzipped form: the plugin writes one for every text file of 1 KB and
+more, and it is sent to clients whose `Accept-Encoding` allows gzip (`gzip;q=0` does not), with
+`Vary: Accept-Encoding`.
 
 Known limits:
 
-- A client-side route whose last segment has a dot (`/users/ada.lovelace`) is treated as a missing
-  file. Keep dots out of client routes, or route them under `basePath` differently.
+- A browser navigating straight to an API path that does not exist gets the app, which shows its
+  own not-found screen. Only an HTML navigation falls back, so API clients always get the 404.
 - Every file is held in memory, gzip included. That suits an app's own frontend. Large media belongs
   on a CDN or behind its own route.
 
@@ -124,7 +126,10 @@ The `build` goal is bound to `prepare-package`, so `mvn test` never needs Node, 
 
 1. installs the dependencies with the lockfile pinned;
 2. runs `<pm> run build` in the project;
-3. replaces `target/classes/flash-vite/` with the project's `dist/`.
+3. replaces `target/classes/flash-vite/` with the project's `dist/`;
+4. writes a gzip `.gz` at maximum compression beside every html, js, css, json, map, svg, txt,
+   xml, webmanifest, font and wasm file of 1 KB and more, and keeps it only when it is smaller.
+   Images and woff are left alone, because they are compressed already.
 
 Missing Node or package manager, a failing install or build, or a build that leaves no
 `dist/index.html` fails the Maven build with the reason. The package manager's own output shows in
