@@ -17,6 +17,18 @@ public class JdbcTxManager implements TxManager {
         this.ds = Objects.requireNonNull(ds);
     }
 
+    /** Closes the data source when it is closeable, as a pool is; a plain {@code DataSource} holds nothing to release. */
+    @Override
+    public void close() {
+        if (ds instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to close the data source", e);
+            }
+        }
+    }
+
     @Override
     public TxStatus begin(TxDefinition definition) {
         return switch (definition.propagation()) {
