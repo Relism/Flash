@@ -136,7 +136,7 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-web-bundler</artifactId>
+                <artifactId>flash-ext-vite</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -171,6 +171,13 @@ public class Response {
     return this;
   }
 
+  /** A content type encoded once, typically at boot: the array is kept, not copied, so it must not change. */
+  public Response type(byte[] ct) {
+    checkActive();
+    this.contentType = ct;
+    return this;
+  }
+
   public Response type(String ct) {
     checkActive();
     this.contentType = ct.getBytes(StandardCharsets.UTF_8);

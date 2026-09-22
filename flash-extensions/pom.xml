@@ -27,7 +27,8 @@
         <module>flash-ext-view-jte</module>
         <module>flash-ext-view-thymeleaf</module>
         <module>flash-ext-limiter</module>
-        <module>flash-ext-web-bundler</module>
+        <module>flash-ext-vite</module>
+        <module>flash-ext-vite-maven-plugin</module>
         <module>flash-ext-mcp</module>
         <module>flash-ext-validation</module>
         <module>flash-ext-scheduler</module>
@@ -119,7 +120,7 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-web-bundler</artifactId>
+                <artifactId>flash-ext-vite</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
