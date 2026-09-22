@@ -21,6 +21,8 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
 | `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
+| `flash-extensions/flash-ext-vite` | Vite frontend: dev server in DEV, the built SPA from the jar otherwise |
+| `flash-extensions/flash-ext-vite-maven-plugin` | Builds the Vite frontend into the jar during `mvn package` |
 | `flash-extensions/flash-ext-validation` | Request validation — jakarta constraints, compiled once per type |
 | `flash-extensions/flash-ext-scheduler` | Interval and cron background jobs on virtual threads |
 | `flash-extensions/flash-ext-cache-core` | Caching contract — `Cache`, `CacheManager`, `CacheSpec` |

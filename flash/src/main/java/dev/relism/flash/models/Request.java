@@ -182,6 +182,12 @@ public class Request {
     public String header(String name) { checkActive(); return requestLine.getHeaders().first(name); }
 
     /**
+     * The first value of header {@code name} as a view over the request's own bytes, or {@code null}:
+     * {@link #header} without the {@code String}, for a hot path. Valid only while the handler runs.
+     */
+    public ByteView headerView(String name) { checkActive(); return requestLine.getHeaders().view(name); }
+
+    /**
      * Returns all values of header {@code name} in declaration order.
      * Useful for headers that appear multiple times (e.g. {@code Accept}, {@code Cookie}).
      * Lookup is case-insensitive. Returns an empty list if the header is absent.

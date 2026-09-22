@@ -112,6 +112,8 @@ public abstract class Repository<T, ID> {
 - `Tx` in the `FlashContext`
 - `TxManager` in the `FlashContext`
 - an annotation processor for `@Transactional`
+- `TxManager.close()` as an `onClose` callback, so stopping the app releases the manager's
+  session factory and connection pool; give the manager a pool you want closed with the app
 
 This makes the data layer composable with Flash's extension system without global state.
 
