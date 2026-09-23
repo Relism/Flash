@@ -133,6 +133,150 @@ class OpenApiBuilderTest {
         public List<String> tags;
     }
 
+    @dev.relism.flash.routing.POST("/bodies")
+    @ApiOperation(summary = "Typed body")
+    static final class TypedBodyHandler extends JsonLikeHandler<UserDto> {
+        @Override protected UserDto handle(Request request, Response response, UserDto body) { return body; }
+    }
+
+    @dev.relism.flash.routing.Consumes(ContentType.JSON)
+    static abstract class JsonLikeHandler<B> extends dev.relism.flash.models.BodyHandler<B> {
+        @Override protected B body(Request request) { return null; }
+    }
+
+    @dev.relism.flash.routing.PUT("/declared-body")
+    @ApiOperation(summary = "Declared body")
+    @RequestBody(value = UserDto.class, array = true, required = false, description = "Users to store")
+    static class DeclaredBodyHandler extends RequestHandler {
+        @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @GET("/bare")
+    static class BareHandler extends RequestHandler {
+        @Override public UserDto handle(Request request, Response response) { return null; }
+    }
+
+    @GET("/example")
+    @ApiOperation(summary = "Example")
+    @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, example = "{\"id\":\"usr-1\"}"))
+    static class ExampleHandler extends RequestHandler {
+        @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @GET("/secure-too")
+    @ApiOperation(summary = "Secure too")
+    static class SecondSecureHandler extends RequestHandler {
+        @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void a_typed_handler_documents_its_body_without_saying_the_type_twice() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(TypedBodyHandler.class), TypedBodyHandler.class.getAnnotation(ApiOperation.class), TypedBodyHandler.class);
+
+        Map<String, Object> post = getOperation(b.build(), "/bodies", "post");
+        Map<String, Object> body = cast(post.get("requestBody"));
+        Map<String, Object> content = cast(body.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+        Map<String, Object> schema = cast(json.get("schema"));
+
+        assertEquals(true, body.get("required"));
+        assertEquals("#/components/schemas/UserDTO", schema.get("$ref"));
+    }
+
+    @Test
+    void a_declared_body_wins_and_carries_its_own_shape() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(DeclaredBodyHandler.class), DeclaredBodyHandler.class.getAnnotation(ApiOperation.class), DeclaredBodyHandler.class);
+
+        Map<String, Object> put = getOperation(b.build(), "/declared-body", "put");
+        Map<String, Object> body = cast(put.get("requestBody"));
+        Map<String, Object> content = cast(body.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+        Map<String, Object> schema = cast(json.get("schema"));
+
+        assertEquals("Users to store", body.get("description"));
+        assertEquals(false, body.get("required"));
+        assertEquals("array", schema.get("type"));
+    }
+
+    @Test
+    void a_route_with_no_annotations_is_still_documented() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(BareHandler.class), null, BareHandler.class);
+
+        Map<String, Object> get = getOperation(b.build(), "/bare", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+        Map<String, Object> ok = cast(responses.get("200"));
+        Map<String, Object> content = cast(ok.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+        Map<String, Object> schema = cast(json.get("schema"));
+
+        assertEquals("#/components/schemas/UserDTO", schema.get("$ref"));
+    }
+
+    @Test
+    void a_failure_is_documented_with_the_shape_flash_answers_with() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> get = getOperation(spec, "/secure", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+        Map<String, Object> forbidden = cast(responses.get("403"));
+        Map<String, Object> content = cast(forbidden.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+        Map<String, Object> schema = cast(json.get("schema"));
+        Map<String, Object> components = cast(spec.get("components"));
+        Map<String, Object> schemas = cast(components.get("schemas"));
+
+        assertEquals("#/components/schemas/Error", schema.get("$ref"));
+        assertTrue(schemas.containsKey("Error"));
+    }
+
+    @Test
+    void an_answer_two_operations_share_is_written_once() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .response(401, OpenApiResponseContribution.of("Authentication required"))
+                        .build();
+            }
+        });
+        b.setContributorRegistry(registry);
+        b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
+        b.addOperation(OpenApiBuilder.routeOf(SecondSecureHandler.class), SecondSecureHandler.class.getAnnotation(ApiOperation.class), SecondSecureHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> components = cast(spec.get("components"));
+        Map<String, Object> shared = cast(components.get("responses"));
+        Map<String, Object> firstResponses = cast(getOperation(spec, "/secure", "get").get("responses"));
+        Map<String, Object> secondResponses = cast(getOperation(spec, "/secure-too", "get").get("responses"));
+        Map<String, Object> first = cast(firstResponses.get("401"));
+        Map<String, Object> second = cast(secondResponses.get("401"));
+        Map<String, Object> unauthorized = cast(shared.get("Unauthorized"));
+
+        assertEquals("#/components/responses/Unauthorized", first.get("$ref"));
+        assertEquals("#/components/responses/Unauthorized", second.get("$ref"));
+        assertEquals("Authentication required", unauthorized.get("description"));
+    }
+
+    @Test
+    void an_example_sits_beside_the_schema() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(ExampleHandler.class), ExampleHandler.class.getAnnotation(ApiOperation.class), ExampleHandler.class);
+
+        Map<String, Object> get = getOperation(b.build(), "/example", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+        Map<String, Object> ok = cast(responses.get("200"));
+        Map<String, Object> content = cast(ok.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+
+        assertEquals("{\"id\":\"usr-1\"}", json.get("example"));
+    }
+
     @Test
     void builds_single_response_and_parameters_and_schema() {
         OpenApiBuilder b = new OpenApiBuilder().title("X").version("1");
