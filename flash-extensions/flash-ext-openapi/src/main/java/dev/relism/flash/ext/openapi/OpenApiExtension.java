@@ -10,7 +10,6 @@ import dev.relism.flash.extension.RouteEvent;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.routing.Route;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * Generates and serves an OpenAPI 3.0 spec and Swagger UI under a configurable base path.
@@ -25,8 +24,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>If {@code flash-ext-jackson} is installed, this extension reuses its
  * {@link ObjectMapper}. Otherwise it uses a local default mapper.
  *
- * <p>Operations are collected at boot from handlers annotated with {@link ApiOperation}
- * that also have route metadata ({@link Route} or shorthand verb annotations).
+ * <p>Every class-based route is collected at boot, whether or not it is annotated: a path, the
+ * body its handler takes and what it returns are already in the code. {@link ApiOperation} adds
+ * the prose.
  *
  * <pre>{@code
  * FlashApp.create(8080)
@@ -35,7 +35,6 @@ import lombok.extern.slf4j.Slf4j;
  *     .start();
  * }</pre>
  */
-@Slf4j
 public class OpenApiExtension implements FlashExtension {
 
     private static final String YAML_CONTENT_TYPE = "application/yaml";
@@ -121,18 +120,12 @@ public class OpenApiExtension implements FlashExtension {
                 "</html>";
     }
 
+    /** Every class-based route is an operation; {@link ApiOperation} only adds what the code cannot say. */
     private static void addOperationFromEvent(OpenApiBuilder builder, RouteEvent event) {
         Class<?> handlerClass = event.handlerClass();
-        if (handlerClass == null) return; // lambda route: no annotation metadata
+        if (handlerClass == null) return;   // a lambda route has nothing to read
 
-        ApiOperation op = handlerClass.getAnnotation(ApiOperation.class);
-        if (op == null) {
-            log.warn("{} {} ({}) has no @ApiOperation — omitted from the OpenAPI spec",
-                    event.method(), event.path(), handlerClass.getSimpleName());
-            return;
-        }
-
-        builder.addOperation(routeOf(event), op, handlerClass);
+        builder.addOperation(routeOf(event), handlerClass.getAnnotation(ApiOperation.class), handlerClass);
     }
 
     private static Route routeOf(RouteEvent event) {

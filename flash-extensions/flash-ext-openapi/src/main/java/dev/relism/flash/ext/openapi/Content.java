@@ -16,4 +16,7 @@ public @interface Content {
     ContentType contentType() default ContentType.JSON;
     Class<?> schema() default Void.class;
     boolean array() default false;
+
+    /** One example body, shown beside the schema. */
+    String example() default "";
 }

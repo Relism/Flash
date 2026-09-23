@@ -9,7 +9,9 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 |---|---|
 | `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
 | `flash-testing` | JUnit 5 harness — boot an app on an ephemeral port, fake its services, assert on responses |
-| `flash-extensions/flash-ext-jackson` | Jackson JSON integration |
+| `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: the codec, the body handler, the constraints a body is checked against |
+| `flash-extensions/flash-ext-jackson-json` | JSON bodies and responses |
+| `flash-extensions/flash-ext-jackson-xml` | XML bodies and responses |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
 | `flash-extensions/flash-ext-security-core` | Security: authentication chain, annotations, sessions, OpenAPI |
 | `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |
@@ -23,7 +25,6 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
 | `flash-extensions/flash-ext-vite` | Vite frontend: dev server in DEV, the built SPA from the jar otherwise |
 | `flash-extensions/flash-ext-vite-maven-plugin` | Builds the Vite frontend into the jar during `mvn package` |
-| `flash-extensions/flash-ext-validation` | Request validation — jakarta constraints, compiled once per type |
 | `flash-extensions/flash-ext-scheduler` | Interval and cron background jobs on virtual threads |
 | `flash-extensions/flash-ext-cache-core` | Caching contract — `Cache`, `CacheManager`, `CacheSpec` |
 | `flash-extensions/flash-ext-cache-caffeine` | In-process cache backed by Caffeine |
@@ -151,7 +152,9 @@ FlashApp.create(8080)
 ```
 
 See extension-specific READMEs for full details:
-- [`flash-ext-jackson`](flash-extensions/flash-ext-jackson/README.md)
+- [`flash-ext-jackson-core`](flash-extensions/flash-ext-jackson-core/README.md)
+- [`flash-ext-jackson-json`](flash-extensions/flash-ext-jackson-json/README.md)
+- [`flash-ext-jackson-xml`](flash-extensions/flash-ext-jackson-xml/README.md)
 - [`flash-ext-openapi`](flash-extensions/flash-ext-openapi/README.md)
 - [`flash-ext-security-core`](flash-extensions/flash-ext-security-core/docs/README.md)
 - [`flash-ext-security-oidc`](flash-extensions/flash-ext-security-oidc/docs/README.md)
@@ -161,7 +164,6 @@ See extension-specific READMEs for full details:
 - [`flash-ext-mcp`](flash-extensions/flash-ext-mcp/docs/README.md)
 - [`flash-ext-view-jte`](flash-extensions/flash-ext-view-jte/README.md)
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
-- [`flash-ext-validation`](flash-extensions/flash-ext-validation/docs/README.md)
 - [`flash-ext-scheduler`](flash-extensions/flash-ext-scheduler/docs/README.md)
 - [`flash-ext-cache-caffeine`](flash-extensions/flash-ext-cache-caffeine/docs/README.md)
 - [`flash-testing`](flash-testing/docs/README.md)
