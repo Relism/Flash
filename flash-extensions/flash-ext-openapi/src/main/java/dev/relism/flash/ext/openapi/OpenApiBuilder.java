@@ -383,51 +383,47 @@ public final class OpenApiBuilder {
     // ── Shared responses ──────────────────────────────────────────────────────
 
     /**
-     * Whatever answer more than one operation gives identically is written once under
-     * {@code components.responses} and referenced. Authentication and rate limiting say the same
-     * thing on every route they guard; the document should say it once.
+     * The answer a status is usually given is written once under {@code components.responses} and
+     * referenced. Authentication and rate limiting say the same thing on every route they guard;
+     * the document should say it once, under that status's own name. A route that answers the same
+     * status differently keeps its own wording, inline, rather than pushing a second name into the
+     * components.
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> hoistSharedResponses(Map<String, Object> renderedPaths) {
-        Map<Object, Integer> seen = new HashMap<>();
+        Map<String, Map<Object, Integer>> seen = new LinkedHashMap<>();
         for (Object pathItem : renderedPaths.values()) {
             for (Object operation : ((Map<String, Object>) pathItem).values()) {
                 Map<String, Object> responses = (Map<String, Object>) ((Map<String, Object>) operation).get("responses");
-                responses.forEach((status, response) -> seen.merge(key(status, response), 1, Integer::sum));
+                responses.forEach((status, response) ->
+                        seen.computeIfAbsent(status, s -> new LinkedHashMap<>()).merge(response, 1, Integer::sum));
             }
         }
 
-        Map<Object, String> names = new LinkedHashMap<>();
         Map<String, Object> shared = new LinkedHashMap<>();
+        Map<String, Object> hoisted = new LinkedHashMap<>();   // status to the one body that is shared
+        seen.forEach((status, bodies) -> {
+            Map.Entry<Object, Integer> commonest = bodies.entrySet().stream()
+                    .max(Map.Entry.comparingByValue()).orElseThrow();
+            if (commonest.getValue() < 2) return;
+            String name = reasonFor(Integer.parseInt(status)).replace(" ", "");
+            if (name.isEmpty() || shared.containsKey(name)) name = "Status" + status;
+            shared.put(name, commonest.getKey());
+            hoisted.put(status, name);
+        });
+
         for (Object pathItem : renderedPaths.values()) {
             for (Object operation : ((Map<String, Object>) pathItem).values()) {
                 Map<String, Object> responses = (Map<String, Object>) ((Map<String, Object>) operation).get("responses");
                 for (var response : responses.entrySet()) {
-                    Object key = key(response.getKey(), response.getValue());
-                    if (seen.getOrDefault(key, 0) < 2) continue;
-
-                    String name = names.get(key);
-                    if (name == null) {
-                        name = uniqueName(reasonFor(Integer.parseInt(response.getKey())), shared);
-                        names.put(key, name);
-                        shared.put(name, response.getValue());
+                    String name = (String) hoisted.get(response.getKey());
+                    if (name != null && shared.get(name).equals(response.getValue())) {
+                        response.setValue(Map.of("$ref", RESPONSE_REF + name));
                     }
-                    response.setValue(Map.of("$ref", RESPONSE_REF + name));
                 }
             }
         }
         return shared;
-    }
-
-    private static Object key(String status, Object response) {
-        return status + response;
-    }
-
-    private static String uniqueName(String reason, Map<String, Object> taken) {
-        String base = reason.isEmpty() ? "Response" : reason.replace(" ", "");
-        String name = base;
-        for (int i = 2; taken.containsKey(name); i++) name = base + i;
-        return name;
     }
 
     // ── Odds and ends ─────────────────────────────────────────────────────────
