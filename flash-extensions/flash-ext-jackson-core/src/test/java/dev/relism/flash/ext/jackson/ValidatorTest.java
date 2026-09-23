@@ -114,4 +114,15 @@ class ValidatorTest {
         assertTrue(validator.isEmpty());
         assertDoesNotThrow(() -> validator.verify(new Plain(null)));
     }
+
+    record Keyed(@jakarta.validation.constraints.Pattern(regexp = "[a-z.]+",
+            message = "uses lowercase letters and dots") String key) {}
+
+    @org.junit.jupiter.api.Test
+    void a_constraint_says_what_it_wants_in_its_own_words() {
+        ValidationException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                ValidationException.class, () -> Validator.check(new Keyed("Not A Key")));
+
+        org.junit.jupiter.api.Assertions.assertEquals("key uses lowercase letters and dots", refused.getMessage());
+    }
 }

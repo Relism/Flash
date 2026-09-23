@@ -178,25 +178,28 @@ public final class Validator {
         Class<?> type = field.getType();
         MethodHandle ref = type.isPrimitive() ? null : asReference(getter);
 
-        if (field.isAnnotationPresent(NotNull.class) && ref != null)
-            checks.add(Check.reference(Check.NOT_NULL, name, "must not be null", ref));
+        NotNull notNull = field.getAnnotation(NotNull.class);
+        if (notNull != null && ref != null)
+            checks.add(Check.reference(Check.NOT_NULL, name, said(notNull.message(), "must not be null"), ref));
 
-        if (field.isAnnotationPresent(NotBlank.class) && ref != null)
-            checks.add(Check.reference(Check.NOT_BLANK, name, "must not be blank", ref));
+        NotBlank notBlank = field.getAnnotation(NotBlank.class);
+        if (notBlank != null && ref != null)
+            checks.add(Check.reference(Check.NOT_BLANK, name, said(notBlank.message(), "must not be blank"), ref));
 
-        if (field.isAnnotationPresent(NotEmpty.class) && ref != null)
-            checks.add(Check.reference(Check.NOT_EMPTY, name, "must not be empty", ref));
+        NotEmpty notEmpty = field.getAnnotation(NotEmpty.class);
+        if (notEmpty != null && ref != null)
+            checks.add(Check.reference(Check.NOT_EMPTY, name, said(notEmpty.message(), "must not be empty"), ref));
 
         Size size = field.getAnnotation(Size.class);
         if (size != null && ref != null)
-            checks.add(Check.size(name, sizeMessage(size), ref, size.min(), size.max()));
+            checks.add(Check.size(name, said(size.message(), sizeMessage(size)), ref, size.min(), size.max()));
 
         Min min = field.getAnnotation(Min.class);
         Max max = field.getAnnotation(Max.class);
         if (min != null || max != null) {
             long lo = min != null ? min.value() : Long.MIN_VALUE;
             long hi = max != null ? max.value() : Long.MAX_VALUE;
-            String message = rangeMessage(min, max);
+            String message = said(min != null ? min.message() : max.message(), rangeMessage(min, max));
             if (isIntegralPrimitive(type)) {
                 checks.add(Check.rangePrimitive(name, message, asLong(getter), lo, hi));
             } else if (Number.class.isAssignableFrom(type) && ref != null) {
@@ -204,14 +207,15 @@ public final class Validator {
             }
         }
 
-        if (field.isAnnotationPresent(Email.class) && ref != null)
-            checks.add(Check.reference(Check.EMAIL, name, "must be a well-formed email address", ref));
+        Email email = field.getAnnotation(Email.class);
+        if (email != null && ref != null)
+            checks.add(Check.reference(Check.EMAIL, name, said(email.message(), "must be a well-formed email address"), ref));
 
         Pattern pattern = field.getAnnotation(Pattern.class);
         if (pattern != null && ref != null) {
             // ponytail: the one allocating check — Pattern.matcher() per call. The regex itself is
             // compiled once here; swap for a structural check if a hot route ever needs it.
-            checks.add(Check.pattern(name, "must match " + pattern.regexp(), ref,
+            checks.add(Check.pattern(name, said(pattern.message(), "must match " + pattern.regexp()), ref,
                     java.util.regex.Pattern.compile(pattern.regexp())));
         }
     }
@@ -226,6 +230,15 @@ public final class Validator {
 
     private static MethodHandle asLong(MethodHandle getter) {
         return getter.asType(MethodType.methodType(long.class, Object.class));
+    }
+
+    /**
+     * What a failure says: the constraint's own {@code message} when it sets one, and otherwise a
+     * plain description of the rule. Jakarta's defaults are bundle keys in braces, and a key is
+     * not something to put in front of whoever sent the request.
+     */
+    private static String said(String message, String otherwise) {
+        return message == null || message.isBlank() || message.startsWith("{") ? otherwise : message;
     }
 
     private static String sizeMessage(Size size) {

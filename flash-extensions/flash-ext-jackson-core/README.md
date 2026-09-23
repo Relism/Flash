@@ -38,6 +38,18 @@ public record NewUser(@NotBlank @Size(max = 80) String name, @Email String email
 Supported: `@NotNull`, `@NotBlank`, `@NotEmpty`, `@Size`, `@Min`, `@Max`, `@Email`, `@Pattern`.
 Jakarta semantics: only `@NotNull` rejects null, every other constraint passes it.
 
+A failure reads `<field> <message>`, and the message is the constraint's own when it sets one —
+which is how the person who sent the request is told something better than a regex:
+
+```java
+@Pattern(regexp = "[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}", message = "uses up to 255 letters, digits, _, . and -")
+String key
+```
+
+```json
+{"error": "key uses up to 255 letters, digits, _, . and -", "status": 422}
+```
+
 The constraints of a type are compiled the first time it is seen and kept in a `ClassValue`,
 beside the class itself — no map, no lock. A check reads the field through an exact-signature
 `MethodHandle`: no boxing, no argument array, no iterator, and nothing allocated at all unless
