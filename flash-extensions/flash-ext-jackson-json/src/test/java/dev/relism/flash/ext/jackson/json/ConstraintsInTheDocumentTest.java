@@ -33,7 +33,7 @@ class ConstraintsInTheDocumentTest {
 
     @GET("/accounts")
     @ApiOperation(summary = "List accounts")
-    @APIResponse(responseCode = "200", content = @Content(contentType = ContentType.JSON, schema = Account.class))
+    @APIResponse(responseCode = "200", content = @Content(schema = Account.class))
     public static class ListAccounts extends RequestHandler {
         @Override public Object handle(Request request, Response response) {
             return new Account("alice", "a@b.com", 30);

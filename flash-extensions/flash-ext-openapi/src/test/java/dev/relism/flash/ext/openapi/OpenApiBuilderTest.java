@@ -23,7 +23,7 @@ class OpenApiBuilderTest {
     @GET("/users/{id}")
     @ApiOperation(summary = "Get user")
     @Parameter(name = "expand", in = ParameterIn.QUERY, required = false, type = SchemaType.STRING, examples = {"roles", "permissions"})
-    @APIResponse(responseCode = "200", description = "User found", content = @Content(contentType = ContentType.JSON, schema = UserDto.class))
+    @APIResponse(responseCode = "200", description = "User found", content = @Content(schema = UserDto.class))
     static class GetUserHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
@@ -33,7 +33,7 @@ class OpenApiBuilderTest {
 
     @GET("/users")
     @ApiOperation(summary = "List users")
-    @APIResponse(responseCode = "200", content = @Content(contentType = ContentType.JSON, schema = UserDto.class, array = true))
+    @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, array = true))
     static class ListUsersHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
@@ -43,7 +43,7 @@ class OpenApiBuilderTest {
 
     @GET("/ping")
     @ApiOperation(summary = "Ping")
-    @APIResponse(responseCode = "204", description = "No content", content = @Content(contentType = ContentType.NONE))
+    @APIResponse(responseCode = "204", description = "No content")
     static class PingHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
@@ -167,6 +167,26 @@ class OpenApiBuilderTest {
     @ApiOperation(summary = "Secure too")
     static class SecondSecureHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @GET("/xml")
+    @dev.relism.flash.routing.Produces(ContentType.XML)
+    @ApiOperation(summary = "Answers XML")
+    static class XmlAnswerHandler extends RequestHandler {
+        @Override public UserDto handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void the_media_type_of_an_answer_is_the_handler_s_own() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(XmlAnswerHandler.class), XmlAnswerHandler.class.getAnnotation(ApiOperation.class), XmlAnswerHandler.class);
+
+        Map<String, Object> get = getOperation(b.build(), "/xml", "get");
+        Map<String, Object> responses = cast(get.get("responses"));
+        Map<String, Object> ok = cast(responses.get("200"));
+        Map<String, Object> content = cast(ok.get("content"));
+
+        assertTrue(content.containsKey("application/xml"), content.keySet().toString());
     }
 
     @Test
