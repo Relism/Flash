@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.jackson;
+package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.annotation.JsonView;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,16 +37,11 @@ class JsonTest {
     }
 
     @Test
-    void bodyFrom_parses_stream_and_maps_bad_payload_to_http_400() throws Exception {
+    void a_truncated_body_is_a_bad_request_too() throws Exception {
         Json json = new Json(new ObjectMapper());
 
-        Request ok = request("{\"id\":\"u2\",\"name\":\"bob\"}");
-        UserDto dto = json.bodyFrom(ok, UserDto.class);
-        assertEquals("u2", dto.id);
-        assertEquals("bob", dto.name);
+        HttpException ex = assertThrows(HttpException.class, () -> json.body(request("["), UserDto.class));
 
-        Request bad = request("[");
-        HttpException ex = assertThrows(HttpException.class, () -> json.bodyFrom(bad, UserDto.class));
         assertEquals(400, ex.status());
     }
 

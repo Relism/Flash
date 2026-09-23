@@ -1,6 +1,8 @@
-package dev.relism.flash.ext.jackson;
+package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.relism.flash.ext.jackson.Marshalling;
+import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.models.SimpleHandler;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.models.Request;
@@ -16,13 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class JacksonMiddlewareTest {
+class MarshallingTest {
 
     private static final Request REQ = null;
 
     @Test
-    void autoJson_marshalsPojo_toJsonBytes_and_setsJsonContentType() throws Exception {
-        JacksonMiddleware mw = new JacksonMiddleware(new ObjectMapper());
+    void marshalling_marshalsPojo_toJsonBytes_and_setsJsonContentType() throws Exception {
+        Middleware mw = Marshalling.of(new ObjectMapper(), ContentType.JSON);
         RequestHandler wrapped = wrap(mw, new UserDto("u1", "alice"));
         Response res = new Response(200, ContentType.TEXT_PLAIN);
 
@@ -34,8 +36,8 @@ class JacksonMiddlewareTest {
     }
 
     @Test
-    void autoJson_passThrough_for_response_string_charSequence_bytes_and_null() throws Exception {
-        JacksonMiddleware mw = new JacksonMiddleware(new ObjectMapper());
+    void marshalling_passThrough_for_response_string_charSequence_bytes_and_null() throws Exception {
+        Middleware mw = Marshalling.of(new ObjectMapper(), ContentType.JSON);
 
         Response payloadResponse = new Response(201, ContentType.TEXT_PLAIN).body("ok");
         RequestHandler wrappedResponse = wrap(mw, payloadResponse);
@@ -55,17 +57,17 @@ class JacksonMiddlewareTest {
     }
 
     @Test
-    void autoJson_wraps_serialization_errors_as_illegal_state() {
-        JacksonMiddleware mw = new JacksonMiddleware(new ObjectMapper());
+    void marshalling_wraps_serialization_errors_as_illegal_state() {
+        Middleware mw = Marshalling.of(new ObjectMapper(), ContentType.JSON);
         RequestHandler wrapped = wrap(mw, new CyclicDto());
         Response res = new Response(200, ContentType.TEXT_PLAIN);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> wrapped.handle(REQ, res));
         assertEquals("application/json", new String(res.getContentType(), StandardCharsets.UTF_8));
-        assertTrue(ex.getMessage().startsWith("Failed to serialize handler result as JSON:"));
+        assertTrue(ex.getMessage().startsWith("Could not serialize"));
     }
 
-    private static RequestHandler wrap(JacksonMiddleware mw, Object fixedReturn) {
+    private static RequestHandler wrap(Middleware mw, Object fixedReturn) {
         RequestHandler next = new RequestHandler() {
             @Override
             public Object handle(Request request, Response response) {
@@ -73,7 +75,7 @@ class JacksonMiddlewareTest {
             }
         };
         return new RequestHandler() {
-            private final SimpleHandler.FunctionalHandler delegate = mw.autoJson().wrap(next);
+            private final SimpleHandler.FunctionalHandler delegate = mw.wrap(next);
 
             @Override
             public Object handle(Request request, Response response) throws Exception {

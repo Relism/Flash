@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson;
 
 import dev.relism.flash.exceptions.HttpException;
 
@@ -14,7 +14,7 @@ public final class ValidationException extends HttpException {
 
     private final transient List<Violation> violations;
 
-    ValidationException(List<Violation> violations) {
+    public ValidationException(List<Violation> violations) {
         super(422, describe(violations));
         this.violations = List.copyOf(violations);
     }

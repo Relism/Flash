@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.jackson;
+package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.relism.flash.extension.FlashContext;
@@ -16,26 +16,25 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class JacksonExtensionTest {
+class JsonExtensionTest {
 
     @Test
     void configure_registers_json_mapper_and_middleware() {
         FlashContext ctx = new FlashContext();
         ObjectMapper mapper = new ObjectMapper();
-        JacksonExtension ext = new JacksonExtension(mapper);
+        JsonExtension ext = new JsonExtension(mapper);
 
         ext.configure(null, ctx);
         ctx.complete();
 
         assertNotNull(ctx.require(Json.class));
-        assertNotNull(ctx.require(JacksonMiddleware.class));
         assertSame(mapper, ctx.require(ObjectMapper.class));
     }
 
     @Test
-    void autoJson_factory_delegates_to_middleware_policy() throws Exception {
+    void auto_marshals_what_a_handler_returns() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        JacksonExtension ext = new JacksonExtension(mapper);
+        JsonExtension ext = new JsonExtension(mapper);
         RequestHandler next = new RequestHandler() {
             @Override
             public Object handle(Request request, Response response) {
@@ -43,7 +42,7 @@ class JacksonExtensionTest {
             }
         };
         RequestHandler wrapped = new RequestHandler() {
-            private final SimpleHandler.FunctionalHandler delegate = ext.autoJson().wrap(next);
+            private final SimpleHandler.FunctionalHandler delegate = ext.auto().wrap(next);
 
             @Override
             public Object handle(Request request, Response response) throws Exception {

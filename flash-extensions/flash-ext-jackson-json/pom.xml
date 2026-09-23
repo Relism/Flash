@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.relism</groupId>
+        <artifactId>flash-extensions</artifactId>
+        <version>2.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>flash-ext-jackson-json</artifactId>
+    <name>flash-ext-jackson-json</name>
+    <description>JSON bodies and responses: the Json codec, JsonHandler and the marshalling middleware.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-jackson-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The constraints a body declares are described by the published document too. -->
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-openapi</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

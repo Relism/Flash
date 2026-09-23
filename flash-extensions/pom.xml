@@ -14,7 +14,9 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>flash-ext-jackson</module>
+        <module>flash-ext-jackson-core</module>
+        <module>flash-ext-jackson-json</module>
+        <module>flash-ext-jackson-xml</module>
         <module>flash-ext-openapi</module>
         <module>flash-ext-security-core</module>
         <module>flash-ext-security-oidc</module>
@@ -30,7 +32,6 @@
         <module>flash-ext-vite</module>
         <module>flash-ext-vite-maven-plugin</module>
         <module>flash-ext-mcp</module>
-        <module>flash-ext-validation</module>
         <module>flash-ext-scheduler</module>
         <module>flash-ext-data-core</module>
         <module>flash-ext-data-jdbc</module>
@@ -41,11 +42,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-validation</artifactId>
-                <version>${project.version}</version>
-            </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
@@ -85,7 +81,17 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-jackson</artifactId>
+                <artifactId>flash-ext-jackson-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-jackson-json</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-jackson-xml</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -96,6 +102,11 @@
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
+                <version>2.17.2</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <artifactId>jackson-dataformat-xml</artifactId>
                 <version>2.17.2</version>
             </dependency>
             <dependency>

@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson;
 
 import java.lang.invoke.MethodHandle;
 import java.util.regex.Pattern;

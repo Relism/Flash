@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;

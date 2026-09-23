@@ -1,6 +1,5 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson.json;
 
-import dev.relism.flash.ext.jackson.JacksonExtension;
 import dev.relism.flash.testing.FlashTest;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
@@ -12,19 +11,18 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** The whole path: JSON in, constraints checked, status out — with no error handling wired up. */
-class ValidationRoutesTest {
+class ValidatedBodyTest {
 
     record CreateUser(@NotBlank @Size(max = 8) String name, @Email String email, @Min(18) int age) {}
 
     @RegisterExtension
     static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new JacksonExtension());
-        configured.install(new ValidationExtension());
+        configured.install(new JsonExtension());
 
         configured.ctx().onReady(() -> {
-            Validation validation = configured.ctx().require(Validation.class);
+            Json json = configured.ctx().require(Json.class);
             configured.post("/users", (req, res) ->
-                    res.status(201).body("created:" + validation.body(req, CreateUser.class).name()));
+                    res.status(201).body("created:" + json.body(req, CreateUser.class).name()));
         });
     });
 

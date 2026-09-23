@@ -1,6 +1,6 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson.json;
 
-import dev.relism.flash.ext.jackson.JacksonExtension;
+import dev.relism.flash.ext.jackson.json.JsonExtension;
 import dev.relism.flash.ext.openapi.APIResponse;
 import dev.relism.flash.ext.openapi.ApiOperation;
 import dev.relism.flash.ext.openapi.Content;
@@ -24,7 +24,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
  * describes them. Nothing registers this bridge — flash-ext-openapi picks the annotations up on
  * its own when they are on the classpath.
  */
-class ValidationOpenApiInteropTest {
+class ConstraintsInTheDocumentTest {
 
     record Account(
             @NotBlank @Size(max = 40) String name,
@@ -42,10 +42,9 @@ class ValidationOpenApiInteropTest {
 
     @RegisterExtension
     static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new JacksonExtension());
-        configured.install(new ValidationExtension());
-        configured.install(new OpenApiExtension("/openapi", "Accounts", "1.0.0"));
-        configured.scan("dev.relism.flash.ext.validation");
+        configured.install(new JsonExtension());
+                configured.install(new OpenApiExtension("/openapi", "Accounts", "1.0.0"));
+        configured.scan("dev.relism.flash.ext.jackson.json");
     });
 
     @Test

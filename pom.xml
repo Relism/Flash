@@ -59,6 +59,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+              Every module of this build, so anything composing Flash imports this POM once and
+              never names a version again. An extension left out here is one a consumer has to
+              pin by hand, which is how two versions of Flash end up on one classpath.
+            -->
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash</artifactId>
@@ -66,12 +71,47 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-testing</artifactId>
+                <artifactId>flash-ext-security-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-validation</artifactId>
+                <artifactId>flash-ext-security-apikey</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-security-form</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-security-oauth-server</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-security-test</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-data-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-data-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-data-hibernate</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -96,7 +136,17 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
-                <artifactId>flash-ext-jackson</artifactId>
+                <artifactId>flash-ext-jackson-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-jackson-json</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-jackson-xml</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

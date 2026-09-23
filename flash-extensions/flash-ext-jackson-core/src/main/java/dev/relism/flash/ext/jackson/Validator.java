@@ -1,4 +1,4 @@
-package dev.relism.flash.ext.validation;
+package dev.relism.flash.ext.jackson;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
@@ -31,10 +31,36 @@ public final class Validator {
 
     private static final Check[] NONE = new Check[0];
 
+    /**
+     * One compiled validator per type, kept beside the class itself: no map lookup, no lock, and
+     * the entry is collected with the class rather than pinning it.
+     */
+    private static final ClassValue<Validator> COMPILED = new ClassValue<>() {
+        @Override protected Validator computeValue(Class<?> type) {
+            return compile(type);
+        }
+    };
+
     private final Check[] checks;
 
     private Validator(Check[] checks) {
         this.checks = checks;
+    }
+
+    /** The constraints of {@code type}, compiled the first time it is seen and reused after. */
+    public static Validator of(Class<?> type) {
+        return COMPILED.get(type);
+    }
+
+    /**
+     * Verifies a value against its own type's constraints.
+     *
+     * @return {@code value}, so it can be used inline
+     * @throws ValidationException 422, listing every failure
+     */
+    public static <T> T check(T value) {
+        of(value.getClass()).verify(value);
+        return value;
     }
 
     /** True when the type declares no constraints at all — {@link #verify} is then a no-op. */
