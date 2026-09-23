@@ -2,8 +2,11 @@ package dev.relism.flash.models;
 
 import dev.relism.flash.extension.FlashApp;
 import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.extension.Inject;
 import dev.relism.flash.routing.Route;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.Optional;
 
 /**
@@ -22,8 +25,9 @@ import java.util.Optional;
  * </ol>
  *
  * <h3>Service access</h3>
- * Override {@link #onInit()} to cache services from the {@link FlashContext}
- * into private fields. This keeps the hot-path ({@code handle}) free of map lookups.
+ * Annotate a field with {@link Inject} and it is filled at boot, or override {@link #onInit()}
+ * to cache services from the {@link FlashContext} by hand. Either way the hot path
+ * ({@code handle}) reads a field and never the context.
  *
  * <pre>{@code
  * @GET("/users")
@@ -53,7 +57,39 @@ public abstract class RequestHandler {
      */
     public final void bind(FlashContext ctx) {
         this.ctx = ctx;
+        inject();
         onInit();
+    }
+
+    /** Fills every {@link Inject} field, this class's and its bases', before {@link #onInit}. */
+    private void inject() {
+        for (Class<?> type = getClass(); type != null && type != RequestHandler.class; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                if (!field.isAnnotationPresent(Inject.class)) continue;
+                String where = type.getSimpleName() + "." + field.getName();
+
+                // A static field would be shared by every handler, and a final one may already have
+                // been folded into the code that reads it. Both are refused rather than surprising.
+                if (Modifier.isStatic(field.getModifiers()))
+                    throw new IllegalStateException(where + " is static: an injected field belongs to the handler");
+                if (Modifier.isFinal(field.getModifiers()))
+                    throw new IllegalStateException(where + " is final: an injected field is written after construction");
+
+                Object service;
+                try {
+                    service = ctx.require(field.getType());
+                } catch (RuntimeException missing) {
+                    throw new IllegalStateException(where + " asks for " + field.getType().getSimpleName()
+                            + ", which nothing provides", missing);
+                }
+                try {
+                    field.setAccessible(true);
+                    field.set(this, service);
+                } catch (ReflectiveOperationException | RuntimeException unreachable) {
+                    throw new IllegalStateException("Could not write " + where, unreachable);
+                }
+            }
+        }
     }
 
     /**
