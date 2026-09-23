@@ -26,6 +26,8 @@ Every class-based route is documented, annotated or not. Read off the code:
 - **path parameters**, from `/{id}` in the route
 - **the request body**, from the handler's own body type (see below)
 - **the response schema**, from what `handle` returns — an object, a `List<T>`, a `Map<String, T>`
+- **the media types**: `@Consumes` for what it reads, `@Produces` for what it answers, which are
+  two different questions — taking a JSON body does not make the answer JSON
 - **error responses**, in the one shape Flash answers failures with: `{"error": "...", "status": 404}`
 - **security and rate limiting**, from the extensions that enforce them
 
@@ -53,8 +55,8 @@ requestBody:
       schema: { $ref: '#/components/schemas/NewUser' }
 ```
 
-The media type comes from `@Consumes` on the base class, so an XML handler documents itself as
-XML without a word from the route.
+The media type of the body comes from `@Consumes` on the base class, so an XML handler documents
+itself as XML without a word from the route.
 
 For a handler that reads the body by hand, or to describe it as something else, declare it:
 
@@ -83,13 +85,17 @@ The success response is inferred. Declare one only to say more:
 @APIResponse(responseCode = "200", description = "User found",
              content = @Content(schema = UserDto.class, example = "{\"id\":\"usr-1\"}"))
 @APIResponse(responseCode = "409", description = "That email is taken")
-@APIResponse(responseCode = "204", content = @Content(contentType = ContentType.NONE))
+@APIResponse(responseCode = "204", description = "Deleted")
 ```
 
 - `content.schema` omitted on a 2xx: the handler's return type.
-- Any 4xx or 5xx without an explicit schema: Flash's error object, referenced from `components`.
+- Any 4xx or 5xx without an explicit schema: Flash's error object, referenced from `components` —
+  in JSON, which is what Flash answers a failure with whatever the route produces.
 - `content.array = true` wraps whichever schema was chosen.
-- `contentType = NONE` documents a response with no body.
+- No schema and nothing to infer one from: a response with no body, which is what a 204 is.
+
+The media type of every answer is the handler's `@Produces`, JSON when nothing says otherwise. It
+is not on `@Content`: one handler answers in one format, and a status code does not change that.
 
 **A response several operations share is written once.** Identical answers — the 401 of every
 guarded route, the 429 of every limited one — become `components.responses` entries referenced by

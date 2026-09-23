@@ -5,6 +5,7 @@ import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.models.BodyHandler;
 import dev.relism.flash.routing.Consumes;
+import dev.relism.flash.routing.Produces;
 import dev.relism.flash.routing.Route;
 
 import java.lang.annotation.Annotation;
@@ -230,15 +231,13 @@ public final class OpenApiBuilder {
         response.put("description", declared.description().isEmpty() ? reasonFor(status) : declared.description());
 
         Content content = declared.content();
-        if (content.contentType() == ContentType.NONE) return response;
-
         Map<String, Object> schema = schemaFor(content, status, handlerClass);
-        if (schema == null) return response;
+        if (schema == null) return response;   // nothing to describe: a response with no body
 
         Map<String, Object> media = new LinkedHashMap<>();
         media.put("schema", schema);
         if (!content.example().isEmpty()) media.put("example", content.example());
-        response.put("content", Map.of(mediaTypeOf(content.contentType()), media));
+        response.put("content", Map.of(mediaTypeOf(producedBy(handlerClass)), media));
         return response;
     }
 
@@ -259,8 +258,19 @@ public final class OpenApiBuilder {
     private Map<String, Object> inferredResponse(Class<?> handlerClass) {
         Map<String, Object> response = new LinkedHashMap<>(Map.of("description", reasonFor(200)));
         Map<String, Object> schema = returnSchema(handlerClass);
-        if (schema != null) response.put("content", Map.of(mediaTypeOf(ContentType.JSON), Map.of("schema", schema)));
+        if (schema != null) {
+            response.put("content", Map.of(mediaTypeOf(producedBy(handlerClass)), Map.of("schema", schema)));
+        }
         return response;
+    }
+
+    /**
+     * What this handler answers in. {@code @Consumes} says what it reads, which is a different
+     * question: taking a JSON body does not make the answer JSON.
+     */
+    private static ContentType producedBy(Class<?> handlerClass) {
+        Produces produces = handlerClass.getAnnotation(Produces.class);
+        return produces == null ? ContentType.JSON : produces.value();
     }
 
     /** The schema of whatever {@code handle} gives back, or null when it says nothing useful. */
@@ -336,7 +346,7 @@ public final class OpenApiBuilder {
         // A status a contributor added is a failure Flash answers in its own shape.
         if (status >= 400 && !response.containsKey("content")) {
             response.put("content", Map.of(mediaTypeOf(ContentType.JSON), Map.of("schema", errorSchema())));
-        }
+        }   // Flash answers a failure in JSON whatever the route produces
     }
 
     private void applyContributorSecurity(Map<String, Object> operation, Class<?> handlerClass,
