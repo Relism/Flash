@@ -220,6 +220,24 @@ class OpenApiBuilderTest {
         assertEquals("array", schema.get("type"));
     }
 
+    @GET("/internal")
+    @Undocumented
+    static class InternalHandler extends RequestHandler {
+        @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void a_route_that_says_it_is_not_part_of_the_api_is_left_out() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(InternalHandler.class), null, InternalHandler.class);
+        b.addOperation(OpenApiBuilder.routeOf(BareHandler.class), null, BareHandler.class);
+
+        Map<String, Object> paths = cast(b.build().get("paths"));
+
+        assertFalse(paths.containsKey("/internal"));
+        assertTrue(paths.containsKey("/bare"), "the others are still documented");
+    }
+
     @Test
     void a_route_with_no_annotations_is_still_documented() {
         OpenApiBuilder b = new OpenApiBuilder();

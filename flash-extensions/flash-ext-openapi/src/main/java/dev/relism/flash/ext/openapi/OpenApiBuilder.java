@@ -65,8 +65,13 @@ public final class OpenApiBuilder {
     public OpenApiBuilder description(String description) { this.description = description; return this; }
     void setContributorRegistry(OpenApiContributorRegistry registry) { this.contributorRegistry = registry; }
 
-    /** Documents one route. {@code op} is optional: a route without it is still an operation. */
+    /**
+     * Documents one route. {@code op} is optional: a route without it is still an operation.
+     * A handler marked {@link Undocumented} is left out entirely.
+     */
     public void addOperation(Route route, ApiOperation op, Class<?> handlerClass) {
+        if (handlerClass.isAnnotationPresent(Undocumented.class)) return;
+
         String path = normalizePath(route.path());
         String method = route.method().name().toLowerCase(Locale.ROOT);
 

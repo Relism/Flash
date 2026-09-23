@@ -33,6 +33,18 @@ Every class-based route is documented, annotated or not. Read off the code:
 
 Annotations add what the code cannot say: prose, extra statuses, examples. They never repeat it.
 
+## Leaving a route out
+
+```java
+@GET("/healthz")
+@Undocumented
+public final class Health extends RequestHandler { ... }
+```
+
+Every route is documented, so a document never lies by omission. `@Undocumented` says a route is
+not part of the API — a health check, an internal callback, something on its way out. On a base
+class it leaves out every handler written against it.
+
 ## Request bodies
 
 A handler that extends `BodyHandler` — `JsonHandler` and `XmlHandler`, and anything else that
