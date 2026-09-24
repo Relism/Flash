@@ -1,5 +1,6 @@
 package dev.relism.flash.ext.openapi;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
@@ -11,18 +12,21 @@ import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.routing.Route;
 
+import java.nio.charset.StandardCharsets;
+
 /**
- * Generates and serves an OpenAPI 3.0 spec and Swagger UI under a configurable base path.
+ * Generates and serves an OpenAPI 3.0 spec, and the documentation page that reads it, under a
+ * configurable base path.
  *
  * <p>Given {@code basePath = "/openapi"} (the default), three routes are registered:
  * <ul>
- *   <li>{@code GET /openapi.json}    — OpenAPI 3.0 spec as JSON</li>
- *   <li>{@code GET /openapi.yaml}    — OpenAPI 3.0 spec as YAML</li>
- *   <li>{@code GET /openapi/swagger} — Swagger UI pointing at {@code /openapi.json}</li>
+ *   <li>{@code GET /openapi.json} — OpenAPI 3.0 spec as JSON</li>
+ *   <li>{@code GET /openapi.yaml} — the same document as YAML</li>
+ *   <li>{@code GET /openapi/docs} — the {@link Ui}, Swagger UI unless another is chosen</li>
  * </ul>
  *
- * <p>If {@code flash-ext-jackson} is installed, this extension reuses its
- * {@link ObjectMapper}. Otherwise it uses a local default mapper.
+ * <p>If {@code flash-ext-jackson} is installed, this extension reuses its {@link ObjectMapper}.
+ * Otherwise it uses a local default mapper.
  *
  * <p>Every class-based route is collected at boot, whether or not it is annotated: a path, the
  * body its handler takes and what it returns are already in the code. {@link ApiOperation} adds
@@ -31,18 +35,19 @@ import dev.relism.flash.routing.Route;
  * <pre>{@code
  * FlashApp.create(8080)
  *     .install(new JacksonExtension())
- *     .install(new OpenApiExtension("/openapi", "My API", "2.0.0"))
+ *     .install(new OpenApiExtension("/openapi", "My API", "2.0.0").ui(Ui.scalar()))
  *     .start();
  * }</pre>
  */
 public class OpenApiExtension implements FlashExtension {
 
-    private static final String YAML_CONTENT_TYPE = "application/yaml";
+    private static final byte[] YAML_CONTENT_TYPE = "application/yaml".getBytes(StandardCharsets.UTF_8);
 
     private final String basePath;
     private final String title;
     private final String version;
     private final String description;
+    private Ui<?> ui = Ui.swagger();
 
     public OpenApiExtension() {
         this("/openapi", "API", "1.0.0", "");
@@ -63,6 +68,12 @@ public class OpenApiExtension implements FlashExtension {
         this.description = description;
     }
 
+    /** Which documentation page to serve, {@link Ui#swagger()} by default; {@link Ui#none()} serves none. */
+    public OpenApiExtension ui(Ui<?> ui) {
+        this.ui = ui;
+        return this;
+    }
+
     // ── FlashExtension ────────────────────────────────────────────────────────
 
     @Override
@@ -78,46 +89,47 @@ public class OpenApiExtension implements FlashExtension {
         // This guarantees full runtime paths (namespaces/prefixes/rewrites) in the spec.
         ctx.addRouteListener(event -> addOperationFromEvent(builder, event));
         ctx.onReady(() -> {
-            ObjectMapper jsonMapper = ctx.find(ObjectMapper.class).orElseGet(() -> JsonMapper.builder().build());
-            YAMLMapper   yamlMapper = new YAMLMapper();
-            OpenApiBuilder resolvedBuilder = ctx.require(OpenApiBuilder.class);
+            ObjectMapper json = ctx.find(ObjectMapper.class).orElseGet(() -> JsonMapper.builder().build());
+            OpenApiBuilder spec = ctx.require(OpenApiBuilder.class);
+            String jsonPath = basePath + ".json";
 
-        String jsonPath    = basePath + ".json";
-        String yamlPath    = basePath + ".yaml";
-        String swaggerPath = basePath + "/swagger";
-        String swaggerHtml = buildSwaggerHtml(jsonPath);
+            Document asJson = new Document(json, spec);
+            Document asYaml = new Document(new YAMLMapper(), spec);
+            app.get(jsonPath,           (req, res) -> { res.type(ContentType.JSON).body(asJson.bytes());  return null; });
+            app.get(basePath + ".yaml", (req, res) -> { res.type(YAML_CONTENT_TYPE).body(asYaml.bytes()); return null; });
 
-        app.get(jsonPath,    (req, res) -> { res.type(ContentType.JSON);     return jsonMapper.writeValueAsString(resolvedBuilder.build()); });
-        app.get(yamlPath,    (req, res) -> { res.type(YAML_CONTENT_TYPE);              return yamlMapper.writeValueAsString(resolvedBuilder.build()); });
-            app.get(swaggerPath, (req, res) -> { res.type(ContentType.TEXT_HTML); return swaggerHtml; });
+            if (ui == null) return;
+            byte[] page = ui.page(jsonPath, title, json);
+            app.get(basePath + "/docs", (req, res) -> { res.type(ContentType.TEXT_HTML).body(page); return null; });
         });
     }
 
-    // ── Swagger UI HTML ───────────────────────────────────────────────────────
+    /**
+     * The document encoded once per revision. Routes are collected after the ready callbacks, so
+     * the first request is what renders it; from then on the same array is handed out, and a
+     * request allocates nothing. Two first requests at once encode the same bytes twice, which is
+     * cheaper than the lock that would prevent it; the bytes are written before the revision that
+     * publishes them, so a reader that sees the revision sees the whole array.
+     */
+    private static final class Document {
 
-    private static String buildSwaggerHtml(String specJsonPath) {
-        return "<!DOCTYPE html>\n" +
-               "<html lang=\"en\">\n" +
-               "<head>\n" +
-               "  <meta charset=\"UTF-8\">\n" +
-               "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
-               "  <title>Swagger UI</title>\n" +
-               "  <link rel=\"stylesheet\" href=\"https://unpkg.com/swagger-ui-dist@5/swagger-ui.css\">\n" +
-               "</head>\n" +
-               "<body>\n" +
-               "<div id=\"swagger-ui\"></div>\n" +
-               "<script src=\"https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js\"></script>\n" +
-               "<script>\n" +
-               "SwaggerUIBundle({\n" +
-               "  url: \"" + specJsonPath + "\",\n" +
-               "  dom_id: '#swagger-ui',\n" +
-               "  deepLinking: true,\n" +
-               "  presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],\n" +
-               "  layout: \"BaseLayout\"\n" +
-               "});\n" +
-               "</script>\n" +
-               "</body>\n" +
-                "</html>";
+        private final ObjectMapper mapper;
+        private final OpenApiBuilder spec;
+        private volatile byte[] encoded;
+        private volatile int revision = -1;
+
+        Document(ObjectMapper mapper, OpenApiBuilder spec) {
+            this.mapper = mapper;
+            this.spec = spec;
+        }
+
+        byte[] bytes() throws JsonProcessingException {
+            if (revision != spec.revision()) {
+                encoded = mapper.writeValueAsBytes(spec.build());
+                revision = spec.revision();
+            }
+            return encoded;
+        }
     }
 
     /** Every class-based route is an operation; {@link ApiOperation} only adds what the code cannot say. */

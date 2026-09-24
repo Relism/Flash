@@ -12,7 +12,7 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: the codec, the body handler, the constraints a body is checked against |
 | `flash-extensions/flash-ext-jackson-json` | JSON bodies and responses |
 | `flash-extensions/flash-ext-jackson-xml` | XML bodies and responses |
-| `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec + Swagger UI |
+| `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec, read by Swagger UI, Redoc or Scalar |
 | `flash-extensions/flash-ext-security-core` | Security: authentication chain, annotations, sessions, OpenAPI |
 | `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |
 | `flash-extensions/flash-ext-security-apikey` | API keys |
