@@ -128,6 +128,25 @@ Field-level exclusion: `@Schema(hidden = true)`, `@SchemaProperty(hidden = true)
 `@NotBlank`, `@NotEmpty`, `@Size`, `@Min`, `@Max`, `@Email`, `@Pattern`) become the schema's own
 bounds and required fields, so a rule is written once and documented for free.
 
+A `@Pattern` that declares a message says it in the description too, after whatever the property
+already said: a regex is precise and unreadable, and both belong in the document.
+
+```java
+@SchemaProperty(description = "Unique in the project.")
+@Pattern(regexp = "[a-z.]+", message = "uses lowercase letters and dots")
+String key
+```
+
+```yaml
+key:
+  type: string
+  description: Unique in the project. Uses lowercase letters and dots.
+  pattern: '[a-z.]+'
+```
+
+No other constraint does this: `required`, `maxLength` and `format: email` are already readable,
+and repeating them as prose would be noise.
+
 ## Contributor API
 
 OpenAPI is extension-agnostic. Other extensions contribute through `OpenApiContributor`, held in

@@ -226,6 +226,40 @@ class OpenApiBuilderTest {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
+    @Schema(name = "Keyed")
+    static class KeyedDto {
+        @SchemaProperty(description = "Unique in the project.")
+        @jakarta.validation.constraints.Pattern(regexp = "[a-z.]+", message = "uses lowercase letters and dots")
+        public String key;
+
+        @jakarta.validation.constraints.Pattern(regexp = "[0-9]+")
+        public String code;
+    }
+
+    @GET("/keyed")
+    @ApiOperation(summary = "Keyed")
+    @APIResponse(responseCode = "200", content = @Content(schema = KeyedDto.class))
+    static class KeyedHandler extends RequestHandler {
+        @Override public Object handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void a_pattern_says_in_words_what_its_regex_says_in_symbols() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(OpenApiBuilder.routeOf(KeyedHandler.class), KeyedHandler.class.getAnnotation(ApiOperation.class), KeyedHandler.class);
+
+        Map<String, Object> components = cast(b.build().get("components"));
+        Map<String, Object> schemas = cast(components.get("schemas"));
+        Map<String, Object> keyed = cast(schemas.get("Keyed"));
+        Map<String, Object> properties = cast(keyed.get("properties"));
+        Map<String, Object> key = cast(properties.get("key"));
+        Map<String, Object> code = cast(properties.get("code"));
+
+        assertEquals("Unique in the project. Uses lowercase letters and dots.", key.get("description"));
+        assertEquals("[a-z.]+", key.get("pattern"));
+        assertFalse(code.containsKey("description"), "a pattern with no message of its own says nothing extra");
+    }
+
     @Test
     void a_route_that_says_it_is_not_part_of_the_api_is_left_out() {
         OpenApiBuilder b = new OpenApiBuilder();

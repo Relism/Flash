@@ -64,7 +64,10 @@ final class ConstraintHints {
         if (field.isAnnotationPresent(Email.class)) property.putIfAbsent("format", "email");
 
         Pattern pattern = field.getAnnotation(Pattern.class);
-        if (pattern != null) property.putIfAbsent("pattern", pattern.regexp());
+        if (pattern != null) {
+            property.putIfAbsent("pattern", pattern.regexp());
+            describe(property, pattern.message());
+        }
 
         if (field.isAnnotationPresent(NotBlank.class) && isString) property.putIfAbsent("minLength", 1);
         if (field.isAnnotationPresent(NotEmpty.class)) {
@@ -78,6 +81,25 @@ final class ConstraintHints {
     }
 
     /** Constraint annotations this bridge understands, for documentation and tests. */
+    /**
+     * Says in words what a regex says in symbols.
+     *
+     * <p>Only {@code @Pattern} needs this: every other constraint has a keyword a reader
+     * understands — {@code required}, {@code maxLength}, {@code format: email} — and repeating it
+     * as prose would be noise. A regex has none, so the rule's own message goes in the
+     * description beside it, after whatever the property already said.
+     */
+    private static void describe(Map<String, Object> property, String message) {
+        if (message == null || message.isBlank() || message.startsWith("{")) return;   // jakarta's default is a bundle key
+
+        String sentence = Character.toUpperCase(message.charAt(0)) + message.substring(1);
+        if (!sentence.endsWith(".")) sentence += ".";
+
+        Object said = property.get("description");
+        if (said == null) property.put("description", sentence);
+        else if (!said.toString().contains(sentence)) property.put("description", said + " " + sentence);
+    }
+
     static List<String> supported() {
         return List.of("@NotNull", "@NotBlank", "@NotEmpty", "@Size", "@Min", "@Max", "@Email", "@Pattern");
     }
