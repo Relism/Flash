@@ -115,7 +115,7 @@ and **instead of** calling it on rejected requests. This means:
   avoid this by not setting these headers manually).
 - On 429, the handler body is never executed — no side effects occur.
 
-## Integration with Swagger UI (flash-ext-openapi)
+## Integration with OpenAPI (flash-ext-openapi)
 
 When `flash-ext-openapi` is installed, handlers annotated with `@Limit` automatically
 contribute rate-limit response headers to generated OpenAPI responses:

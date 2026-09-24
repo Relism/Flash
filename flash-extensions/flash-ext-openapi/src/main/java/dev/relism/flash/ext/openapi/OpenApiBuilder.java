@@ -65,6 +65,9 @@ public final class OpenApiBuilder {
     public OpenApiBuilder description(String description) { this.description = description; return this; }
     void setContributorRegistry(OpenApiContributorRegistry registry) { this.contributorRegistry = registry; }
 
+    /** Bumped by every operation added, so a rendering of this document knows whether it is still current. */
+    int revision() { return revision; }
+
     /**
      * Documents one route. {@code op} is optional: a route without it is still an operation.
      * A handler marked {@link Undocumented} is left out entirely.

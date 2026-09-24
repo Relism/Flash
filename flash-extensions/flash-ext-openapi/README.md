@@ -1,7 +1,7 @@
 # flash-ext-openapi
 
-OpenAPI 3.0.3 generation and Swagger UI, built from what the handlers already say about
-themselves.
+OpenAPI 3.0.3 generation and a documentation page, built from what the handlers already say
+about themselves.
 
 ## What it provides
 
@@ -9,7 +9,7 @@ themselves.
 |---|---|
 | `GET /openapi.json` | OpenAPI spec JSON |
 | `GET /openapi.yaml` | OpenAPI spec YAML |
-| `GET /openapi/swagger` | Swagger UI |
+| `GET /openapi/docs` | The documentation page: Swagger UI, Redoc or Scalar |
 
 ```java
 FlashApp.create(8080)
@@ -18,6 +18,32 @@ FlashApp.create(8080)
     .scan("com.acme.handlers")
     .startAndBlock();
 ```
+
+Both documents are encoded once, on the first request, and served as those same bytes afterwards.
+
+## The documentation page
+
+Swagger UI by default; Redoc and Scalar are one call away, and `Ui.none()` serves no page at all.
+Each is loaded from jsDelivr at a pinned version, and configured with its own options:
+
+```java
+new OpenApiExtension("/openapi", "My API", "1.0.0")
+    .ui(Ui.scalar().theme(Ui.Scalar.Theme.DEEP_SPACE).layout(Ui.Scalar.Layout.CLASSIC)
+                   .darkMode(true).hideModels(true))
+```
+
+| | Named options |
+|---|---|
+| `Ui.swagger()` | `docExpansion`, `modelsExpandDepth`, `deepLinking`, `filter`, `tryItOut`, `persistAuthorization`, `syntaxTheme`, `sortAlphabetically` |
+| `Ui.redoc()` | `hideDownloadButton`, `disableSearch`, `requiredPropsFirst`, `sortPropsAlphabetically`, `jsonSampleExpandLevel`, `hideSchemaTitles`, `pathInMiddlePanel`, `hideHostname`, `nativeScrollbars`, `menuToggle` |
+| `Ui.scalar()` | `theme`, `layout`, `darkMode`, `hideDarkModeToggle`, `hideModels`, `hideSearch`, `hideTestRequestButton`, `hideClientButton`, `showSidebar`, `defaultOpenAllTags`, `sortOperationsBy` |
+
+The names are the bundles' own, so their documentation is the reference. What is not named here
+still gets through — `option("theme", Map.of("colors", …))` passes Redoc a whole theme object.
+Two more apply to all three: `customCss(…)`, appended to the page, and `cdn(…)`, which points the
+bundle at a mirror, a proxy, or files the application serves itself.
+
+The page is rendered once, at boot.
 
 ## What you get without writing anything
 

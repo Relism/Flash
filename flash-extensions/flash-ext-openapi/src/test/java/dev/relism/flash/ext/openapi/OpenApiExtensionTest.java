@@ -23,6 +23,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenApiExtensionTest {
@@ -37,35 +40,83 @@ class OpenApiExtensionTest {
         }
     }
 
+    /** Routes are collected after the ready callbacks, so the document is rendered by the first request. */
+    private static byte[] body(TestRegistrar app, String path) throws Exception {
+        Response res = new Response(200, ContentType.NONE);
+        assertNull(app.route(HttpMethod.GET, path).handle(null, res));
+        return res.getBody();
+    }
+
     @Test
-    void provide_collects_operations_and_routes_serve_json_yaml_swagger() throws Exception {
+    void serves_the_document_as_json_and_yaml_and_the_page_that_reads_it() throws Exception {
         FlashContext ctx = new FlashContext();
-        OpenApiExtension ext = new OpenApiExtension("/docs", "My API", "2.0.0", "desc");
+        OpenApiExtension ext = new OpenApiExtension("/api", "My API", "2.0.0", "desc");
         TestRegistrar app = new TestRegistrar(ctx);
         ext.configure(app, ctx);
-        emitRoute(ctx, HttpMethod.GET, "/health", "/", HealthHandler.class);
         ctx.complete();
+        emitRoute(ctx, HttpMethod.GET, "/health", "/", HealthHandler.class);
 
-        assertNotNull(app.route(HttpMethod.GET, "/docs.json"));
-        assertNotNull(app.route(HttpMethod.GET, "/docs.yaml"));
-        assertNotNull(app.route(HttpMethod.GET, "/docs/swagger"));
-
-        Response jsonRes = new Response(200, ContentType.NONE);
-        Object jsonBody = app.route(HttpMethod.GET, "/docs.json").handle(null, jsonRes);
-        assertEquals(new String(ContentType.JSON.getBytes()), new String(jsonRes.getContentType()));
-        assertTrue(String.valueOf(jsonBody).contains("\"openapi\":\"3.0.3\""));
-        assertTrue(String.valueOf(jsonBody).contains("\"title\":\"My API\""));
+        Response res = new Response(200, ContentType.NONE);
+        app.route(HttpMethod.GET, "/api.json").handle(null, res);
+        assertEquals(new String(ContentType.JSON.getBytes()), new String(res.getContentType()));
+        String json = new String(res.getBody());
+        assertTrue(json.contains("\"openapi\":\"3.0.3\""));
+        assertTrue(json.contains("\"title\":\"My API\""));
+        assertTrue(json.contains("/health"));
 
         Response yamlRes = new Response(200, ContentType.NONE);
-        Object yamlBody = app.route(HttpMethod.GET, "/docs.yaml").handle(null, yamlRes);
+        app.route(HttpMethod.GET, "/api.yaml").handle(null, yamlRes);
         assertEquals("application/yaml", new String(yamlRes.getContentType()));
-        assertTrue(String.valueOf(yamlBody).contains("openapi: \"3.0.3\""));
+        assertTrue(new String(yamlRes.getBody()).contains("openapi: \"3.0.3\""));
 
-        Response swaggerRes = new Response(200, ContentType.NONE);
-        Object swaggerBody = app.route(HttpMethod.GET, "/docs/swagger").handle(null, swaggerRes);
-        assertEquals(new String(ContentType.TEXT_HTML.getBytes()), new String(swaggerRes.getContentType()));
-        assertTrue(String.valueOf(swaggerBody).contains("SwaggerUIBundle"));
-        assertTrue(String.valueOf(swaggerBody).contains("/docs.json"));
+        Response page = new Response(200, ContentType.NONE);
+        app.route(HttpMethod.GET, "/api/docs").handle(null, page);
+        assertEquals(new String(ContentType.TEXT_HTML.getBytes()), new String(page.getContentType()));
+        assertTrue(new String(page.getBody()).contains("SwaggerUIBundle"));
+        assertTrue(new String(page.getBody()).contains("/api.json"));
+    }
+
+    @Test
+    void the_chosen_ui_replaces_the_default_one() throws Exception {
+        FlashContext ctx = new FlashContext();
+        TestRegistrar app = new TestRegistrar(ctx);
+        new OpenApiExtension("/api").ui(Ui.scalar().theme(Ui.Scalar.Theme.MOON)).configure(app, ctx);
+        ctx.complete();
+
+        String page = new String(body(app, "/api/docs"));
+        assertTrue(page.contains("Scalar.createApiReference"));
+        assertTrue(page.contains("\"theme\":\"moon\""));
+    }
+
+    @Test
+    void no_ui_leaves_the_document_and_nothing_else() {
+        FlashContext ctx = new FlashContext();
+        TestRegistrar app = new TestRegistrar(ctx);
+        new OpenApiExtension("/api").ui(Ui.none()).configure(app, ctx);
+        ctx.complete();
+
+        assertNotNull(app.route(HttpMethod.GET, "/api.json"));
+        assertNotNull(app.route(HttpMethod.GET, "/api.yaml"));
+        assertNull(app.route(HttpMethod.GET, "/api/docs"));
+    }
+
+    /** Encoded once and handed out as it is, until a route the document does not have yet arrives. */
+    @Test
+    void the_encoded_document_is_reused_until_an_operation_is_added() throws Exception {
+        FlashContext ctx = new FlashContext();
+        OpenApiExtension ext = new OpenApiExtension("/api");
+        TestRegistrar app = new TestRegistrar(ctx);
+        ext.configure(app, ctx);
+        ctx.complete();
+        emitRoute(ctx, HttpMethod.GET, "/health", "/", HealthHandler.class);
+
+        byte[] first = body(app, "/api.json");
+        assertSame(first, body(app, "/api.json"));
+
+        emitRoute(ctx, HttpMethod.GET, "/users", "/", ScopedUsersHandler.class);
+        byte[] second = body(app, "/api.json");
+        assertNotSame(first, second);
+        assertTrue(new String(second).contains("/users"));
     }
 
     @Test
@@ -80,8 +131,8 @@ class OpenApiExtensionTest {
         ctx.complete();
 
         Response jsonRes = new Response(200, ContentType.NONE);
-        Object jsonBody = app.route(HttpMethod.GET, "/openapi.json").handle(null, jsonRes);
-        assertTrue(String.valueOf(jsonBody).contains("\"openapi\":\"3.0.3\""));
+        app.route(HttpMethod.GET, "/openapi.json").handle(null, jsonRes);
+        assertTrue(new String(jsonRes.getBody()).contains("\"openapi\":\"3.0.3\""));
     }
 
     @GET("/users")
