@@ -3,9 +3,7 @@ package dev.relism.flash.ext.openapi;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
-import dev.relism.flash.models.BodyHandler;
-import dev.relism.flash.routing.Consumes;
-import dev.relism.flash.routing.Produces;
+import dev.relism.flash.models.TypedHandler;
 import dev.relism.flash.routing.Route;
 
 import java.lang.annotation.Annotation;
@@ -63,7 +61,10 @@ public final class OpenApiBuilder {
     public OpenApiBuilder title(String title) { this.title = title; return this; }
     public OpenApiBuilder version(String version) { this.version = version; return this; }
     public OpenApiBuilder description(String description) { this.description = description; return this; }
-    void setContributorRegistry(OpenApiContributorRegistry registry) { this.contributorRegistry = registry; }
+    void setContributorRegistry(OpenApiContributorRegistry registry) {
+        this.contributorRegistry = registry;
+        schemas.setContributorRegistry(registry);
+    }
 
     /** Bumped by every operation added, so a rendering of this document knows whether it is still current. */
     int revision() { return revision; }
@@ -191,17 +192,17 @@ public final class OpenApiBuilder {
 
     // ── Request body ──────────────────────────────────────────────────────────
 
-    /** From {@link RequestBody}, or from the body type the handler declares in its own signature. */
+    /** From {@link RequestBody}, or from the type the handler names as its input. */
     private void requestBody(Map<String, Object> operation, Class<?> handlerClass) {
         RequestBody declared = handlerClass.getAnnotation(RequestBody.class);
-        Class<?> type = declared != null ? declared.value() : BodyHandler.bodyTypeOf(handlerClass);
-        if (type == null || type == Void.class || type == Object.class) return;
+        Type type = declared != null ? declared.value()
+                : TypedHandler.typeArgument(handlerClass, TypedHandler.class, 0);
+        Class<?> raw = Schemas.rawType(type);
+        if (raw == null || raw == Void.class || raw == Object.class) return;
 
-        Consumes consumes = handlerClass.getAnnotation(Consumes.class);
-        ContentType contentType = declared != null ? declared.contentType()
-                : consumes != null ? consumes.value() : ContentType.JSON;
+        ContentType contentType = declared != null ? declared.contentType() : consumedBy(handlerClass);
 
-        Map<String, Object> schema = schemas.referenceFor(type);
+        Map<String, Object> schema = schemas.schemaForType(type);
         if (declared != null && declared.array()) schema = arrayOf(schema);
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -273,17 +274,38 @@ public final class OpenApiBuilder {
     }
 
     /**
-     * What this handler answers in. {@code @Consumes} says what it reads, which is a different
-     * question: taking a JSON body does not make the answer JSON.
+     * What this handler answers in. What it reads is a different question: taking a JSON body does
+     * not make the answer JSON.
      */
-    private static ContentType producedBy(Class<?> handlerClass) {
+    private ContentType producedBy(Class<?> handlerClass) {
+        ContentType contributed = contributedMediaType(handlerClass, false);
+        if (contributed != null) return contributed;
         Produces produces = handlerClass.getAnnotation(Produces.class);
         return produces == null ? ContentType.JSON : produces.value();
     }
 
-    /** The schema of whatever {@code handle} gives back, or null when it says nothing useful. */
+    private ContentType consumedBy(Class<?> handlerClass) {
+        ContentType contributed = contributedMediaType(handlerClass, true);
+        if (contributed != null) return contributed;
+        Consumes consumes = handlerClass.getAnnotation(Consumes.class);
+        return consumes == null ? ContentType.JSON : consumes.value();
+    }
+
+    /** A handler whose codecs are in its signature is described by them, not by an annotation. */
+    private ContentType contributedMediaType(Class<?> handlerClass, boolean request) {
+        for (OpenApiContributor contributor : contributors()) {
+            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
+            if (contribution == null) continue;
+            ContentType contributed = request ? contribution.consumes() : contribution.produces();
+            if (contributed != null) return contributed;
+        }
+        return null;
+    }
+
+    /** The type the handler names as its answer, or what its {@code handle} gives back. */
     private Map<String, Object> returnSchema(Class<?> handlerClass) {
-        Type returned = returnTypeOf(handlerClass);
+        Type returned = TypedHandler.typeArgument(handlerClass, TypedHandler.class, 1);
+        if (returned == null) returned = returnTypeOf(handlerClass);
         Class<?> raw = Schemas.rawType(returned);
         if (raw == null || raw == Object.class || raw == Void.class || raw == void.class) return null;
         if (raw.getName().equals("dev.relism.flash.models.Response")) return null;
@@ -293,8 +315,8 @@ public final class OpenApiBuilder {
     }
 
     /**
-     * The {@code handle} a handler writes itself, not the one its base class fixes: a handler that
-     * takes a body implements the three-argument one, and that is where its return type is.
+     * The {@code handle} a handler writes itself, for one that names no types: the most specific
+     * one it declares, which is where a handler taking a body puts its return type.
      */
     private static Type returnTypeOf(Class<?> handlerClass) {
         for (Class<?> current = handlerClass; current != null && current != Object.class; current = current.getSuperclass()) {

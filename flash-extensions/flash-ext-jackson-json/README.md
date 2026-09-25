@@ -5,56 +5,66 @@ JSON bodies and JSON responses.
 ## Install
 
 ```java
-JsonExtension json = new JsonExtension();
-
 FlashApp.create(8080)
-    .install(json)
-    .use(json.auto())
+    .install(new JsonExtension())
     .scan("com.acme.handlers")
     .startAndBlock();
 ```
 
 The default mapper discovers the modules on the classpath (Java Time among them) and writes dates
-as ISO strings; `new JsonExtension(mapper)` takes one of your own. `auto()` serializes whatever a
-handler returns, leaving alone what is already a response: `null`, a `Response`, a `byte[]` or a
-`CharSequence`.
+as ISO strings; `new JsonExtension(mapper)` takes one of your own.
 
-## A handler with a body
+## A handler
 
-The body type is the handler's type argument, and that is the whole declaration — it is also what
-the OpenAPI document describes and what the constraints are read from:
+Both types are in the signature, and that is the whole declaration — it is also what the OpenAPI
+document describes and what the constraints are read from:
 
 ```java
 @POST("/users")
-public final class CreateUser extends JsonHandler<NewUser> {
+public final class CreateUser extends JsonHandler<NewUser, User> {
     @Inject private UserService users;
 
-    @Override protected Object handle(Request req, Response res, NewUser body) {
+    @Override protected User handle(Request req, Response res, NewUser body) {
         return users.create(body);
     }
 }
 ```
 
-A malformed body never reaches it (400), nor does one that breaks a constraint (422).
+A malformed body never reaches it (400), nor does one that breaks a constraint (422). The answer is
+written by the codec, so nothing has to be installed for a route to reply in JSON.
 
-## A handler that reads it itself
+`Void` as the first type is a route that reads nothing:
+
+```java
+@GET("/users")
+public final class ListUsers extends JsonHandler<Void, List<User>> {
+    @Inject private UserService users;
+
+    @Override protected List<User> handle(Request req, Response res, Void nothing) {
+        return users.all();
+    }
+}
+```
+
+## A handler that reads or writes it itself
 
 ```java
 public final class Import extends RequestHandler {
     @Inject private Json json;
 
     @Override public Object handle(Request req, Response res) throws Exception {
-        return archive.store(json.body(req, Manifest.class));
+        return json.write(res, archive.store(json.read(req, Manifest.class)));
     }
 }
 ```
 
-`Json` is the [`Codec`](../flash-ext-jackson-core) for `application/json`: `body`, `write`,
-`writeView`, `mapper`.
+`Json` is the [`Codec`](../flash-ext-serde) for `application/json`: `read`, `write`,
+`contentType`, `mapper`. The same call is what a lambda route uses.
 
 ## Notes
 
 - One mapper per application (or per scope), shared by every handler; `ObjectMapper` is
   thread-safe once configured.
 - Install `flash-ext-jackson-xml` beside this one when an application speaks both: a route picks
-  its format by the handler it extends, not by negotiation.
+  its formats by the codecs in its signature, not by negotiation, and the two ends may differ —
+  `CodecHandler<Xml, Order, Json, Receipt>` reads XML and answers JSON.

@@ -1,24 +1,12 @@
 package dev.relism.flash.ext.jackson.xml;
 
-import dev.relism.flash.ext.jackson.Codec;
-import dev.relism.flash.ext.jackson.JacksonHandler;
-import dev.relism.flash.extension.Inject;
-import dev.relism.flash.http.ContentType;
-import dev.relism.flash.routing.Consumes;
+import dev.relism.flash.ext.serde.CodecHandler;
 
 /**
- * A handler that takes an XML body of one type.
+ * A handler that reads XML and answers XML.
  *
- * <p>Everything {@code JsonHandler} does, in XML: the body is read off the request stream,
- * verified against its type's constraints, and handed over. Both can live in the same
- * application, on different routes, over the same types.
+ * <p>Everything {@code JsonHandler} does, in XML. {@link Void} as the first type reads nothing —
+ * which is how a route that only answers XML is written — and answering another format is
+ * {@link CodecHandler} with both codecs named, as in {@code CodecHandler<Xml, Order, Json, Receipt>}.
  */
-@Consumes(ContentType.XML)
-public abstract class XmlHandler<B> extends JacksonHandler<B> {
-
-    @Inject private Xml xml;
-
-    @Override protected final Codec codec() {
-        return xml;
-    }
-}
+public abstract class XmlHandler<I, O> extends CodecHandler<Xml, I, Xml, O> {}

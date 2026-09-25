@@ -135,13 +135,14 @@ class OpenApiBuilderTest {
 
     @dev.relism.flash.routing.POST("/bodies")
     @ApiOperation(summary = "Typed body")
-    static final class TypedBodyHandler extends JsonLikeHandler<UserDto> {
+    static final class TypedBodyHandler extends JsonLikeHandler<UserDto, UserDto> {
         @Override protected UserDto handle(Request request, Response response, UserDto body) { return body; }
     }
 
-    @dev.relism.flash.routing.Consumes(ContentType.JSON)
-    static abstract class JsonLikeHandler<B> extends dev.relism.flash.models.BodyHandler<B> {
-        @Override protected B body(Request request) { return null; }
+    @Consumes(ContentType.JSON)
+    static abstract class JsonLikeHandler<I, O> extends dev.relism.flash.models.TypedHandler<I, O> {
+        @Override protected I read(Request request) { return null; }
+        @Override protected Object write(Response response, O answer) { return answer; }
     }
 
     @dev.relism.flash.routing.PUT("/declared-body")
@@ -170,7 +171,7 @@ class OpenApiBuilderTest {
     }
 
     @GET("/xml")
-    @dev.relism.flash.routing.Produces(ContentType.XML)
+    @Produces(ContentType.XML)
     @ApiOperation(summary = "Answers XML")
     static class XmlAnswerHandler extends RequestHandler {
         @Override public UserDto handle(Request request, Response response) { return null; }
@@ -229,10 +230,8 @@ class OpenApiBuilderTest {
     @Schema(name = "Keyed")
     static class KeyedDto {
         @SchemaProperty(description = "Unique in the project.")
-        @jakarta.validation.constraints.Pattern(regexp = "[a-z.]+", message = "uses lowercase letters and dots")
         public String key;
 
-        @jakarta.validation.constraints.Pattern(regexp = "[0-9]+")
         public String code;
     }
 
@@ -243,9 +242,20 @@ class OpenApiBuilderTest {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
+    /** What a rule means is the contributor's to say; this asserts only that what it says arrives. */
     @Test
-    void a_pattern_says_in_words_what_its_regex_says_in_symbols() {
+    void a_contributor_describes_a_property_and_may_mark_it_required() {
         OpenApiBuilder b = new OpenApiBuilder();
+        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        registry.add(new OpenApiContributor() {
+            @Override public boolean property(java.lang.reflect.Field field, Map<String, Object> schema) {
+                if (!field.getName().equals("key")) return false;
+                schema.put("pattern", "[a-z.]+");
+                schema.putIfAbsent("description", "Never overwrites what the code already said.");
+                return true;
+            }
+        });
+        b.setContributorRegistry(registry);
         b.addOperation(OpenApiBuilder.routeOf(KeyedHandler.class), KeyedHandler.class.getAnnotation(ApiOperation.class), KeyedHandler.class);
 
         Map<String, Object> components = cast(b.build().get("components"));
@@ -253,11 +263,12 @@ class OpenApiBuilderTest {
         Map<String, Object> keyed = cast(schemas.get("Keyed"));
         Map<String, Object> properties = cast(keyed.get("properties"));
         Map<String, Object> key = cast(properties.get("key"));
-        Map<String, Object> code = cast(properties.get("code"));
 
-        assertEquals("Unique in the project. Uses lowercase letters and dots.", key.get("description"));
         assertEquals("[a-z.]+", key.get("pattern"));
-        assertFalse(code.containsKey("description"), "a pattern with no message of its own says nothing extra");
+        assertEquals("Unique in the project.", key.get("description"), "an explicit description wins");
+        assertEquals(List.of("key"), keyed.get("required"));
+        Map<String, Object> code = cast(properties.get("code"));
+        assertFalse(code.containsKey("pattern"), "the others are untouched");
     }
 
     @Test

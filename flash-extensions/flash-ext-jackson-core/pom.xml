@@ -20,6 +20,18 @@
             <artifactId>flash</artifactId>
         </dependency>
         <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-serde</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-validation-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
@@ -28,10 +40,6 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
         <!-- The constraint annotations a body is checked against; no implementation, no transitives. -->
-        <dependency>
-            <groupId>jakarta.validation</groupId>
-            <artifactId>jakarta.validation-api</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>

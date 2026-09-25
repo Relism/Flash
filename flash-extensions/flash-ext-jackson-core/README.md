@@ -11,68 +11,35 @@ Every Jackson data format is the same databind model behind a different factory:
 constraints its fields declare and the schema it publishes are the same whatever writes it. Only
 the mapper and the content type differ, and that is all a format module has to say.
 
-## Codec
+## JacksonCodec
 
-One mapper, in the shape a handler needs it.
+One mapper, as a [`Codec`](../flash-ext-serde): `read`, `write`, `contentType`, plus `mapper()` for
+everything those do not cover.
 
-| | |
-|---|---|
-| `body(Request, Class<T>)` | Parses the body and verifies its constraints |
-| `write(Response, Object)` | Serializes and sets the format's content type |
-| `writeView(Response, Object, Class<?>)` | The same, through a Jackson `@JsonView` |
-| `mapper()` | The `ObjectMapper` itself, for everything else |
-
-`body` reads straight off the request's stream, which Flash reuses per connection: the body is
-never buffered into an array to be handed over. A malformed body is a 400, a body that breaks a
-constraint is a 422, and neither reaches the handler.
+`read` reads straight off the request's stream, which Flash reuses per connection: the body is
+never buffered into an array to be handed over. It is handed the type the handler named, a generic
+one included, so `JsonHandler<List<Order>, …>` parses what it says.
 
 ## Constraints
 
-A body is checked against the `jakarta.validation` annotations its own type declares — nothing to
-install, nothing to call:
+A body is checked as soon as it is read, by whichever validation engine the application installed —
+see [`flash-ext-validation-core`](../flash-ext-validation-core). This module only asks: a malformed
+body is a 400 of its own making, a body that breaks a rule is the engine's 422, and neither reaches
+the handler. With no engine installed a body is parsed and not checked, and that is said once at
+boot.
 
-```java
-public record NewUser(@NotBlank @Size(max = 80) String name, @Email String email, @Min(18) int age) {}
-```
-
-Supported: `@NotNull`, `@NotBlank`, `@NotEmpty`, `@Size`, `@Min`, `@Max`, `@Email`, `@Pattern`.
-Jakarta semantics: only `@NotNull` rejects null, every other constraint passes it.
-
-A failure reads `<field> <message>`, and the message is the constraint's own when it sets one —
-which is how the person who sent the request is told something better than a regex:
-
-```java
-@Pattern(regexp = "[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}", message = "uses up to 255 letters, digits, _, . and -")
-String key
-```
-
-```json
-{"error": "key uses up to 255 letters, digits, _, . and -", "status": 422}
-```
-
-The constraints of a type are compiled the first time it is seen and kept in a `ClassValue`,
-beside the class itself — no map, no lock. A check reads the field through an exact-signature
-`MethodHandle`: no boxing, no argument array, no iterator, and nothing allocated at all unless
-something fails. A type that declares no constraints compiles to a validator that does nothing.
-
-Verify a value built by hand with `Validator.check(value)`.
-
-`flash-ext-openapi` reads the same annotations to publish `minLength`, `maximum`, `pattern` and
-the required fields, so a rule is written once and both enforced and documented.
+Nothing to register: the codec binds the engine itself when the application boots.
 
 ## Writing a format module
 
 ```java
-public final class Yaml extends Codec {
+public final class Yaml extends JacksonCodec {
     public Yaml(YAMLMapper mapper) { super(mapper, ContentType.TEXT_YAML); }
 }
 
-@Consumes(ContentType.TEXT_YAML)
-public abstract class YamlHandler<B> extends JacksonHandler<B> {
-    @Inject private Yaml yaml;
-    @Override protected Codec codec() { return yaml; }
-}
+public abstract class YamlHandler<I, O> extends CodecHandler<Yaml, I, Yaml, O> {}
 ```
 
-Plus an extension that provides the codec and, for outbound bodies,
-`Marshalling.of(mapper, contentType)`. That is the whole of it.
+Plus an extension that provides the codec and calls `CodecDocs.register(ctx)`. That is the whole
+of it: reading, writing, constraints and the document come from
+[`flash-ext-serde`](../flash-ext-serde) and this module.

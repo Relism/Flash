@@ -14,6 +14,10 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>flash-ext-serde</module>
+        <module>flash-ext-validation-core</module>
+        <module>flash-ext-validation-jakarta</module>
+        <module>flash-ext-validation-avaje</module>
         <module>flash-ext-jackson-core</module>
         <module>flash-ext-jackson-json</module>
         <module>flash-ext-jackson-xml</module>

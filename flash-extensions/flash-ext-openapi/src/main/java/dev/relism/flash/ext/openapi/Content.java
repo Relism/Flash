@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * What a response carries: the schema, and an example of it.
  *
  * <p>The media type is not here — it is the handler's, declared with
- * {@link dev.relism.flash.routing.Produces @Produces} and JSON when nothing says otherwise. A
+ * {@link Produces @Produces}, the codecs the handler names, or JSON. A
  * response with no schema, and no return type to infer one from, is documented without a body.
  */
 @Retention(RetentionPolicy.RUNTIME)

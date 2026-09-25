@@ -12,7 +12,7 @@ import java.lang.annotation.Target;
  * <pre>{@code
  * @GET("/api/blogs")
  * @ApiOperation(summary = "List all blogs", tags = {"blogs"})
- * public class ListBlogs extends JacksonHandler { ... }
+ * public class ListBlogs extends JsonHandler<Void, List<Blog>> { ... }
  * }</pre>
  */
 @Retention(RetentionPolicy.RUNTIME)

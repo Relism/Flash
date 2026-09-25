@@ -10,10 +10,10 @@ import java.lang.annotation.Target;
 /**
  * The body this operation takes, for a handler that reads it by hand.
  *
- * <p>A handler extending {@code BodyHandler} — {@code JsonHandler} and its like — needs none of
- * this: its body type is its type argument and its media type comes from {@code @Consumes}. Use
- * this when the body is read straight off the request, or to describe it as something other than
- * what the handler parses.
+ * <p>A handler that names its types — {@code JsonHandler} and its like — needs none of this: the
+ * body is its first type argument and the media type is its request codec's. Use this when the
+ * body is read straight off the request, or to describe it as something other than what the
+ * handler parses.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)

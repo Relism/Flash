@@ -21,9 +21,15 @@ class JsonHandlerTest {
 
     public record NewUser(String name) {}
 
-    static final class Create extends JsonHandler<NewUser> {
-        @Override protected Object handle(Request request, Response response, NewUser body) {
+    static final class Create extends JsonHandler<NewUser, String> {
+        @Override protected String handle(Request request, Response response, NewUser body) {
             return body.name();
+        }
+    }
+
+    static final class Rename extends JsonHandler<java.util.List<NewUser>, Integer> {
+        @Override protected Integer handle(Request request, Response response, java.util.List<NewUser> body) {
+            return body.size();
         }
     }
 
@@ -41,7 +47,18 @@ class JsonHandlerTest {
 
         Object answer = handler.handle(request("{\"name\":\"alice\"}"), new Response(200, ContentType.JSON));
 
-        assertEquals("alice", answer);
+        assertEquals("alice", answer, "text is already a body, so the codec leaves it alone");
+    }
+
+    @Test
+    void aGenericBodyIsParsedAsWhatItSays() throws Exception {
+        Rename handler = new Rename();
+        handler.bind(context());
+
+        Object answer = handler.handle(request("[{\"name\":\"alice\"},{\"name\":\"bob\"}]"),
+                new Response(200, ContentType.JSON));
+
+        assertEquals("2", answer, "two users, counted after Jackson built the list");
     }
 
     @Test
@@ -56,10 +73,12 @@ class JsonHandlerTest {
     }
 
     @Test
-    void aHandlerThatNeverNamedItsBodyTypeIsRefusedAtBoot() {
-        IllegalStateException refused = assertThrows(IllegalStateException.class, Untyped::new);
+    void aHandlerThatNeverNamedItsTypesIsRefusedAtBoot() {
+        FlashContext ctx = context();
 
-        assertTrue(refused.getMessage().contains("Handler<YourBody>"), refused.getMessage());
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> new Untyped().bind(ctx));
+
+        assertTrue(refused.getMessage().contains("YourRequest, YourAnswer"), refused.getMessage());
     }
 
     private static FlashContext context() {
