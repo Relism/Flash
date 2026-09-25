@@ -30,13 +30,13 @@ import java.util.UUID;
  *
  * <p>A type is described once and referenced by {@code $ref} everywhere it appears, so a document
  * over a hundred routes carries one copy of each model. What a field means comes from the type
- * itself: Jackson's annotations decide what is exposed, {@code jakarta.validation} constraints
- * become the schema's own bounds, and {@link Schema}/{@link SchemaProperty} say the rest.
+ * itself: Jackson's annotations decide what is exposed, a validation engine's rules become the
+ * schema's own bounds through a contributor, and {@link Schema}/{@link SchemaProperty} say the rest.
  */
 final class Schemas {
 
-    /** Resolved once: jakarta.validation is an optional dependency of this module. */
-    private static final boolean CONSTRAINTS_PRESENT = ConstraintHints.available();
+    /** Whoever knows what a rule means, set when the document is assembled. */
+    private OpenApiContributorRegistry contributors;
 
     private static final Set<Class<?>> SIMPLE = Set.of(
             String.class, CharSequence.class,
@@ -148,9 +148,9 @@ final class Schemas {
                 if (jp.access() == Access.WRITE_ONLY) property.put("writeOnly", true);
             }
 
-            // Constraints a body is checked against also describe it, so
-            // mirror them here rather than making callers restate every rule as @Schema.
-            boolean constrainedRequired = CONSTRAINTS_PRESENT && ConstraintHints.apply(f, property);
+            // The rules a body is checked against also describe it, so whoever enforces them says
+            // what they mean here rather than making callers restate every one as @Schema.
+            boolean constrainedRequired = contributed(f, property);
 
             properties.put(name, property);
             if (constrainedRequired
@@ -161,6 +161,20 @@ final class Schemas {
         if (!properties.isEmpty()) out.put("properties", properties);
         if (!required.isEmpty()) out.put("required", required);
         return out;
+    }
+
+    void setContributorRegistry(OpenApiContributorRegistry registry) {
+        this.contributors = registry;
+    }
+
+    /** True when a contributor says the property is required. */
+    private boolean contributed(Field field, Map<String, Object> property) {
+        if (contributors == null) return false;
+        boolean required = false;
+        for (OpenApiContributor contributor : contributors.contributors()) {
+            required |= contributor.property(field, property);
+        }
+        return required;
     }
 
     private static void applySchemaHints(Map<String, Object> target, Schema schema) {

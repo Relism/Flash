@@ -1,7 +1,7 @@
 package dev.relism.flash.ext.jackson.xml;
 
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
-import dev.relism.flash.ext.jackson.Codec;
+import dev.relism.flash.ext.jackson.JacksonCodec;
 import dev.relism.flash.http.ContentType;
 
 /**
@@ -12,7 +12,7 @@ import dev.relism.flash.http.ContentType;
  * element name, an attribute rather than an element, how a list is wrapped — are Jackson's
  * {@code @JacksonXml*} annotations on the type.
  */
-public final class Xml extends Codec {
+public final class Xml extends JacksonCodec {
 
     public Xml(XmlMapper mapper) {
         super(mapper, ContentType.XML);

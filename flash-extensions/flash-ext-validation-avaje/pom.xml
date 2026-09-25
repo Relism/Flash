@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.relism</groupId>
+        <artifactId>flash-extensions</artifactId>
+        <version>2.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>flash-ext-validation-avaje</artifactId>
+    <name>flash-ext-validation-avaje</name>
+    <description>Avaje Validator: the same constraints without reflection, from adapters its annotation processor generates in the application's own build.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-validation-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.avaje</groupId>
+            <artifactId>avaje-validator</artifactId>
+        </dependency>
+        <!-- Lets the generator read jakarta constraints, so a type is annotated once whichever
+             engine an application installs. -->
+        <dependency>
+            <groupId>io.avaje</groupId>
+            <artifactId>avaje-validator-constraints</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+
+        <!-- Runs on this module's own test types; an application declares it the same way. -->
+        <dependency>
+            <groupId>io.avaje</groupId>
+            <artifactId>avaje-validator-generator</artifactId>
+            <version>${avaje.validator.version}</version>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The tests drive a real application: a JSON body in, a document out. -->
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-jackson-json</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-openapi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              The parent sets annotationProcessorPaths for Lombok, and javac then discovers nothing
+              from the classpath: a processor has to be named here or it silently does not run. An
+              application installing this engine declares its own path the same way.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>io.avaje</groupId>
+                            <artifactId>avaje-validator-generator</artifactId>
+                            <version>${avaje.validator.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

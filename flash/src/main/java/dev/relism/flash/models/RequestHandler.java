@@ -101,7 +101,7 @@ public abstract class RequestHandler {
      * ({@link #handle}) has zero lookup overhead.
      *
      * <p><b>Important:</b> if your class extends another handler base (e.g.
-     * {@code JacksonHandler}), call {@code super.onInit()} first so the parent
+     * {@code JsonHandler}), call {@code super.onInit()} first so the parent
      * can initialise its own services.
      *
      * <pre>{@code

@@ -1,6 +1,5 @@
 package dev.relism.flash.ext.jackson.json;
 
-import com.fasterxml.jackson.annotation.JsonView;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.relism.flash.exceptions.HttpException;
 import dev.relism.flash.http.ContentType;
@@ -26,12 +25,12 @@ class JsonTest {
         Json json = new Json(new ObjectMapper());
 
         Request ok = request("{\"id\":\"u1\",\"name\":\"alice\"}");
-        UserDto dto = json.body(ok, UserDto.class);
+        UserDto dto = json.read(ok, UserDto.class);
         assertEquals("u1", dto.id);
         assertEquals("alice", dto.name);
 
         Request bad = request("not-json");
-        HttpException ex = assertThrows(HttpException.class, () -> json.body(bad, UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.read(bad, UserDto.class));
         assertEquals(400, ex.status());
         assertTrue(ex.getMessage().startsWith("Invalid request body:"));
     }
@@ -40,24 +39,20 @@ class JsonTest {
     void a_truncated_body_is_a_bad_request_too() throws Exception {
         Json json = new Json(new ObjectMapper());
 
-        HttpException ex = assertThrows(HttpException.class, () -> json.body(request("["), UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.read(request("["), UserDto.class));
 
         assertEquals(400, ex.status());
     }
 
     @Test
-    void write_and_writeView_set_content_type_and_render_expected_payload() throws Exception {
+    void write_sets_the_content_type_and_renders_the_payload() throws Exception {
         Json json = new Json(new ObjectMapper());
         Response res = new Response(200, ContentType.TEXT_PLAIN);
 
-        String payload = json.write(res, new UserDto("u3", "carol"));
+        Object payload = json.write(res, new UserDto("u3", "carol"));
+
         assertEquals("application/json", new String(res.getContentType(), StandardCharsets.UTF_8));
         assertEquals("{\"id\":\"u3\",\"name\":\"carol\"}", payload);
-
-        Response viewRes = new Response(200, ContentType.TEXT_PLAIN);
-        String viewed = json.writeView(viewRes, new ViewDto("u4", "hidden"), PublicView.class);
-        assertEquals("application/json", new String(viewRes.getContentType(), StandardCharsets.UTF_8));
-        assertEquals("{\"id\":\"u4\"}", viewed);
     }
 
     @Test
@@ -91,21 +86,6 @@ class JsonTest {
         private UserDto(String id, String name) {
             this.id = id;
             this.name = name;
-        }
-    }
-
-    private interface PublicView {}
-    private interface InternalView {}
-
-    private static final class ViewDto {
-        @JsonView(PublicView.class)
-        public String id;
-        @JsonView(InternalView.class)
-        public String secret;
-
-        private ViewDto(String id, String secret) {
-            this.id = id;
-            this.secret = secret;
         }
     }
 }

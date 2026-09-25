@@ -9,9 +9,13 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 |---|---|
 | `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
 | `flash-testing` | JUnit 5 harness — boot an app on an ephemeral port, fake its services, assert on responses |
-| `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: the codec, the body handler, the constraints a body is checked against |
+| `flash-extensions/flash-ext-serde` | Handlers that name a codec and a type for each end |
+| `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: one mapper as a codec |
 | `flash-extensions/flash-ext-jackson-json` | JSON bodies and responses |
 | `flash-extensions/flash-ext-jackson-xml` | XML bodies and responses |
+| `flash-extensions/flash-ext-validation-core` | One contract for checking a body, and one way for the engine to describe its rules |
+| `flash-extensions/flash-ext-validation-jakarta` | Jakarta Validation through Hibernate Validator |
+| `flash-extensions/flash-ext-validation-avaje` | Avaje Validator: the same rules without reflection, generated at build time |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec, read by Swagger UI, Redoc or Scalar |
 | `flash-extensions/flash-ext-security-core` | Security: authentication chain, annotations, sessions, OpenAPI |
 | `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |

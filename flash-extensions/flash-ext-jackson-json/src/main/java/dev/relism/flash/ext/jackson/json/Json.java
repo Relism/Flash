@@ -1,7 +1,7 @@
 package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.ext.jackson.Codec;
+import dev.relism.flash.ext.jackson.JacksonCodec;
 import dev.relism.flash.http.ContentType;
 
 /**
@@ -12,14 +12,14 @@ import dev.relism.flash.http.ContentType;
  *     @Inject private Json json;
  *
  *     @Override public Object handle(Request req, Response res) throws Exception {
- *         return items.create(json.body(req, NewItem.class));
+ *         return items.create(json.read(req, NewItem.class));
  *     }
  * }
  * }</pre>
  *
  * <p>A handler whose whole body is one type has nothing to write at all: see {@link JsonHandler}.
  */
-public final class Json extends Codec {
+public final class Json extends JacksonCodec {
 
     public Json(ObjectMapper mapper) {
         super(mapper, ContentType.JSON);

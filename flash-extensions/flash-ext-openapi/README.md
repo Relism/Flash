@@ -50,10 +50,10 @@ The page is rendered once, at boot.
 Every class-based route is documented, annotated or not. Read off the code:
 
 - **path parameters**, from `/{id}` in the route
-- **the request body**, from the handler's own body type (see below)
-- **the response schema**, from what `handle` returns — an object, a `List<T>`, a `Map<String, T>`
-- **the media types**: `@Consumes` for what it reads, `@Produces` for what it answers, which are
-  two different questions — taking a JSON body does not make the answer JSON
+- **the request body and the response schema**, from the types the handler names (see below), or
+  from what `handle` returns — an object, a `List<T>`, a `Map<String, T>`
+- **the media types**, from the codecs the handler names: what it reads and what it answers are two
+  different questions, and taking a JSON body does not make the answer JSON
 - **error responses**, in the one shape Flash answers failures with: `{"error": "...", "status": 404}`
 - **security and rate limiting**, from the extensions that enforce them
 
@@ -73,13 +73,14 @@ class it leaves out every handler written against it.
 
 ## Request bodies
 
-A handler that extends `BodyHandler` — `JsonHandler` and `XmlHandler`, and anything else that
-reads a format — declares its body type in its signature, and that is the whole documentation:
+A handler that names its types — `JsonHandler`, `XmlHandler`, anything over
+[`flash-ext-serde`](../flash-ext-serde) — declares both in its signature, and that is the whole
+documentation:
 
 ```java
 @POST("/users")
-public final class CreateUser extends JsonHandler<NewUser> {
-    @Override protected Object handle(Request req, Response res, NewUser body) {
+public final class CreateUser extends JsonHandler<NewUser, User> {
+    @Override protected User handle(Request req, Response res, NewUser body) {
         return users.create(body);
     }
 }
@@ -93,8 +94,8 @@ requestBody:
       schema: { $ref: '#/components/schemas/NewUser' }
 ```
 
-The media type of the body comes from `@Consumes` on the base class, so an XML handler documents
-itself as XML without a word from the route.
+The media type comes from the codec that reads it, so a handler reading XML documents itself as XML
+without a word from the route — and one that reads XML and answers JSON is documented as both.
 
 For a handler that reads the body by hand, or to describe it as something else, declare it:
 
@@ -132,8 +133,12 @@ The success response is inferred. Declare one only to say more:
 - `content.array = true` wraps whichever schema was chosen.
 - No schema and nothing to infer one from: a response with no body, which is what a 204 is.
 
-The media type of every answer is the handler's `@Produces`, JSON when nothing says otherwise. It
-is not on `@Content`: one handler answers in one format, and a status code does not change that.
+The media type of every answer is its codec's, or the handler's `@Produces` when it writes the body
+itself, and JSON when nothing says otherwise. It is not on `@Content`: one handler answers in one
+format, and a status code does not change that.
+
+`@Consumes` and `@Produces` live here, and are for a handler that reads or writes its body by hand:
+one whose codecs are in its signature is described by them and needs neither.
 
 **A response several operations share is written once.** Identical answers — the 401 of every
 guarded route, the 429 of every limited one — become `components.responses` entries referenced by
@@ -150,12 +155,14 @@ public record UserDto(
 
 Each type is described once under `components.schemas` and referenced everywhere it appears.
 Field-level exclusion: `@Schema(hidden = true)`, `@SchemaProperty(hidden = true)`, `@JsonIgnore`,
-`@JsonIgnoreProperties`, `transient`, `static`. `jakarta.validation` constraints (`@NotNull`,
-`@NotBlank`, `@NotEmpty`, `@Size`, `@Min`, `@Max`, `@Email`, `@Pattern`) become the schema's own
-bounds and required fields, so a rule is written once and documented for free.
+`@JsonIgnoreProperties`, `transient`, `static`.
 
-A `@Pattern` that declares a message says it in the description too, after whatever the property
-already said: a regex is precise and unreadable, and both belong in the document.
+**A validation engine's rules become the schema's own bounds**, so a rule is written once and
+documented for free. This module knows no constraint by name: the engine says what each of its
+annotations means and contributes it, which is why the document describes what is actually enforced.
+See [`flash-ext-validation-core`](../flash-ext-validation-core). With the jakarta engine installed,
+a property looks like this — the message of a `@Pattern` lands in the description too, because a
+regex is precise and unreadable and both belong in the document:
 
 ```java
 @SchemaProperty(description = "Unique in the project.")
@@ -170,8 +177,8 @@ key:
   pattern: '[a-z.]+'
 ```
 
-No other constraint does this: `required`, `maxLength` and `format: email` are already readable,
-and repeating them as prose would be noise.
+Only a rule with no readable keyword does this: `required`, `maxLength` and `format: email` speak
+for themselves, and repeating them as prose would be noise.
 
 ## Contributor API
 

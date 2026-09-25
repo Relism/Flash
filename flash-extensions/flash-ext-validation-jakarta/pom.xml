@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.relism</groupId>
+        <artifactId>flash-extensions</artifactId>
+        <version>2.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>flash-ext-validation-jakarta</artifactId>
+    <name>flash-ext-validation-jakarta</name>
+    <description>Jakarta Validation through Hibernate Validator: every constraint of the specification, by reflection, with no build step.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-validation-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.hibernate.validator</groupId>
+            <artifactId>hibernate-validator</artifactId>
+        </dependency>
+        <!-- Constraint messages are interpolated with Jakarta EL; without it the defaults of
+             @DecimalMin and @DecimalMax come back un-interpolated and the engine is not
+             specification compliant. -->
+        <dependency>
+            <groupId>org.glassfish.expressly</groupId>
+            <artifactId>expressly</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The tests drive a real application: a JSON body in, a document out. -->
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-jackson-json</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-openapi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
