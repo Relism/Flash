@@ -2,12 +2,15 @@ package dev.relism.flash.ext.serde;
 
 import dev.relism.flash.Bound;
 import dev.relism.flash.Services;
+import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
-import dev.relism.flash.http.TypedHandler;
 
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * A handler that names a codec and a type for each end.
@@ -38,7 +41,7 @@ import java.lang.reflect.TypeVariable;
  * @param <CO> the codec the answer is written with
  * @param <O>  what this handler answers
  */
-public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> extends TypedHandler<I, O> implements Bound {
+public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> implements Handler, Bound {
 
     private Codec in;
     private Codec out;
@@ -50,18 +53,24 @@ public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> ext
         in = inType == Void.class ? null : services.get(codec(0));
         out = services.get(codec(2));
         if (in != null) in.prepare(inType);
-        Type outType = typeArgument(getClass(), CodecHandler.class, 3);
+        Type outType = typeArgument(getClass(), 3);
         if (!(outType instanceof TypeVariable<?>) && !passedThrough(outType)) out.prepare(outType);
     }
 
+    /** Answers an {@code O}, given the {@code I} the request codec read. */
+    protected abstract O handle(Request request, Response response, I in) throws Exception;
+
     @Override
-    protected final I read(Request request) throws Exception {
+    public final Object handle(Request request, Response response) throws Exception {
+        return write(response, handle(request, response, read(request)));
+    }
+
+    private I read(Request request) throws Exception {
         return in == null ? null : in.read(request, inType);
     }
 
     /** Pass-through for what is already a body: {@code null}, a {@link Response}, bytes or text. */
-    @Override
-    protected final Object write(Response response, O answer) throws Exception {
+    private Object write(Response response, O answer) throws Exception {
         if (answer == null || answer instanceof Response || answer instanceof byte[] || answer instanceof CharSequence)
             return answer;
         return out.write(response, answer);
@@ -81,9 +90,43 @@ public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> ext
                 + " leaves the " + (index == 0 ? "request" : "response") + " codec open — name one in its signature");
     }
 
+    /**
+     * The type argument {@code subclass} fixes for this class's parameter at {@code index}, or null
+     * when it leaves it open.
+     *
+     * <p>Resolved through the whole chain, so an intermediate base that passes its own type
+     * argument along answers with the type its subclass fixed.
+     */
+    static Type typeArgument(Class<?> subclass, int index) {
+        Map<TypeVariable<?>, Type> bound = new HashMap<>();
+
+        for (Class<?> current = subclass; current != null && current != Object.class; ) {
+            if (!(current.getGenericSuperclass() instanceof ParameterizedType parameterized)) {
+                current = current.getSuperclass();
+                continue;
+            }
+            Class<?> raw = (Class<?>) parameterized.getRawType();
+            Type[] arguments = parameterized.getActualTypeArguments();
+            TypeVariable<?>[] variables = raw.getTypeParameters();
+
+            for (int i = 0; i < variables.length && i < arguments.length; i++) {
+                bound.put(variables[i], resolve(arguments[i], bound));
+            }
+            if (raw == CodecHandler.class) {
+                return index < arguments.length ? resolve(arguments[index], bound) : null;
+            }
+            current = raw;
+        }
+        return null;
+    }
+
+    private static Type resolve(Type type, Map<TypeVariable<?>, Type> bound) {
+        return type instanceof TypeVariable<?> variable ? bound.getOrDefault(variable, type) : type;
+    }
+
     /** A generic type is fine here; one the handler never fixed is not. */
     private Type argument(int index) {
-        Type argument = typeArgument(getClass(), CodecHandler.class, index);
+        Type argument = typeArgument(getClass(), index);
         if (argument == null || argument instanceof TypeVariable<?>)
             throw new IllegalStateException(getClass().getSimpleName()
                     + " leaves its type arguments open — write it as Handler<YourRequest, YourAnswer>");

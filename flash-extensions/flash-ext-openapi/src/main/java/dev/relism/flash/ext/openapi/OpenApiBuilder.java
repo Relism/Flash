@@ -3,7 +3,8 @@ package dev.relism.flash.ext.openapi;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
-import dev.relism.flash.http.TypedHandler;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.Route;
 
 import java.lang.annotation.Annotation;
@@ -196,8 +197,7 @@ public final class OpenApiBuilder {
     /** From {@link RequestBody}, or from the type the handler names as its input. */
     private void requestBody(Map<String, Object> operation, Class<?> handlerClass) {
         RequestBody declared = handlerClass.getAnnotation(RequestBody.class);
-        Type type = declared != null ? declared.value()
-                : TypedHandler.typeArgument(handlerClass, TypedHandler.class, 0);
+        Type type = declared != null ? declared.value() : contributedType(handlerClass, true);
         Class<?> raw = Schemas.rawType(type);
         if (raw == null || raw == Void.class || raw == Object.class) return;
 
@@ -305,7 +305,7 @@ public final class OpenApiBuilder {
 
     /** The type the handler names as its answer, or what its {@code handle} gives back. */
     private Map<String, Object> returnSchema(Class<?> handlerClass) {
-        Type returned = TypedHandler.typeArgument(handlerClass, TypedHandler.class, 1);
+        Type returned = contributedType(handlerClass, false);
         if (returned == null) returned = returnTypeOf(handlerClass);
         Class<?> raw = Schemas.rawType(returned);
         if (raw == null || raw == Object.class || raw == Void.class || raw == void.class) return null;
@@ -315,18 +315,28 @@ public final class OpenApiBuilder {
         return schema == null || schema.isEmpty() ? null : schema;
     }
 
+    /** The type a contributor states for one end, or null. */
+    private Type contributedType(Class<?> handlerClass, boolean request) {
+        for (OpenApiContributor contributor : contributors()) {
+            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
+            if (contribution == null) continue;
+            Type contributed = request ? contribution.requestType() : contribution.responseType();
+            if (contributed != null) return contributed;
+        }
+        return null;
+    }
+
     /**
-     * The {@code handle} a handler writes itself, for one that names no types: the most specific
-     * one it declares, which is where a handler taking a body puts its return type.
+     * What the entrypoint gives back, found by its exact signature: a handler whose types live in a
+     * base class answers {@code Object} here, and a contributor describes it instead.
      */
     private static Type returnTypeOf(Class<?> handlerClass) {
         for (Class<?> current = handlerClass; current != null && current != Object.class; current = current.getSuperclass()) {
-            Method found = null;
-            for (Method method : current.getDeclaredMethods()) {
-                if (!method.getName().equals("handle") || method.isBridge() || method.isSynthetic()) continue;
-                if (found == null || method.getParameterCount() > found.getParameterCount()) found = method;
+            try {
+                return current.getDeclaredMethod("handle", Request.class, Response.class).getGenericReturnType();
+            } catch (NoSuchMethodException absent) {
+                // declared further up, or not at all
             }
-            if (found != null) return found.getGenericReturnType();
         }
         return null;
     }

@@ -11,12 +11,21 @@ import java.lang.reflect.Type;
  *
  * <p>An implementation is a service an application provides once — {@code Json}, {@code Xml}, a
  * protobuf one — and a {@link CodecHandler} names it in its signature to be read or written with.
- * What it does inside, which library it wraps and what it checks on the way in are its own
- * business.
+ * What it does inside and which library it wraps are its own business.
+ *
+ * <p>Checking what comes in is not: an implementation verifies what it parsed against the installed
+ * {@code Validation} engine, when there is one. It belongs here and not in {@link CodecHandler},
+ * because a codec is also read from directly.
  */
 public interface Codec {
 
-    /** Reads the request body as {@code type}, which may be generic. */
+    /**
+     * Reads the request body as {@code type}, which may be generic, and verifies what it read: a
+     * body that cannot be parsed is a 400, one that breaks a rule a 422.
+     *
+     * <p>Skipping the check hands every handler reading through this codec unverified input, and
+     * nothing further along catches it.
+     */
     <T> T read(Request request, Type type) throws Exception;
 
     /** The same, for a plain class, where the compiler can check what comes back. */

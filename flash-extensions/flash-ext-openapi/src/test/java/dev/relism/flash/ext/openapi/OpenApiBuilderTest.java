@@ -126,10 +126,13 @@ class OpenApiBuilderTest {
         @Override protected UserDto handle(Request request, Response response, UserDto body) { return body; }
     }
 
+    /** An app's own typed family, owing the framework nothing but {@link Handler}. */
     @Consumes(ContentType.JSON)
-    static abstract class JsonLikeHandler<I, O> extends dev.relism.flash.http.TypedHandler<I, O> {
-        @Override protected I read(Request request) { return null; }
-        @Override protected Object write(Response response, O answer) { return answer; }
+    static abstract class JsonLikeHandler<I, O> implements Handler {
+        @Override public final Object handle(Request request, Response response) throws Exception {
+            return handle(request, response, null);
+        }
+        protected abstract O handle(Request request, Response response, I body) throws Exception;
     }
 
     @dev.relism.flash.routing.PUT("/declared-body")
@@ -180,6 +183,16 @@ class OpenApiBuilderTest {
     @Test
     void a_typed_handler_documents_its_body_without_saying_the_type_twice() {
         OpenApiBuilder b = new OpenApiBuilder();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
+        registry.add(new OpenApiContributor() {
+            @Override public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .requestType(UserDto.class)
+                        .responseType(UserDto.class)
+                        .build();
+            }
+        });
+        b.contributors(registry);
         b.addOperation(routeOf(TypedBodyHandler.class), TypedBodyHandler.class.getAnnotation(ApiOperation.class), TypedBodyHandler.class);
 
         Map<String, Object> post = getOperation(b.build(), "/bodies", "post");
@@ -189,7 +202,8 @@ class OpenApiBuilderTest {
         Map<String, Object> schema = cast(json.get("schema"));
 
         assertEquals(true, body.get("required"));
-        assertEquals("#/components/schemas/UserDTO", schema.get("$ref"));
+        assertEquals("#/components/schemas/UserDTO", schema.get("$ref"),
+                "the family's own contributor said the type; nothing was guessed from its methods");
     }
 
     @Test

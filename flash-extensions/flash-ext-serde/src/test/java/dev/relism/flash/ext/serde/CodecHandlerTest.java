@@ -65,6 +65,14 @@ class CodecHandlerTest {
         @Override protected Object handle(Request request, Response response, Object in) { return null; }
     }
 
+    /** A format module's base: both codecs fixed, the carried types passed along. */
+    static abstract class InOutHandler<I, O> extends CodecHandler<In, I, Out, O> {}
+
+    /** Fixes the types one level further down, which is where they have to be read from. */
+    static final class Relayed extends InOutHandler<Word, Said> {
+        @Override protected Said handle(Request request, Response response, Word word) { return new Said(word.text()); }
+    }
+
     static final class Unprovided extends CodecHandler<In, Word, Missing, Said> {
         @Override protected Said handle(Request request, Response response, Word word) { return null; }
     }
@@ -85,6 +93,17 @@ class CodecHandlerTest {
 
     private static Services services() {
         return app.services();
+    }
+
+    @Test
+    void theTypesAreReadThroughAnIntermediateBase() throws Exception {
+        Relayed handler = services().create(Relayed.class);
+        Response response = new Response(200, ContentType.NONE);
+
+        Object body = handler.handle(request("relayed"), response);
+
+        assertEquals("said:relayed", body,
+                "read through the request codec and written through the response codec the base named");
     }
 
     @Test
