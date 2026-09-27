@@ -3,26 +3,33 @@ package dev.relism.flash.ext.limiter;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Thread-safe store of pre-allocated {@link Bucket} instances keyed by partition key.
- *
- * <p>On the warm path (key already seen), {@link #get} performs a single
- * {@link ConcurrentHashMap} lookup — no allocation. On the cold path (new key),
- * {@code computeIfAbsent} allocates exactly one {@link Bucket} and inserts it.
- *
- * <p>Buckets accumulate indefinitely; for workloads with unbounded unique keys
- * (e.g. one-shot crawlers), consider periodic store replacement or a bounded
- * LRU map implementation.
+ * One rule's buckets, by key, bounded. A known key is one map lookup; a new key allocates its
+ * bucket once. At {@code maxKeys}, keys idle for a whole window are dropped; if they are all still
+ * active, a new key shares one overflow bucket, so a flood of invented keys meets the limit rather
+ * than the heap.
  */
-public final class BucketStore {
+final class BucketStore {
 
     private final ConcurrentHashMap<String, Bucket> map = new ConcurrentHashMap<>();
+    private final Bucket overflow = new Bucket();
+    private final int maxKeys;
+    private final long windowMs;
 
-    /**
-     * Returns the bucket for {@code key}, creating one if absent.
-     * Two threads racing on the same new key are guaranteed to receive the same bucket instance.
-     */
-    public Bucket get(String key) {
-        Bucket b = map.get(key);
-        return b != null ? b : map.computeIfAbsent(key, k -> new Bucket());
+    BucketStore(int maxKeys, long windowMs) {
+        this.maxKeys = maxKeys;
+        this.windowMs = windowMs;
+    }
+
+    Bucket get(String key, long now) {
+        Bucket bucket = map.get(key);
+        if (bucket == null) {
+            if (map.size() >= maxKeys) {
+                map.values().removeIf(idle -> idle.seenMs < now - windowMs);
+                if (map.size() >= maxKeys) return overflow;
+            }
+            bucket = map.computeIfAbsent(key, ignored -> new Bucket());
+        }
+        bucket.seenMs = now;
+        return bucket;
     }
 }

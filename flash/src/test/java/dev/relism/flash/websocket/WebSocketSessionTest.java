@@ -1,9 +1,9 @@
 package dev.relism.flash.websocket;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
 import dev.relism.fpr.core.ByteView;
 import org.junit.jupiter.api.Test;
 

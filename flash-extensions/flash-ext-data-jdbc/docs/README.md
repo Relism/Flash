@@ -14,13 +14,13 @@ class.
 ```java
 DataSource dataSource = ...;
 JdbcTxManager txManager = new JdbcTxManager(dataSource);
-DataExtension extension = new DataExtension(txManager);
+app.install(new DataModule(txManager));
 ```
 
-### 2. Install the extension in Flash
+### 2. What the module adds
 
-As with Hibernate, `DataExtension` registers `Tx` in the `FlashContext` and enables
-`@Transactional` on class-based handlers.
+`Tx` and `TxManager` as services, and `@Transactional` on handler classes; see
+[flash-ext-data-core](../../flash-ext-data-core/docs/README.md#composing-with-flash).
 
 ### 3. Define a repository
 

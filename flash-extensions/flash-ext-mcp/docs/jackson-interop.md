@@ -39,9 +39,9 @@ than routing it through the app's general-purpose JSON extension.
 
 ## What a future opt-in reuse could look like
 
-Nothing here rules out a later, additive convenience layer: `McpExtension.routes()` could check
-`ctx.find(ObjectMapper.class)` (populated by `JacksonExtension.provide()`) and, if present, use
-that shared mapper as the backing for an escape hatch such as `ToolArguments.as(Class<T>)` or
+Nothing here rules out a later, additive convenience layer: `McpModule` could look up
+`services.find(Json.class)` (added by jackson's `JsonModule`) and, if present, use
+that shared codec as the backing for an escape hatch such as `ToolArguments.as(Class<T>)` or
 for a tool that wants to `ToolResponse.success(someRecord)` and have it serialized with the
 app's own conventions — falling back to a locally-constructed default `ObjectMapper` when
 `flash-ext-jackson` isn't installed. That would be purely additive on top of the

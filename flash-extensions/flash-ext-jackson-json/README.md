@@ -5,14 +5,13 @@ JSON bodies and JSON responses.
 ## Install
 
 ```java
-FlashApp.create(8080)
-    .install(new JsonExtension())
-    .scan("com.acme.handlers")
-    .startAndBlock();
+App.create()
+    .install(new JsonModule())
+    .scan("com.acme.handlers");
 ```
 
 The default mapper discovers the modules on the classpath (Java Time among them) and writes dates
-as ISO strings; `new JsonExtension(mapper)` takes one of your own.
+as ISO strings; `new JsonModule(mapper)` takes one of your own.
 
 ## A handler
 
@@ -22,7 +21,9 @@ document describes and what the constraints are read from:
 ```java
 @POST("/users")
 public final class CreateUser extends JsonHandler<NewUser, User> {
-    @Inject private UserService users;
+    private final UserService users;
+
+    public CreateUser(UserService users) { this.users = users; }
 
     @Override protected User handle(Request req, Response res, NewUser body) {
         return users.create(body);
@@ -38,7 +39,9 @@ written by the codec, so nothing has to be installed for a route to reply in JSO
 ```java
 @GET("/users")
 public final class ListUsers extends JsonHandler<Void, List<User>> {
-    @Inject private UserService users;
+    private final UserService users;
+
+    public ListUsers(UserService users) { this.users = users; }
 
     @Override protected List<User> handle(Request req, Response res, Void nothing) {
         return users.all();
@@ -49,8 +52,10 @@ public final class ListUsers extends JsonHandler<Void, List<User>> {
 ## A handler that reads or writes it itself
 
 ```java
-public final class Import extends RequestHandler {
-    @Inject private Json json;
+public final class Import implements Handler {
+    private final Json json;
+
+    public Import(Json json) { this.json = json; }
 
     @Override public Object handle(Request req, Response res) throws Exception {
         return json.write(res, archive.store(json.read(req, Manifest.class)));

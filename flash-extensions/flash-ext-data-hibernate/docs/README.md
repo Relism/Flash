@@ -14,13 +14,13 @@ repository base class.
 ```java
 SessionFactory sessionFactory = ...;
 HibernateTxManager txManager = new HibernateTxManager(sessionFactory);
-DataExtension extension = new DataExtension(txManager);
+app.install(new DataModule(txManager));
 ```
 
-### 2. Install the extension in Flash
+### 2. What the module adds
 
-The extension registers `Tx` and `TxManager` in the `FlashContext`. Class-based handlers annotated
-with `@Transactional` are wrapped automatically.
+`Tx` and `TxManager` as services, and `@Transactional` on handler classes; see
+[flash-ext-data-core](../../flash-ext-data-core/docs/README.md#composing-with-flash).
 
 ### 3. Define a repository
 

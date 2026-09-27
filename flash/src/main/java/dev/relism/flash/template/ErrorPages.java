@@ -1,8 +1,7 @@
 package dev.relism.flash.template;
 
-import dev.relism.flash.Flash;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
 import lombok.NoArgsConstructor;
 
 import java.io.IOException;
@@ -16,7 +15,7 @@ import java.util.Base64;
 /**
  * Precompiled error page templates.
  * <p>
- * Static placeholders ({@code logo_img}, {@code version}) are baked in once at
+ * Static placeholders ({@code logo_img}) are baked in once at
  * class init. Dynamic placeholders (method, path, exception …) are filled per
  * call with a single allocation via {@link ByteTemplate#render}.
  */
@@ -33,7 +32,7 @@ public final class ErrorPages {
     }
 
     public static byte[] renderNotFound(Request request) {
-        RequestLine rl = request.getRequestLine();
+        RequestLine rl = request.requestLine();
         return TEMPLATE_404.render(
                 "method",    rl.getMethod().toString(),
                 "path",      rl.getPath().toString(),
@@ -43,7 +42,7 @@ public final class ErrorPages {
     }
 
     public static byte[] renderException(Request request, Exception ex) {
-        RequestLine rl = request.getRequestLine();
+        RequestLine rl = request.requestLine();
         StringWriter sw = new StringWriter();
         ex.printStackTrace(new PrintWriter(sw));
         return TEMPLATE_500.render(
@@ -61,8 +60,7 @@ public final class ErrorPages {
 
     private static ByteTemplate bake(String resource, String logoHtml) {
         String raw = load(resource)
-                .replace("{{logo_img}}", logoHtml)
-                .replace("{{version}}", Flash.VERSION);
+                .replace("{{logo_img}}", logoHtml);
         return new ByteTemplate(raw);
     }
 

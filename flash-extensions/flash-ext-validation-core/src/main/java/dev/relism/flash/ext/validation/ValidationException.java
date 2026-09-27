@@ -1,6 +1,6 @@
 package dev.relism.flash.ext.validation;
 
-import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.http.HttpException;
 
 import java.util.List;
 

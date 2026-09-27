@@ -1,6 +1,6 @@
 package dev.relism.flash.http;
 
-import dev.relism.flash.models.HeaderView;
+import dev.relism.flash.http.HeaderView;
 import dev.relism.fpr.core.ByteView;
 
 /** Shared proxy policy for fields that must not cross an HTTP connection boundary. */

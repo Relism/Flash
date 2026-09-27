@@ -23,31 +23,25 @@ runs on a virtual thread, and the whole thing stops with the app.
 ## Quick start
 
 ```java
-FlashApp.create(8080)
-    .install(new SchedulerExtension())
-    .apply(new BlogApp())
-    .start();
+App.create()
+    .install(new Scheduler())
+    .onStart(services -> {
+        Scheduler jobs = services.get(Scheduler.class);
+        Reports reports = services.get(Reports.class);
+        jobs.every(Duration.ofMinutes(5), reports::refresh);
+        jobs.cron("0 0 3 * * *", ZoneId.of("Europe/Rome"), archive::sweep);
+    });
 ```
 
-```java
-// inside BlogApp.configure(app)
-app.ctx().onReady(() -> {
-    Scheduler jobs = app.ctx().require(Scheduler.class);
-
-    jobs.every(Duration.ofMinutes(5), reports::refresh);
-    jobs.cron("0 0 3 * * *", archive::sweep);
-});
-```
-
-`onReady` is the right place: the service graph is resolved by then, so a job can close over the
-services it needs.
+`onStart` is the right place: every service is built by then, so a job can close over the ones it
+needs. A service can equally take `Scheduler` in its constructor and register its own jobs.
 
 Give a job an explicit name when the logs should be readable — a method reference names itself, a
 lambda cannot:
 
 ```java
 jobs.every("refresh-reports", Duration.ofMinutes(5), () -> reports.refresh());
-jobs.cron("nightly-archive", "0 0 3 * * *", () -> archive.sweep());
+jobs.cron("nightly-archive", "0 0 3 * * *", ZoneId.of("UTC"), () -> archive.sweep());
 ```
 
 `jobNames()` returns them in registration order, for an ops or health endpoint.
@@ -70,6 +64,8 @@ and day names. Both `0` and `7` mean Sunday.
 Standard cron semantics for the two day fields: when **both** are restricted, a match is their
 **union** — `0 0 1 * MON` means "the 1st, or any Monday", not "a Monday that is the 1st".
 
+An expression is read in the zone it is registered with, the system's when none is given.
+
 A malformed expression throws when you register the job, not the first time it would have fired.
 
 ## Overlapping runs are skipped
@@ -89,21 +85,21 @@ the failure mode this avoids.
 
 ## Shutdown
 
-The scheduler is registered with `FlashContext.onClose`, so `app.stop()` drains in-flight HTTP
-requests first, then gives running jobs their grace period (10s by default) before forcing them
-down. Nothing runs after the app has stopped.
+`Scheduler` is `AutoCloseable`, so the app closes it on stop: `server.stop()` drains in-flight
+HTTP requests first, then gives running jobs their grace period (10s by default) before
+interrupting them. Nothing runs after the app has stopped.
 
 ```java
-new SchedulerExtension(Duration.ofSeconds(30))   // longer grace for slow jobs
+new Scheduler(Duration.ofSeconds(30))   // longer grace for slow jobs
 ```
 
 That is the only knob.
 
 ## Threading
 
-`Scheduler` holds one daemon platform thread for timing and dispatches every job body to a virtual
-thread. A slow job delays nothing but its own next run; it cannot occupy the timer or starve other
-jobs.
+`Scheduler` holds one daemon platform thread for timing and starts every run on a virtual thread
+of its own. A slow job delays nothing but its own next run; it cannot occupy the timer or hold
+back other jobs.
 
 ## Performance
 
@@ -122,4 +118,4 @@ a string on every candidate instant would be genuinely wasteful, not to shave an
 
 **Schedules are per-instance.** Two replicas run every job twice. The fix is a distributed lock,
 and it should not exist until there is a second replica — it is marked with a `ponytail:` comment
-in `SchedulerExtension`.
+in `Scheduler`.

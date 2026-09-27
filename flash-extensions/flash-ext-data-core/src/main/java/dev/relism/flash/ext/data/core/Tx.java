@@ -4,9 +4,17 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
 
+/**
+ * Runs work in a transaction of one {@link TxManager}: commits when it returns, rolls back when it
+ * throws or was marked rollback-only. Its nesting is its own, per thread: two {@code Tx} over two
+ * databases never see each other's transaction.
+ *
+ * <p>A {@link RuntimeException} leaves exactly as it was thrown — an {@code HttpException} keeps its
+ * status — and a checked exception is wrapped in {@link TxException}.
+ */
 public final class Tx {
-    private static final ThreadLocal<Deque<TxStatus>> STATUS_STACK =
-            ThreadLocal.withInitial(ArrayDeque::new);
+
+    private final ThreadLocal<Deque<TxStatus>> stack = ThreadLocal.withInitial(ArrayDeque::new);
     private final TxManager manager;
 
     public Tx(TxManager txManager) {
@@ -30,31 +38,27 @@ public final class Tx {
 
     public <T> T call(TxDefinition definition, TxCallable<T> work) {
         TxStatus status = manager.begin(definition);
-        pushStatus(status);
+        Deque<TxStatus> statuses = stack.get();
+        statuses.push(status);
         try {
             T result = work.call();
-            if (status.isRollbackOnly()) {
-                manager.rollback(status);
-            } else {
-                manager.commit(status);
-            }
+            if (status.isRollbackOnly()) manager.rollback(status);
+            else manager.commit(status);
             return result;
-        } catch (Exception e) {
+        } catch (RuntimeException | Error failure) {
             silentRollback(status);
-            throw (e instanceof TxException txException) ? txException : new TxException(e);
-        } catch (Throwable t) {
+            throw failure;
+        } catch (Exception checked) {
             silentRollback(status);
-            throw sneakyThrow(t);
+            throw new TxException(checked);
         } finally {
-            popStatus();
-            if (STATUS_STACK.get().isEmpty()) {
-                STATUS_STACK.remove();
-            }
+            statuses.pop();
+            if (statuses.isEmpty()) stack.remove();
         }
     }
 
     public boolean isActive() {
-        return !STATUS_STACK.get().isEmpty();
+        return !stack.get().isEmpty();
     }
 
     public void setRollbackOnly() {
@@ -74,22 +78,9 @@ public final class Tx {
     }
 
     private TxStatus currentStatus() {
-        TxStatus status = STATUS_STACK.get().peek();
-        if (status == null) {
-            throw new IllegalStateException("No active transaction");
-        }
+        TxStatus status = stack.get().peek();
+        if (status == null) throw new IllegalStateException("No active transaction");
         return status;
-    }
-
-    private void pushStatus(TxStatus status) {
-        STATUS_STACK.get().push(status);
-    }
-
-    private void popStatus() {
-        Deque<TxStatus> stack = STATUS_STACK.get();
-        if (!stack.isEmpty()) {
-            stack.pop();
-        }
     }
 
     private void silentRollback(TxStatus status) {
@@ -97,11 +88,6 @@ public final class Tx {
             manager.rollback(status);
         } catch (Exception ignored) {
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <E extends Throwable> RuntimeException sneakyThrow(Throwable t) throws E {
-        throw (E) t;
     }
 
     @FunctionalInterface

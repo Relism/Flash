@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.relism.flash.http2.Http2ErrorCode;
 import dev.relism.flash.http2.Http2Limits;
 import dev.relism.flash.http2.Http2StreamException;
-import dev.relism.flash.models.RequestBody;
+import dev.relism.flash.http.RequestBody;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ class Http2RequestBodyTest {
   void inlineBodyFeedsTheProtocolNeutralRequestBodyWithOneMaterialization() {
     AtomicInteger consumed = new AtomicInteger();
     Http2RequestBody source = new Http2RequestBody(new DataBufferPool(16, 1));
-    source.begin(3, true, consumed::addAndGet);
+    source.begin(3, true, consumed::addAndGet, 1024);
     source.offer(1, "abc".getBytes(StandardCharsets.US_ASCII), 0, 3, 5);
     source.finish(1);
     RequestBody body = new RequestBody();
@@ -33,7 +33,7 @@ class Http2RequestBodyTest {
     DataBufferPool pool = new DataBufferPool(8, 2);
     AtomicInteger consumed = new AtomicInteger();
     Http2RequestBody source = new Http2RequestBody(pool);
-    source.begin(-1, false, consumed::addAndGet);
+    source.begin(-1, false, consumed::addAndGet, 1024);
     source.offer(1, new byte[] {1, 2, 3, 4, 5, 6, 7, 8}, 0, 8, 8);
     source.offer(1, new byte[] {9, 10}, 0, 2, 2);
     source.finish(1);
@@ -47,7 +47,7 @@ class Http2RequestBodyTest {
   @Test
   void contentLengthMismatchIsAProtocolStreamError() {
     Http2RequestBody source = new Http2RequestBody(new DataBufferPool(8, 1));
-    source.begin(4, true, bytes -> {});
+    source.begin(4, true, bytes -> {}, 1024);
     source.offer(3, new byte[] {1, 2, 3}, 0, 3, 3);
 
     Http2StreamException failure =
@@ -59,7 +59,7 @@ class Http2RequestBodyTest {
   void boundedPoolNeverAllocatesPastItsCapacity() {
     DataBufferPool pool = new DataBufferPool(4, 1);
     Http2RequestBody source = new Http2RequestBody(pool);
-    source.begin(-1, false, bytes -> {});
+    source.begin(-1, false, bytes -> {}, 1024);
     source.offer(1, new byte[] {1, 2, 3, 4}, 0, 4, 4);
 
     Http2StreamException failure =
@@ -73,14 +73,14 @@ class Http2RequestBodyTest {
   @Test
   void unknownLengthBodyCannotExceedTheConfiguredMaximum() {
     Http2RequestBody source = new Http2RequestBody(new DataBufferPool(8, 1));
-    source.begin(-1, false, bytes -> {});
+    source.begin(-1, false, bytes -> {}, 1024);
 
     Http2StreamException failure =
         assertThrows(
             Http2StreamException.class,
             () ->
                 source.offer(
-                    1, new byte[1], 0, Http2Limits.MAX_REQUEST_BODY_SIZE + 1, 1));
+                    1, new byte[1], 0, 1025, 1));
     assertEquals(Http2ErrorCode.PROTOCOL_ERROR, failure.errorCode());
   }
 }

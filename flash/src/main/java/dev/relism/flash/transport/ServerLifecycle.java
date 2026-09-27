@@ -1,7 +1,6 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.ServerHandle;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,22 +20,20 @@ import java.util.concurrent.TimeUnit;
  * {@code Connection: close} on the next response once it observes {@link #isStopped()}), then
  * force-close whatever remains.
  *
- * <p>Implements {@link ServerHandle} directly — its three methods already match that contract
- * exactly, so no separate wrapper class is needed.
  */
 @Slf4j
-public final class ServerLifecycle implements ServerHandle {
+public final class ServerLifecycle {
 
     private final List<BoundListener>  listeners;
     private final ConnectionRunner     runner;
-    private final FlashConfiguration   configuration;
+    private final ServerConfig   configuration;
     private final ExecutorService      executorService;
     private final Set<Socket>          activeSockets;
     private final CountDownLatch       acceptLatch;
     private volatile boolean           stopped = false;
 
     public ServerLifecycle(List<BoundListener> listeners, ConnectionRunner runner,
-                            FlashConfiguration configuration, ExecutorService executorService,
+                            ServerConfig configuration, ExecutorService executorService,
                             Set<Socket> activeSockets) {
         this.listeners       = listeners;
         this.runner          = runner;
@@ -46,10 +43,8 @@ public final class ServerLifecycle implements ServerHandle {
         this.acceptLatch     = new CountDownLatch(TransportTuning.ACCEPT_THREADS * listeners.size());
     }
 
-    @Override
     public int port() { return listeners.get(0).socket().getLocalPort(); }
 
-    @Override
     public List<Integer> ports() {
         return listeners.stream().map(bound -> bound.socket().getLocalPort()).toList();
     }
@@ -61,7 +56,6 @@ public final class ServerLifecycle implements ServerHandle {
         return stopped;
     }
 
-    @Override
     public void start() {
         for (int li = 0; li < listeners.size(); li++) {
             BoundListener listener = listeners.get(li);
@@ -80,14 +74,12 @@ public final class ServerLifecycle implements ServerHandle {
         }
     }
 
-    @Override
-    public void startAndBlock() {
-        start();
+    /** Blocks until every accept loop has ended, which is what {@link #stop()} causes. */
+    public void await() {
         try { acceptLatch.await(); }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
-    @Override
     public CompletableFuture<Void> stop() {
         return CompletableFuture.runAsync(() -> {
             stopped = true;
@@ -95,7 +87,7 @@ public final class ServerLifecycle implements ServerHandle {
                 try { bl.socket().close(); } catch (IOException e) { log.error("Error closing server socket", e); }
             }
 
-            // exit (Http1Connection forces Connection: close once it observes isStopped())
+            // Let in-flight requests finish (Http1Connection forces Connection: close once it observes isStopped())
             // before force-closing whatever is still open.
             long deadlineNanos = System.nanoTime() + configuration.getShutdownDrainTimeoutMs() * 1_000_000L;
             while (!activeSockets.isEmpty() && System.nanoTime() < deadlineNanos) {

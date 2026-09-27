@@ -1,7 +1,8 @@
 package dev.relism.flash;
 
-import dev.relism.flash.exceptions.MalformedRequestException;
-import dev.relism.flash.models.Request;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.http.MalformedRequestException;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.transport.BufferedByteSource;
 import org.junit.jupiter.api.Test;
 
@@ -38,15 +39,15 @@ class RequestParserTest {
     @Test
     void path_withoutQueryString() throws IOException {
         Request r = parse(req("GET /hello HTTP/1.1", "Host: localhost"));
-        assertEquals("/hello", r.getRequestLine().getPath().toString());
-        assertNull(r.getRequestLine().getQuery());
+        assertEquals("/hello", r.requestLine().getPath().toString());
+        assertNull(r.requestLine().getQuery());
     }
 
     @Test
     void path_splitsAtQuestionMark() throws IOException {
         Request r = parse(req("GET /hello?foo=bar&baz=qux HTTP/1.1", "Host: localhost"));
-        assertEquals("/hello",       r.getRequestLine().getPath().toString());
-        assertEquals("foo=bar&baz=qux", r.getRequestLine().getQuery().toString());
+        assertEquals("/hello",       r.requestLine().getPath().toString());
+        assertEquals("foo=bar&baz=qux", r.requestLine().getQuery().toString());
     }
 
     @Test
@@ -62,23 +63,23 @@ class RequestParserTest {
         RequestParser parser = new RequestParser();
         byte[] first = req("GET /search?token=super-secret HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
         Request r1 = parser.parse(source(first));
-        assertEquals("token=super-secret", r1.getRequestLine().getQuery().toString());
+        assertEquals("token=super-secret", r1.requestLine().getQuery().toString());
 
         byte[] second = req("GET /health HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
         Request r2 = parser.parse(source(second));
-        assertNull(r2.getRequestLine().getQuery(), "the second request must not see the first request's leftover query view");
-        assertEquals("/health", r2.getRequestLine().getPath().toString());
+        assertNull(r2.requestLine().getQuery(), "the second request must not see the first request's leftover query view");
+        assertEquals("/health", r2.requestLine().getPath().toString());
     }
 
     @Test
     void samePooledParser_secondRequest_seesOnlyItsOwnPathAndProtocol() throws IOException {
         RequestParser parser = new RequestParser();
         Request r1 = parser.parse(source(req("GET /first HTTP/1.1", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8)));
-        assertEquals("/first", r1.getRequestLine().getPath().toString());
+        assertEquals("/first", r1.requestLine().getPath().toString());
 
         Request r2 = parser.parse(source(req("POST /second HTTP/1.0", "Host: a").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8)));
-        assertEquals("/second", r2.getRequestLine().getPath().toString());
-        assertEquals("HTTP/1.0", r2.getRequestLine().getProtocol().toString());
+        assertEquals("/second", r2.requestLine().getPath().toString());
+        assertEquals("HTTP/1.0", r2.requestLine().getProtocol().toString());
     }
 
     // --- headers ---
@@ -160,7 +161,7 @@ class RequestParserTest {
         byte[] giant = new byte[cap + 1];
         Arrays.fill(giant, (byte) 'A');
         MalformedRequestException e = assertThrows(MalformedRequestException.class,
-                () -> new RequestParser(cap).parse(source(giant)));
+                () -> new RequestParser(ServerConfig.builder().maxHeaderBufferSize(cap).build(), null, null).parse(source(giant)));
         assertEquals(431, e.status());
     }
 
@@ -193,13 +194,12 @@ class RequestParserTest {
 
     @Test
     void contentLength_parsedAsLong() throws IOException {
-        // ~3 GB — comfortably above Integer.MAX_VALUE (proving the value is a genuine long, not
-        // silently truncated) while staying within Http1Limits.MAX_CONTENT_LENGTH (4 GiB).
+        // ~3 GB — above Integer.MAX_VALUE, proving the value is a genuine long, under a limit set that high.
         String raw = "POST / HTTP/1.1\r\n" +
                      "Host: localhost\r\n" +
                      "Content-Length: 3000000000\r\n" +
                      "\r\n";
-        Request r = new RequestParser().parse(source(raw.getBytes(StandardCharsets.UTF_8)));
+        Request r = new RequestParser(ServerConfig.builder().maxBodySize(4_000_000_000L).build(), null, null).parse(source(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
         assertEquals(3_000_000_000L, r.body().contentLength());
         assertThrows(IllegalStateException.class, r.body()::bytes);

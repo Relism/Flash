@@ -12,11 +12,9 @@ about themselves.
 | `GET /openapi/docs` | The documentation page: Swagger UI, Redoc or Scalar |
 
 ```java
-FlashApp.create(8080)
-    .install(new JacksonExtension())
-    .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
-    .scan("com.acme.handlers")
-    .startAndBlock();
+App.create()
+    .install(new JsonModule(), new OpenApiModule("/openapi", "My API", "1.0.0"))
+    .scan("com.acme.handlers");
 ```
 
 Both documents are encoded once, on the first request, and served as those same bytes afterwards.
@@ -27,7 +25,7 @@ Swagger UI by default; Redoc and Scalar are one call away, and `Ui.none()` serve
 Each is loaded from jsDelivr at a pinned version, and configured with its own options:
 
 ```java
-new OpenApiExtension("/openapi", "My API", "1.0.0")
+new OpenApiModule("/openapi", "My API", "1.0.0")
     .ui(Ui.scalar().theme(Ui.Scalar.Theme.DEEP_SPACE).layout(Ui.Scalar.Layout.CLASSIC)
                    .darkMode(true).hideModels(true))
 ```
@@ -55,7 +53,7 @@ Every class-based route is documented, annotated or not. Read off the code:
 - **the media types**, from the codecs the handler names: what it reads and what it answers are two
   different questions, and taking a JSON body does not make the answer JSON
 - **error responses**, in the one shape Flash answers failures with: `{"error": "...", "status": 404}`
-- **security and rate limiting**, from the extensions that enforce them
+- **security and rate limiting**, from the modules that enforce them
 
 Annotations add what the code cannot say: prose, extra statuses, examples. They never repeat it.
 
@@ -64,7 +62,7 @@ Annotations add what the code cannot say: prose, extra statuses, examples. They 
 ```java
 @GET("/healthz")
 @Undocumented
-public final class Health extends RequestHandler { ... }
+public final class Health implements Handler { ... }
 ```
 
 Every route is documented, so a document never lies by omission. `@Undocumented` says a route is
@@ -102,7 +100,7 @@ For a handler that reads the body by hand, or to describe it as something else, 
 ```java
 @PUT("/users")
 @RequestBody(value = User.class, array = true, description = "Users to store")
-public final class ReplaceUsers extends RequestHandler { ... }
+public final class ReplaceUsers implements Handler { ... }
 ```
 
 ## Operations
@@ -111,7 +109,7 @@ public final class ReplaceUsers extends RequestHandler { ... }
 @GET("/users/{id}")
 @ApiOperation(summary = "Get user", description = "Returns one user", tags = {"users"})
 @Parameter(name = "expand", in = ParameterIn.QUERY, type = SchemaType.STRING, examples = {"roles", "permissions"})
-public final class GetUser extends RequestHandler { ... }
+public final class GetUser implements Handler { ... }
 ```
 
 `@ApiOperation` is optional: without it the route is still in the document, with no summary.
@@ -182,12 +180,15 @@ for themselves, and repeating them as prose would be noise.
 
 ## Contributor API
 
-OpenAPI is extension-agnostic. Other extensions contribute through `OpenApiContributor`, held in
-`OpenApiContributorRegistry`:
+OpenAPI knows no other module. Others contribute through `OpenApiContributor`, added as a service
+(`app.add(OpenApiContributor.class, MyDocs.class)`) and read with every contributor when the app
+starts. A module installs its contributor with `Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor", ...)`,
+so it does not need flash-ext-openapi on the classpath:
 
 - `components` fragments (merged last-wins)
 - operation `security` requirements (additive)
 - operation `responses` and response `headers` (additive)
+- a property's wire name, whether it is left out, and the rules a validation engine knows
 
 Manual `@APIResponse` description always wins over a contributor's for the same status.
 
@@ -204,7 +205,7 @@ When `flash-ext-limiter` is installed, handlers with `@Limit` document `X-RateLi
 
 ## Notes
 
-- Operations come from the final boot-time routes, so documented paths match runtime paths,
-  namespaces, prefixes and rewrites included.
+- Operations come from the routes the app builds at start, so documented paths match runtime
+  paths, mount prefixes included.
 - Lambda routes are not documented: there is no class to read.
-- Responses are sorted by status code; the document is rebuilt only when a route is added.
+- Responses are sorted by status code.

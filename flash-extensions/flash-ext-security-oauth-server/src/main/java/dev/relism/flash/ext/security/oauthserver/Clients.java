@@ -3,7 +3,7 @@ package dev.relism.flash.ext.security.oauthserver;
 import com.nimbusds.jose.util.JSONObjectUtils;
 import dev.relism.flash.ext.cache.Cache;
 import dev.relism.flash.ext.security.PublicUrl;
-import dev.relism.flash.ext.security.oauthserver.OAuthServerExtension.OAuthError;
+import dev.relism.flash.ext.security.oauthserver.OAuthServer.OAuthError;
 
 import java.net.URI;
 import java.net.http.HttpClient;

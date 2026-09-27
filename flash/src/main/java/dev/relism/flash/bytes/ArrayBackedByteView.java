@@ -9,7 +9,7 @@ import dev.relism.fpr.core.ByteView;
  *
  * <p>Every array-backed view in this codebase implements this: {@code RequestByteView},
  * {@code SocketByteView}, {@code StringByteView} (all in
- * {@code dev.relism.flash.routing.routers.fastpathrouter.FastPathViews}), and {@link PooledSlice}.
+ * {@code dev.relism.flash.bytes.FastPathViews}), and {@link PooledSlice}.
  * {@code MethodPathByteView} deliberately does not — it is a composite of a {@code byte[]}
  * (method) and another {@link ByteView} (path), so it has no single backing array.
  *

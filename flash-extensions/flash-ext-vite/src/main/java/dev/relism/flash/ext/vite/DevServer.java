@@ -39,7 +39,7 @@ final class DevServer implements AutoCloseable {
 
     DevServer(Path root, int port) {
         if (!Files.isRegularFile(root.resolve("package.json"))) {
-            throw new IllegalStateException("No package.json in " + root.toAbsolutePath() + ": point ViteExtension.root(...) at the Vite project.");
+            throw new IllegalStateException("No package.json in " + root.toAbsolutePath() + ": point ViteModule.root(...) at the Vite project.");
         }
         this.root = root;
         this.port = port;
@@ -94,7 +94,7 @@ final class DevServer implements AutoCloseable {
     }
 
     private void start() {
-        if (answers()) throw new IllegalStateException("Port " + port + " is taken: stop what uses it or set ViteExtension.devPort(...).");
+        if (answers()) throw new IllegalStateException("Port " + port + " is taken: stop what uses it or set ViteModule.devPort(...).");
         process = spawn(packages.run("dev", "--host", "127.0.0.1", "--port", String.valueOf(port), "--strictPort"));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (!answers()) {

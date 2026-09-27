@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import java.nio.charset.StandardCharsets;
@@ -27,25 +28,25 @@ import org.w3c.dom.NodeList;
 @EnabledIfSystemProperty(named = "h2spec.executable", matches = ".+")
 class H2SpecComplianceTest {
   private static final String VERSION = "2.6.0";
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
   void cleartextSuiteHasNoFailuresOrSkips(@TempDir Path directory) throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     registerProbeRoutes();
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     runH2Spec(port, false, directory.resolve("h2spec-h2c.xml"));
   }
@@ -58,17 +59,16 @@ class H2SpecComplianceTest {
             "h2spec.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config2 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     registerProbeRoutes();
-    app.start();
+    server = Server.start(app, config2);
+    int port = server.port();
 
     runH2Spec(port, true, directory.resolve("h2spec-tls.xml"));
   }

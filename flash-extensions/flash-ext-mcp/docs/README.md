@@ -8,23 +8,21 @@ declared as plain classes and discovered at boot, optional OAuth2 protection bui
 ## Quick Start
 
 ```java
-FlashApp.create(8080)
-    .install(new McpExtension(McpConfig.builder("my-mcp-server")
+App.create()
+    .install(new McpModule(McpConfig.builder("my-mcp-server")
         .toolsPackage("com.example.tools")
-        .build()))
-    .start();
+        .build()));
 ```
 
 ```java
 @Tool(name = "get_weather", description = "Get current weather for a city",
       args = @ToolArg(name = "city", description = "City name", required = true))
-public class GetWeatherTool extends McpTool {
+public final class GetWeatherTool implements McpTool {
 
-    private WeatherService weatherService;
+    private final WeatherService weatherService;
 
-    @Override
-    protected void onInit() {
-        weatherService = require(WeatherService.class);
+    public GetWeatherTool(WeatherService weatherService) {
+        this.weatherService = weatherService;
     }
 
     @Override
@@ -36,16 +34,16 @@ public class GetWeatherTool extends McpTool {
 
 ## Operating Model
 
-- **One class per tool/resource/prompt** — mirrors `RequestHandler`: a no-arg constructor,
-  `onInit()` to cache services from `FlashContext`, one hot-path method
-  (`call`/`read`/`render`). No CDI, no field injection, no reflection on the hot path.
+- **One class per tool/resource/prompt**, like a handler: services through the constructor, an
+  optional `onInit()` for boot-time work, one hot-path method (`call`/`read`/`render`). No field
+  injection, no reflection on the hot path.
 - **Boot-time precompilation** — `tools/list`/`resources/list`/`prompts/list` JSON payloads
   (including JSON Schema) are built once at boot and spliced verbatim into responses. See
   `tools-resources-prompts.md`.
 - **Transport**: Streamable HTTP, `POST`-only, stateless in this revision — see `transport.md`
   for exactly what that means and why.
 - **Security**: authenticated by `flash-ext-security-core`, an OAuth2 protected resource when OIDC is installed — see `security.md`.
-- **JSON**: this extension owns its JSON handling independently of `flash-ext-jackson` — see
+- **JSON**: this module owns its JSON handling independently of `flash-ext-jackson` — see
   `jackson-interop.md` for why, and how a future opt-in reuse could work.
 
 ## Documents

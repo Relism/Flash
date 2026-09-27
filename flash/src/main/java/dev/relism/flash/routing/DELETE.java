@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.DELETE, path = "…")}. */
-@Route(method = HttpMethod.DELETE, path = "")
+/** A handler class that answers {@code DELETE} at the given path. */
+@Verb(HttpMethod.DELETE)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface DELETE {

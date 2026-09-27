@@ -1,7 +1,12 @@
 package dev.relism.flash.ext.validation.avaje;
 
 import dev.relism.flash.ext.jackson.json.Json;
-import dev.relism.flash.ext.jackson.json.JsonExtension;
+import dev.relism.flash.ext.jackson.json.JsonModule;
+import dev.relism.flash.App;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.HttpMethod;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -12,17 +17,24 @@ import org.junit.jupiter.api.extension.RegisterExtension;
  */
 class AvajeValidationTest {
 
-    @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new JsonExtension());
-        configured.install(new AvajeValidationExtension());
+    /** Reads the body through the codec, which has the engine check it. */
+    public static final class Create implements Handler {
+        private final Json json;
 
-        configured.ctx().onReady(() -> {
-            Json json = configured.ctx().require(Json.class);
-            configured.post("/users", (req, res) ->
-                    res.status(201).body("created:" + json.read(req, CreateUser.class).name()));
-        });
-    });
+        public Create(Json json) {
+            this.json = json;
+        }
+
+        @Override
+        public Object handle(Request req, Response res) throws Exception {
+            return res.status(201).body("created:" + json.read(req, CreateUser.class).name());
+        }
+    }
+
+    @RegisterExtension
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .install(new JsonModule(), new AvajeValidation())
+            .route(HttpMethod.POST, "/users", Create.class));
 
     @Test
     void aValidBodyReachesTheHandler() {

@@ -5,6 +5,7 @@ package dev.relism.flash.http2;
  * SETTINGS value violates the protocol in a way that leaves the connection's state (the HPACK
  * dynamic table, a flow-control window, the stream table) unrecoverable.
  *
+ * The connection handles it at a
  * single site: it sends {@code GOAWAY} with {@link #errorCode()} and closes the connection.
  * Compare {@link Http2StreamException}, whose scope is one stream and which results in
  * {@code RST_STREAM} while the connection survives.

@@ -1,6 +1,6 @@
 package dev.relism.flash;
 
-import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.http.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.transport.BufferedByteSource;
 import org.junit.jupiter.api.Test;

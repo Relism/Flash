@@ -3,7 +3,7 @@ package dev.relism.flash.ext.openapi;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
-import dev.relism.flash.models.TypedHandler;
+import dev.relism.flash.http.TypedHandler;
 import dev.relism.flash.routing.Route;
 
 import java.lang.annotation.Annotation;
@@ -39,7 +39,7 @@ public final class OpenApiBuilder {
     private static final String ERROR_REF = "#/components/schemas/" + ERROR_SCHEMA;
     private static final String RESPONSE_REF = "#/components/responses/";
 
-    /** What {@code AbstractRouter} answers every failure with: one object, everywhere. */
+    /** What Flash answers every failure with ({@code Errors}): one object, everywhere. */
     private static final Map<String, Object> ERROR_SHAPE = Map.of(
             "type", "object",
             "properties", Map.of("error", Map.of("type", "string"), "status", Map.of("type", "integer")),
@@ -52,7 +52,7 @@ public final class OpenApiBuilder {
     private final Map<String, Map<String, Object>> paths = new LinkedHashMap<>();
     private final Map<String, Map<String, Class<?>>> operationHandlers = new LinkedHashMap<>();
     private final Schemas schemas = new Schemas();
-    private OpenApiContributorRegistry contributorRegistry;
+    private List<OpenApiContributor> contributors = List.of();
     private boolean errorsDocumented;
     private int revision;
     private int builtRevision = -1;
@@ -61,9 +61,10 @@ public final class OpenApiBuilder {
     public OpenApiBuilder title(String title) { this.title = title; return this; }
     public OpenApiBuilder version(String version) { this.version = version; return this; }
     public OpenApiBuilder description(String description) { this.description = description; return this; }
-    void setContributorRegistry(OpenApiContributorRegistry registry) {
-        this.contributorRegistry = registry;
-        schemas.setContributorRegistry(registry);
+    /** Whoever adds to the document: security schemes, rate-limit headers, a validation engine's rules. */
+    void contributors(List<OpenApiContributor> contributors) {
+        this.contributors = List.copyOf(contributors);
+        schemas.contributors(this.contributors);
     }
 
     /** Bumped by every operation added, so a rendering of this document knows whether it is still current. */
@@ -308,7 +309,7 @@ public final class OpenApiBuilder {
         if (returned == null) returned = returnTypeOf(handlerClass);
         Class<?> raw = Schemas.rawType(returned);
         if (raw == null || raw == Object.class || raw == Void.class || raw == void.class) return null;
-        if (raw.getName().equals("dev.relism.flash.models.Response")) return null;
+        if (raw.getName().equals("dev.relism.flash.http.Response")) return null;
 
         Map<String, Object> schema = schemas.schemaForType(returned);
         return schema == null || schema.isEmpty() ? null : schema;
@@ -338,7 +339,7 @@ public final class OpenApiBuilder {
     // ── Contributors ──────────────────────────────────────────────────────────
 
     private List<OpenApiContributor> contributors() {
-        return contributorRegistry != null ? contributorRegistry.contributors() : List.of();
+        return contributors;
     }
 
     private void applyContributorResponses(Map<Integer, Map<String, Object>> byStatus, Class<?> handlerClass,
@@ -479,33 +480,5 @@ public final class OpenApiBuilder {
         String normalized = path.startsWith("/") ? path : "/" + path;
         while (normalized.startsWith("//")) normalized = normalized.substring(1);
         return normalized;
-    }
-
-    /** The route a handler class declares, through {@code @Route} or any shorthand carrying it. */
-    static Route routeOf(Class<?> cls) {
-        Route direct = cls.getAnnotation(Route.class);
-        if (direct != null) return direct;
-
-        for (Annotation annotation : cls.getAnnotations()) {
-            Route meta = annotation.annotationType().getAnnotation(Route.class);
-            if (meta == null) continue;
-            String path = pathOf(annotation);
-            if (path == null) continue;
-            HttpMethod method = meta.method();
-            return new Route() {
-                @Override public HttpMethod method() { return method; }
-                @Override public String path() { return path; }
-                @Override public Class<? extends Annotation> annotationType() { return Route.class; }
-            };
-        }
-        return null;
-    }
-
-    private static String pathOf(Annotation annotation) {
-        try {
-            return annotation.annotationType().getMethod("value").invoke(annotation) instanceof String path ? path : null;
-        } catch (ReflectiveOperationException absent) {
-            return null;
-        }
     }
 }

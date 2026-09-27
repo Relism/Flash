@@ -19,8 +19,8 @@ The current design replaces it with named, single-responsibility components and 
 
 ```
 dev.relism.flash.transport
-├── TransportFactory        composes everything below; ServerHandle.create()'s implementation (EX-34)
-├── ListenerBinder           FlashConfiguration.Listener -> bound ServerSocket
+├── TransportFactory        composes everything below; what Server.start binds through (EX-34)
+├── ListenerBinder           ServerConfig.Listener -> bound ServerSocket
 ├── BoundListener            record: the bound socket + whether it is TLS
 ├── TransportTuning          accept-thread count / backlog / socket buffer size constants
 ├── AcceptLoop                one listener's accept loop body
@@ -30,7 +30,7 @@ dev.relism.flash.transport
 ├── ConnectionContext         everything a ConnectionProtocol needs, bundled (record)
 ├── ConnectionScratch         per-connection reusable buffers (EX-06's fix)
 ├── ScratchPool               a bounded cache of ConnectionScratch instances
-├── ServerLifecycle           implements ServerHandle: start/startAndBlock/stop, graceful shutdown (EX-32)
+├── ServerLifecycle           start/await/stop, graceful shutdown; what Server wraps (EX-32)
 ├── BufferedByteSource        the buffered, deadline-aware, peekable inbound-byte source (Phase 1, EX-10)
 └── ProtocolNegotiator/NegotiatedProtocol   ALPN + h2c preface detection (Phase 1)
 
@@ -49,10 +49,10 @@ dev.relism.flash.websocket (existing package, extended)
 ## The connection lifecycle
 
 ```
-TransportFactory.create(configuration, router, wsRouter)
+TransportFactory.create(configuration, router)
     binds every configured listener (ListenerBinder)
     builds one ConnectionRunner (shared virtual-thread executor, ScratchPool, both protocols)
-    returns a ServerLifecycle (implements ServerHandle)
+    returns a ServerLifecycle
 
 ServerLifecycle.start()
     for each listener, spawns TransportTuning.ACCEPT_THREADS platform threads
@@ -96,8 +96,8 @@ leak-free arena: above its bound (`min(availableProcessors * 64, 4096)` by defau
 scratch is simply dropped for the garbage collector rather than queued, so an unusually large
 burst of connections cannot grow it without limit.
 
-The routers use an explicit per-connection scratch passed through `AbstractRouter.route`; neither
-`FastPathRouterImpl` nor `FastPathWsRouterImpl` retains connection state in a `ThreadLocal`.
+The router uses an explicit per-connection scratch passed through `Router.dispatch`; it retains no
+connection state in a `ThreadLocal`.
 
 ## The `ConnectionProtocol` seam (R1 / `DEC-02`)
 

@@ -97,12 +97,17 @@ class HibernateTxManagerTest {
                 () -> manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.MANDATORY)));
     }
 
-    /** A read-only join onto a read-write transaction is a contract violation, not a silent downgrade. */
+    /** A read inside a write joins it, and stays in its session; a write inside a read-only transaction is refused. */
     @Test
-    void read_only_cannot_join_a_read_write_transaction() {
+    void a_read_joins_a_write_and_a_write_cannot_join_a_read() {
         TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
-        assertThrows(TxException.class,
-                () -> manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRED).asReadOnly()));
+        TxStatus read = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRED).asReadOnly());
+        assertFalse(read.isNewTransaction());
+        manager.commit(read);
         manager.rollback(outer);
+
+        TxStatus readOnly = manager.begin(TxDefinition.DEFAULTS.asReadOnly());
+        assertThrows(TxException.class, () -> manager.begin(TxDefinition.DEFAULTS));
+        manager.rollback(readOnly);
     }
 }

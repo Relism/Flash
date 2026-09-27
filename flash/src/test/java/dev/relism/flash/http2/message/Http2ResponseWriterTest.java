@@ -10,7 +10,7 @@ import dev.relism.flash.http2.Http2StreamException;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackDecoder;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import dev.relism.fpr.core.ByteView;
 import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;

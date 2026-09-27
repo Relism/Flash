@@ -1,8 +1,8 @@
 package dev.relism.flash.http2.message;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.RequestBody;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.RequestBody;
+import dev.relism.flash.http.Response;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +47,7 @@ public class Http2BodyBenchmark {
     responseWriter = new Http2ResponseWriter();
     responseSource = new ResettableInputStream(payload);
     largeResponseSource = new ResettableInputStream(streamingPayload);
-    source.begin(-1, false, NOOP);
+    source.begin(-1, false, NOOP, Long.MAX_VALUE);
     source.offer(1, payload, 0, payload.length, payload.length);
     source.finish(1);
     source.read(target);
@@ -55,7 +55,7 @@ public class Http2BodyBenchmark {
 
   @Benchmark
   public byte[] inlineBytes() {
-    source.begin(payload.length, true, NOOP);
+    source.begin(payload.length, true, NOOP, Long.MAX_VALUE);
     source.offer(1, payload, 0, payload.length, payload.length);
     source.finish(1);
     body.reset(source, payload.length, null, 0, 0);
@@ -64,7 +64,7 @@ public class Http2BodyBenchmark {
 
   @Benchmark
   public int streamingRead() throws IOException {
-    source.begin(-1, false, NOOP);
+    source.begin(-1, false, NOOP, Long.MAX_VALUE);
     source.offer(1, payload, 0, payload.length, payload.length);
     source.finish(1);
     return source.read(target, 0, target.length);

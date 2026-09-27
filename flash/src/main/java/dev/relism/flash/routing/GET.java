@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.GET, path = "…")}. */
-@Route(method = HttpMethod.GET, path = "")
+/** A handler class that answers {@code GET} at the given path. */
+@Verb(HttpMethod.GET)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface GET {

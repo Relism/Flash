@@ -10,7 +10,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
-/** Ensures that the HTTP/1.1 and HTTP/2 implementations remain independent peers. */
+/** The core stays core and transport: HTTP/1.1 and HTTP/2 are independent peers, and nothing in it knows an extension. */
 class PackageBoundaryTest {
 
     @Test
@@ -21,6 +21,11 @@ class PackageBoundaryTest {
     @Test
     void http2DoesNotImportHttp1() throws IOException {
         assertNoImportOfPackage("dev/relism/flash/http2", "dev.relism.flash.http1");
+    }
+
+    @Test
+    void coreDoesNotImportExtensions() throws IOException {
+        assertNoImportOfPackage("dev/relism/flash", "dev.relism.flash.ext");
     }
 
     private static void assertNoImportOfPackage(String sourceDirRelative, String forbiddenImportPrefix) throws IOException {
@@ -35,7 +40,7 @@ class PackageBoundaryTest {
                     if (trimmed.startsWith("import " + forbiddenImportPrefix + ".")
                             || trimmed.startsWith("import " + forbiddenImportPrefix + ";")) {
                         fail(file + " imports " + forbiddenImportPrefix
-                                + " and violates the HTTP protocol package boundary: " + trimmed);
+                                + " and crosses a package boundary: " + trimmed);
                     }
                 }
             }

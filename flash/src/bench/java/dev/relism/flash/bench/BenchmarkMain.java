@@ -1,7 +1,8 @@
 package dev.relism.flash.bench;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.time.Duration;
@@ -28,21 +29,20 @@ public final class BenchmarkMain {
     Duration measurement = seconds("flash.bench.measureSeconds", 5);
 
     int port = freePort();
-    FlashApp app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    Server server =
+        Server.start(
+            App.create().get("/hello", (request, response) -> "hello"),
+            ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(port)
                 .http2CleartextEnabled(true)
                 .build());
-    app.get("/hello", (request, response) -> "hello");
-    app.start();
 
     try {
       URI target = URI.create("http://127.0.0.1:" + port + "/hello");
       Report.print(runAllScenarios(target, warmup, measurement));
     } finally {
-      app.stop().join();
+      server.stop().join();
     }
   }
 

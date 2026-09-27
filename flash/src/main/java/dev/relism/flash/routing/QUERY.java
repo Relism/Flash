@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.QUERY, path = "…")}. */
-@Route(method = HttpMethod.QUERY, path = "")
+/** A handler class that answers {@code QUERY} at the given path. */
+@Verb(HttpMethod.QUERY)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface QUERY {

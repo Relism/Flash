@@ -5,7 +5,7 @@ public interface TxManager extends AutoCloseable {
     void commit(TxStatus status);
     void rollback(TxStatus status);
 
-    /** Releases what this manager was built on, its connection pool included. {@link dev.relism.flash.ext.data.DataExtension} calls it when the app stops. */
+    /** Releases what this manager was built on, its connection pool included. {@link dev.relism.flash.ext.data.DataModule} calls it when the app stops. */
     @Override
     void close();
 }

@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.HEAD, path = "…")}. */
-@Route(method = HttpMethod.HEAD, path = "")
+/** A handler class that answers {@code HEAD} at the given path. */
+@Verb(HttpMethod.HEAD)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface HEAD {

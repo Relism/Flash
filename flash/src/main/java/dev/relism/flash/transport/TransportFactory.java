@@ -1,11 +1,9 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.ServerHandle;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http1.Http1Connection;
 import dev.relism.flash.http2.Http2Connection;
-import dev.relism.flash.routing.AbstractRouter;
-import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.routing.Router;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.ArrayList;
@@ -17,35 +15,30 @@ import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Composes the whole transport: binds every configured listener, wires the connection runner and
- * the h1 protocol, and returns the {@link ServerHandle} implementation ({@link ServerLifecycle})
- * that {@link dev.relism.flash.ServerHandle#create} exposes publicly.
- *
- * <p>asked for — {@code ServerHandle.create} used to construct {@code HttpServer} directly, which
- * no longer exists. Package-private-in-spirit (public only because {@code ServerHandle} lives in a
- * different package and must call it) — user code has no reason to call this directly.
+ * Composes the transport: binds every configured listener, wires the connection runner and both
+ * protocols, and returns the {@link ServerLifecycle} that {@code Server} drives.
  */
 @Slf4j
 public final class TransportFactory {
 
   private TransportFactory() {}
 
-  public static ServerHandle create(
-      FlashConfiguration configuration, AbstractRouter router, AbstractWsRouter wsRouter)
+  public static ServerLifecycle create(
+      ServerConfig configuration, Router router)
       throws IOException {
-    List<FlashConfiguration.Listener> specs =
+    List<ServerConfig.Listener> specs =
         configuration.getListeners().isEmpty()
             ? List.of(
-                new FlashConfiguration.Listener(
+                new ServerConfig.Listener(
                     configuration.getPort(), configuration.getHost(), configuration.getTls()))
             : configuration.getListeners();
 
     List<BoundListener> bound = new ArrayList<>(specs.size());
-    for (FlashConfiguration.Listener original : specs) {
-      FlashConfiguration.Listener spec = original;
+    for (ServerConfig.Listener original : specs) {
+      ServerConfig.Listener spec = original;
       if (configuration.isHttp2Enabled() && original.tls() != null) {
         spec =
-            new FlashConfiguration.Listener(
+            new ServerConfig.Listener(
                 original.port(), original.host(), original.tls().enableHttp2Alpn());
       }
       bound.add(ListenerBinder.bind(spec));
@@ -72,7 +65,6 @@ public final class TransportFactory {
             activeSockets,
             scratchPool,
             router,
-            wsRouter,
             configuration,
             new Http1Connection(),
             Http2Connection::new);

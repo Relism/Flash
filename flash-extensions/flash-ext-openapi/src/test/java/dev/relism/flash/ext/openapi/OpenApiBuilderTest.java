@@ -1,13 +1,12 @@
 package dev.relism.flash.ext.openapi;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.routing.GET;
+import dev.relism.flash.routing.Route;
+import dev.relism.flash.routing.Verb;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -24,7 +23,7 @@ class OpenApiBuilderTest {
     @ApiOperation(summary = "Get user")
     @Parameter(name = "expand", in = ParameterIn.QUERY, required = false, type = SchemaType.STRING, examples = {"roles", "permissions"})
     @APIResponse(responseCode = "200", description = "User found", content = @Content(schema = UserDto.class))
-    static class GetUserHandler extends RequestHandler {
+    static class GetUserHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -34,7 +33,7 @@ class OpenApiBuilderTest {
     @GET("/users")
     @ApiOperation(summary = "List users")
     @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, array = true))
-    static class ListUsersHandler extends RequestHandler {
+    static class ListUsersHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -44,7 +43,7 @@ class OpenApiBuilderTest {
     @GET("/ping")
     @ApiOperation(summary = "Ping")
     @APIResponse(responseCode = "204", description = "No content")
-    static class PingHandler extends RequestHandler {
+    static class PingHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -54,7 +53,7 @@ class OpenApiBuilderTest {
     @GET("/secure")
     @ApiOperation(summary = "Secure")
     @APIResponse(responseCode = "403", description = "Custom forbidden")
-    static class SecureHandler extends RequestHandler {
+    static class SecureHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -64,7 +63,7 @@ class OpenApiBuilderTest {
     @GET("/typed")
     @ApiOperation(summary = "Typed")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedHandler extends RequestHandler {
+    static class TypedHandler implements Handler {
         @Override
         public UserDto handle(Request request, Response response) {
             return new UserDto();
@@ -74,7 +73,7 @@ class OpenApiBuilderTest {
     @GET("/typed-list")
     @ApiOperation(summary = "Typed list")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedListHandler extends RequestHandler {
+    static class TypedListHandler implements Handler {
         @Override
         public List<UserDto> handle(Request request, Response response) {
             return List.of();
@@ -84,7 +83,7 @@ class OpenApiBuilderTest {
     @GET("/typed-map")
     @ApiOperation(summary = "Typed map")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedMapHandler extends RequestHandler {
+    static class TypedMapHandler implements Handler {
         @Override
         public Map<String, UserDto> handle(Request request, Response response) {
             return Map.of();
@@ -94,7 +93,7 @@ class OpenApiBuilderTest {
     @GET("/merge")
     @ApiOperation(summary = "Merge")
     @APIResponse(responseCode = "200", description = "Manual 200")
-    static class MergeHandler extends RequestHandler {
+    static class MergeHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -103,7 +102,7 @@ class OpenApiBuilderTest {
 
     @GET("/plain")
     @ApiOperation(summary = "Plain")
-    static class PlainHandler extends RequestHandler {
+    static class PlainHandler implements Handler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -111,23 +110,11 @@ class OpenApiBuilderTest {
     }
 
     @Schema(name = "UserDTO", title = "User model", description = "DTO", deprecated = true)
-    @JsonIgnoreProperties({"ignoredByType"})
     static class UserDto {
         @SchemaProperty(title = "Identifier", description = "Unique id", required = true, example = "usr-1", enumeration = {"usr-1", "usr-2"})
         public String id;
 
-        @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-        public String readOnlyField;
-
-        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
-        public String writeOnlyField;
-
-        @JsonIgnore
-        public String hiddenByIgnore;
-
         public transient String transientField;
-
-        public String ignoredByType;
 
         @ArraySchema(uniqueItems = true, minItems = 1)
         public List<String> tags;
@@ -140,7 +127,7 @@ class OpenApiBuilderTest {
     }
 
     @Consumes(ContentType.JSON)
-    static abstract class JsonLikeHandler<I, O> extends dev.relism.flash.models.TypedHandler<I, O> {
+    static abstract class JsonLikeHandler<I, O> extends dev.relism.flash.http.TypedHandler<I, O> {
         @Override protected I read(Request request) { return null; }
         @Override protected Object write(Response response, O answer) { return answer; }
     }
@@ -148,39 +135,39 @@ class OpenApiBuilderTest {
     @dev.relism.flash.routing.PUT("/declared-body")
     @ApiOperation(summary = "Declared body")
     @RequestBody(value = UserDto.class, array = true, required = false, description = "Users to store")
-    static class DeclaredBodyHandler extends RequestHandler {
+    static class DeclaredBodyHandler implements Handler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/bare")
-    static class BareHandler extends RequestHandler {
+    static class BareHandler implements Handler {
         @Override public UserDto handle(Request request, Response response) { return null; }
     }
 
     @GET("/example")
     @ApiOperation(summary = "Example")
     @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, example = "{\"id\":\"usr-1\"}"))
-    static class ExampleHandler extends RequestHandler {
+    static class ExampleHandler implements Handler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/secure-too")
     @ApiOperation(summary = "Secure too")
-    static class SecondSecureHandler extends RequestHandler {
+    static class SecondSecureHandler implements Handler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/xml")
     @Produces(ContentType.XML)
     @ApiOperation(summary = "Answers XML")
-    static class XmlAnswerHandler extends RequestHandler {
+    static class XmlAnswerHandler implements Handler {
         @Override public UserDto handle(Request request, Response response) { return null; }
     }
 
     @Test
     void the_media_type_of_an_answer_is_the_handler_s_own() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(XmlAnswerHandler.class), XmlAnswerHandler.class.getAnnotation(ApiOperation.class), XmlAnswerHandler.class);
+        b.addOperation(routeOf(XmlAnswerHandler.class), XmlAnswerHandler.class.getAnnotation(ApiOperation.class), XmlAnswerHandler.class);
 
         Map<String, Object> get = getOperation(b.build(), "/xml", "get");
         Map<String, Object> responses = cast(get.get("responses"));
@@ -193,7 +180,7 @@ class OpenApiBuilderTest {
     @Test
     void a_typed_handler_documents_its_body_without_saying_the_type_twice() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(TypedBodyHandler.class), TypedBodyHandler.class.getAnnotation(ApiOperation.class), TypedBodyHandler.class);
+        b.addOperation(routeOf(TypedBodyHandler.class), TypedBodyHandler.class.getAnnotation(ApiOperation.class), TypedBodyHandler.class);
 
         Map<String, Object> post = getOperation(b.build(), "/bodies", "post");
         Map<String, Object> body = cast(post.get("requestBody"));
@@ -208,7 +195,7 @@ class OpenApiBuilderTest {
     @Test
     void a_declared_body_wins_and_carries_its_own_shape() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(DeclaredBodyHandler.class), DeclaredBodyHandler.class.getAnnotation(ApiOperation.class), DeclaredBodyHandler.class);
+        b.addOperation(routeOf(DeclaredBodyHandler.class), DeclaredBodyHandler.class.getAnnotation(ApiOperation.class), DeclaredBodyHandler.class);
 
         Map<String, Object> put = getOperation(b.build(), "/declared-body", "put");
         Map<String, Object> body = cast(put.get("requestBody"));
@@ -223,7 +210,7 @@ class OpenApiBuilderTest {
 
     @GET("/internal")
     @Undocumented
-    static class InternalHandler extends RequestHandler {
+    static class InternalHandler implements Handler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
@@ -238,7 +225,7 @@ class OpenApiBuilderTest {
     @GET("/keyed")
     @ApiOperation(summary = "Keyed")
     @APIResponse(responseCode = "200", content = @Content(schema = KeyedDto.class))
-    static class KeyedHandler extends RequestHandler {
+    static class KeyedHandler implements Handler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
@@ -246,7 +233,7 @@ class OpenApiBuilderTest {
     @Test
     void a_contributor_describes_a_property_and_may_mark_it_required() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override public boolean property(java.lang.reflect.Field field, Map<String, Object> schema) {
                 if (!field.getName().equals("key")) return false;
@@ -255,8 +242,8 @@ class OpenApiBuilderTest {
                 return true;
             }
         });
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(KeyedHandler.class), KeyedHandler.class.getAnnotation(ApiOperation.class), KeyedHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(KeyedHandler.class), KeyedHandler.class.getAnnotation(ApiOperation.class), KeyedHandler.class);
 
         Map<String, Object> components = cast(b.build().get("components"));
         Map<String, Object> schemas = cast(components.get("schemas"));
@@ -274,8 +261,8 @@ class OpenApiBuilderTest {
     @Test
     void a_route_that_says_it_is_not_part_of_the_api_is_left_out() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(InternalHandler.class), null, InternalHandler.class);
-        b.addOperation(OpenApiBuilder.routeOf(BareHandler.class), null, BareHandler.class);
+        b.addOperation(routeOf(InternalHandler.class), null, InternalHandler.class);
+        b.addOperation(routeOf(BareHandler.class), null, BareHandler.class);
 
         Map<String, Object> paths = cast(b.build().get("paths"));
 
@@ -286,7 +273,7 @@ class OpenApiBuilderTest {
     @Test
     void a_route_with_no_annotations_is_still_documented() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(BareHandler.class), null, BareHandler.class);
+        b.addOperation(routeOf(BareHandler.class), null, BareHandler.class);
 
         Map<String, Object> get = getOperation(b.build(), "/bare", "get");
         Map<String, Object> responses = cast(get.get("responses"));
@@ -301,7 +288,7 @@ class OpenApiBuilderTest {
     @Test
     void a_failure_is_documented_with_the_shape_flash_answers_with() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
+        b.addOperation(routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/secure", "get");
@@ -320,7 +307,7 @@ class OpenApiBuilderTest {
     @Test
     void an_answer_two_operations_share_is_written_once() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
                 return OpenApiOperationContribution.builder()
@@ -328,9 +315,9 @@ class OpenApiBuilderTest {
                         .build();
             }
         });
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
-        b.addOperation(OpenApiBuilder.routeOf(SecondSecureHandler.class), SecondSecureHandler.class.getAnnotation(ApiOperation.class), SecondSecureHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
+        b.addOperation(routeOf(SecondSecureHandler.class), SecondSecureHandler.class.getAnnotation(ApiOperation.class), SecondSecureHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> components = cast(spec.get("components"));
@@ -349,7 +336,7 @@ class OpenApiBuilderTest {
     @Test
     void an_example_sits_beside_the_schema() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(ExampleHandler.class), ExampleHandler.class.getAnnotation(ApiOperation.class), ExampleHandler.class);
+        b.addOperation(routeOf(ExampleHandler.class), ExampleHandler.class.getAnnotation(ApiOperation.class), ExampleHandler.class);
 
         Map<String, Object> get = getOperation(b.build(), "/example", "get");
         Map<String, Object> responses = cast(get.get("responses"));
@@ -363,7 +350,7 @@ class OpenApiBuilderTest {
     @Test
     void builds_single_response_and_parameters_and_schema() {
         OpenApiBuilder b = new OpenApiBuilder().title("X").version("1");
-        b.addOperation(OpenApiBuilder.routeOf(GetUserHandler.class), GetUserHandler.class.getAnnotation(ApiOperation.class), GetUserHandler.class);
+        b.addOperation(routeOf(GetUserHandler.class), GetUserHandler.class.getAnnotation(ApiOperation.class), GetUserHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> paths = cast(spec.get("paths"));
@@ -388,8 +375,6 @@ class OpenApiBuilderTest {
         assertEquals(true, userSchema.get("deprecated"));
 
         Map<String, Object> properties = cast(userSchema.get("properties"));
-        assertFalse(properties.containsKey("hiddenByIgnore"));
-        assertFalse(properties.containsKey("ignoredByType"));
         assertFalse(properties.containsKey("transientField"));
         assertTrue(properties.containsKey("id"));
         assertTrue(properties.containsKey("tags"));
@@ -398,7 +383,7 @@ class OpenApiBuilderTest {
     @Test
     void builds_array_response() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(ListUsersHandler.class), ListUsersHandler.class.getAnnotation(ApiOperation.class), ListUsersHandler.class);
+        b.addOperation(routeOf(ListUsersHandler.class), ListUsersHandler.class.getAnnotation(ApiOperation.class), ListUsersHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/users", "get");
@@ -413,7 +398,7 @@ class OpenApiBuilderTest {
     @Test
     void builds_no_content_response_without_content_block() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(PingHandler.class), PingHandler.class.getAnnotation(ApiOperation.class), PingHandler.class);
+        b.addOperation(routeOf(PingHandler.class), PingHandler.class.getAnnotation(ApiOperation.class), PingHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/ping", "get");
@@ -426,7 +411,7 @@ class OpenApiBuilderTest {
     @Test
     void auto_security_responses_are_added_and_manual_wins_sorted() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override
             public Map<String, Object> componentContributions() {
@@ -442,8 +427,8 @@ class OpenApiBuilderTest {
                         .build();
             }
         });
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(SecureHandler.class), SecureHandler.class.getAnnotation(ApiOperation.class), SecureHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/secure", "get");
@@ -462,7 +447,7 @@ class OpenApiBuilderTest {
     @Test
     void use_return_type_for_response_schema() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(TypedHandler.class), TypedHandler.class.getAnnotation(ApiOperation.class), TypedHandler.class);
+        b.addOperation(routeOf(TypedHandler.class), TypedHandler.class.getAnnotation(ApiOperation.class), TypedHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/typed", "get");
@@ -475,7 +460,7 @@ class OpenApiBuilderTest {
     @Test
     void infer_array_schema_from_collection_return_type() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(TypedListHandler.class), TypedListHandler.class.getAnnotation(ApiOperation.class), TypedListHandler.class);
+        b.addOperation(routeOf(TypedListHandler.class), TypedListHandler.class.getAnnotation(ApiOperation.class), TypedListHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/typed-list", "get");
@@ -492,7 +477,7 @@ class OpenApiBuilderTest {
     @Test
     void infer_map_value_schema_from_map_return_type() {
         OpenApiBuilder b = new OpenApiBuilder();
-        b.addOperation(OpenApiBuilder.routeOf(TypedMapHandler.class), TypedMapHandler.class.getAnnotation(ApiOperation.class), TypedMapHandler.class);
+        b.addOperation(routeOf(TypedMapHandler.class), TypedMapHandler.class.getAnnotation(ApiOperation.class), TypedMapHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/typed-map", "get");
@@ -509,7 +494,7 @@ class OpenApiBuilderTest {
     @Test
     void contributor_response_merge_appliesAllResponses_andManualDescriptionWins() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override
             public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
@@ -522,8 +507,8 @@ class OpenApiBuilderTest {
                         .build();
             }
         });
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/merge", "get");
@@ -543,7 +528,7 @@ class OpenApiBuilderTest {
     @Test
     void contributor_lastWins_forResponseHeaderCollisions() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override
             public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
@@ -565,8 +550,8 @@ class OpenApiBuilderTest {
             }
         });
 
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(MergeHandler.class), MergeHandler.class.getAnnotation(ApiOperation.class), MergeHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> get = getOperation(spec, "/merge", "get");
@@ -580,7 +565,7 @@ class OpenApiBuilderTest {
     @Test
     void contributor_merges_into_the_default_response_of_an_operation_without_annotations() {
         OpenApiBuilder b = new OpenApiBuilder();
-        OpenApiContributorRegistry registry = new OpenApiContributorRegistry();
+        List<OpenApiContributor> registry = new java.util.ArrayList<>();
         registry.add(new OpenApiContributor() {
             @Override
             public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
@@ -592,8 +577,8 @@ class OpenApiBuilderTest {
                         .build();
             }
         });
-        b.setContributorRegistry(registry);
-        b.addOperation(OpenApiBuilder.routeOf(PlainHandler.class), PlainHandler.class.getAnnotation(ApiOperation.class), PlainHandler.class);
+        b.contributors(registry);
+        b.addOperation(routeOf(PlainHandler.class), PlainHandler.class.getAnnotation(ApiOperation.class), PlainHandler.class);
 
         Map<String, Object> spec = b.build();
         Map<String, Object> responses = cast(getOperation(spec, "/plain", "get").get("responses"));
@@ -614,5 +599,20 @@ class OpenApiBuilderTest {
     @SuppressWarnings("unchecked")
     private static <T> T cast(Object value) {
         return (T) value;
+    }
+
+    /** The route a handler class declares through its routing annotation. */
+    private static Route routeOf(Class<?> handler) {
+        for (java.lang.annotation.Annotation annotation : handler.getAnnotations()) {
+            Verb verb = annotation.annotationType().getAnnotation(Verb.class);
+            if (verb == null) continue;
+            try {
+                String path = (String) annotation.annotationType().getMethod("value").invoke(annotation);
+                return new Route(verb.value(), path, false, handler, List.of());
+            } catch (ReflectiveOperationException broken) {
+                throw new IllegalStateException(broken);
+            }
+        }
+        throw new IllegalArgumentException(handler + " declares no route");
     }
 }

@@ -1,20 +1,24 @@
 package dev.relism.flash.websocket;
 
 /**
- * Handler for a WebSocket endpoint. Lifecycle:
- * onOpen → onMessage* → onClose | onError.
+ * A WebSocket endpoint: {@code onOpen}, then {@code onMessage} for every frame, then
+ * {@code onClose} or {@code onError}. A class the app builds takes its services through its
+ * constructor, like a handler.
  *
- * Lifetime contract for {@link WebSocketFrame}: valid ONLY within
- * the synchronous scope of {@link #onMessage}. Do not retain references
- * to the frame or its buffer across calls — copy with {@link WebSocketFrame#copyPayload()}
- * if data must outlive the callback.
- *
- * OP_CONTINUATION frames are delivered as-is; fragment reassembly is an
- * application concern.
+ * <p>A {@link WebSocketFrame} is valid only inside the {@code onMessage} call that received it:
+ * copy what must outlive it with {@link WebSocketFrame#copyPayload()}. Continuation frames arrive
+ * as they are; reassembling fragments is the endpoint's business.
  */
 public interface WebSocketHandler {
+
     void onOpen(WebSocketSession session);
+
     void onMessage(WebSocketSession session, WebSocketFrame frame);
+
     default void onClose(WebSocketSession session, int code) {}
+
     default void onError(WebSocketSession session, Throwable t) {}
+
+    /** Runs once at boot, after construction and before the first connection. */
+    default void onInit() {}
 }

@@ -6,10 +6,10 @@ Authentication and authorization for Flash, independent of any credential. Mecha
 this module owns everything downstream of "who is the caller".
 
 ```java
-app.install(new SecurityExtension()
+app.install(new SecurityModule()
         .users(principal -> users.findOrProvision(principal))   // optional: principal → your user
-        .roles((identity, role, on) -> members.has(identity.user(User.class), role, on.get("project"))))
-   .install(new OidcExtension(OidcProvider.of("sso", issuer, clientId, secret)));
+        .roles((identity, role, on) -> members.has(identity.user(User.class), role, on.get("project"))),
+    new OidcModule(OidcProvider.of("sso", issuer, clientId, secret)));
 ```
 
 ## The model

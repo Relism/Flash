@@ -1,10 +1,10 @@
 package dev.relism.flash.ext.security.test;
 
+import dev.relism.flash.App;
+import dev.relism.flash.Module;
+import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.ext.security.Principal;
-import dev.relism.flash.ext.security.SecurityExtension;
-import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
-import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.testing.FlashRequest;
 
 import java.util.Map;
@@ -17,30 +17,36 @@ import java.util.function.Consumer;
  * installs — an OIDC user, an API key, a plain name — without an identity provider.
  *
  * <pre>{@code
- * FlashTest app = FlashTest.of(flash -> flash.apply(new MyApp()).install(new TestSecurity()));
- * app.request().with(TestSecurity.as(() -> "alice")).get("/me");
+ * static final TestSecurity users = new TestSecurity();
+ * static FlashTest app = FlashTest.of(() -> Main.api(db).install(users));
+ *
+ * app.request().with(users.as(() -> "alice")).get("/me");
  * }</pre>
  *
  * <p>Works because {@code FlashTest} serves the application in the test's own JVM: the principal
- * is handed over by reference, under a token only this process can have issued.
+ * is handed over by reference, under a token only this instance issued.
  */
-public final class TestSecurity implements FlashExtension {
+public final class TestSecurity implements Module, AuthenticationMechanism {
 
     private static final String SCHEME = "Test ";
-    private static final Map<String, Principal> PRINCIPALS = new ConcurrentHashMap<>();
 
-    /** Sends the request as {@code principal}. */
-    public static Consumer<FlashRequest> as(Principal principal) {
+    private final Map<String, Principal> principals = new ConcurrentHashMap<>();
+
+    /** A request customiser that makes the request arrive as {@code principal}. */
+    public Consumer<FlashRequest> as(Principal principal) {
         String token = UUID.randomUUID().toString();
-        PRINCIPALS.put(token, principal);
+        principals.put(token, principal);
         return request -> request.header("Authorization", SCHEME + token);
     }
 
     @Override
-    public void configure(FlashRegistrar<?> app, FlashContext ctx) {
-        ctx.onReady(() -> ctx.require(SecurityExtension.class).mechanism(req -> {
-            String header = req.header("Authorization");
-            return header != null && header.startsWith(SCHEME) ? PRINCIPALS.get(header.substring(SCHEME.length())) : null;
-        }));
+    public void install(App app) {
+        app.add(AuthenticationMechanism.class, this);
+    }
+
+    @Override
+    public Principal authenticate(Request req) {
+        String header = req.header("Authorization");
+        return header != null && header.startsWith(SCHEME) ? principals.get(header.substring(SCHEME.length())) : null;
     }
 }

@@ -4,8 +4,8 @@ Avaje Validator: the same constraints, checked by adapters generated at build ti
 runtime, which is the reason to choose it — and the reason it asks something of the build.
 
 ```java
-app.install(new JsonExtension())
-   .install(new AvajeValidationExtension());
+app.install(new JsonModule())
+   .install(new AvajeValidation());
 ```
 
 ## What the application's build must do
@@ -56,7 +56,7 @@ actually does, so nothing is inherited from the other one by accident.
 
 ## Notes
 
-- `new AvajeValidationExtension(validator)` takes a validator configured by hand: a locale, a clock,
+- `new AvajeValidation(validator)` takes a validator configured by hand: a locale, a clock,
   a message bundle.
 - Failures come back through `check`, not `validate`: every broken rule in one 422, and no exception
   used as a signal.

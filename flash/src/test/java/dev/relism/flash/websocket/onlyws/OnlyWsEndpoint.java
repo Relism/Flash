@@ -1,12 +1,12 @@
 package dev.relism.flash.websocket.onlyws;
 
 import dev.relism.flash.routing.Ws;
-import dev.relism.flash.websocket.WebSocketEndpoint;
+import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketSession;
 
 @Ws("/only")
-public class OnlyWsEndpoint extends WebSocketEndpoint {
+public class OnlyWsEndpoint implements WebSocketHandler {
 
     @Override
     public void onOpen(WebSocketSession session) {}

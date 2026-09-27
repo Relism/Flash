@@ -2,7 +2,7 @@ package dev.relism.flash.http2.message;
 
 import dev.relism.flash.bytes.PooledSlice;
 import dev.relism.flash.http2.hpack.HpackHeaderBlock;
-import dev.relism.flash.models.HeaderView;
+import dev.relism.flash.http.HeaderView;
 import dev.relism.fpr.core.ByteView;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

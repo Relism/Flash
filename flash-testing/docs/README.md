@@ -30,8 +30,8 @@ swaps services for fakes, and asserts on responses. No mocking library, no asser
 class UserRoutesTest {
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(new BlogApp())
-            .mock(UserService.class, new InMemoryUserService());
+    static FlashTest app = FlashTest.of(Main::app)
+            .replace(UserService.class, new InMemoryUserService());
 
     @Test
     void listsUsers() {
@@ -45,30 +45,29 @@ class UserRoutesTest {
 
 ## The application under test
 
-`FlashTest.of` takes a `FlashApplication` — your app's routes, extensions and services declared
-independently of the port they run on:
+`FlashTest.of` takes a `Supplier<App>`: the method production calls to build its app, before it
+hands that app to `Server.start`. The test runs the same routes, modules and services, built by
+the same code:
 
 ```java
-public final class BlogApp implements FlashApplication {
-    @Override public void configure(FlashApp app) {
-        app.install(new JacksonExtension());
-        app.mount("/api", scope -> scope.scan("dev.blog.api"));
-        app.ws("/live", new FeedSocket());
+public final class Main {
+    public static App app() {
+        return App.create()
+                .install(new JsonModule())
+                .mount("/api", api -> api.scan("dev.blog.api"))
+                .ws("/live", new FeedSocket());
+    }
+
+    public static void main(String[] args) {
+        Server.start(app(), ServerConfig.builder().port(8080).build()).await();   // production
     }
 }
-
-FlashApp.create(8080).apply(new BlogApp()).startAndBlock();   // production
 ```
 
-It takes `FlashApp` rather than `FlashRegistrar` deliberately: `ws()` and `mount()` live there,
-and an application that could not register a WebSocket route or a mounted namespace would be a
-half-application.
+A lambda works as well: `FlashTest.of(() -> App.create().get("/ping", (req, res) -> "pong"))`.
 
-It is a `@FunctionalInterface`, so a lambda and a named class are the same thing:
-
-```java
-FlashTest.of(app -> app.get("/ping", (req, res) -> "pong"))
-```
+`services()` returns the app's services as built, to assert on real state instead of rebuilding
+it.
 
 ## Requests
 
@@ -102,23 +101,21 @@ not cover.
 
 ## Replacing services
 
-`mock` installs its replacements as the **last** extension, after everything the application and
-its own extensions declare, so a fake always wins:
+`replace` swaps every instance of a type the app adds, its modules' included, for the one given:
 
 ```java
-FlashTest.of(new BlogApp())
-        .mock(UserService.class, new InMemoryUserService())
-        .mock(Clock.class, Clock.fixed(instant, ZoneOffset.UTC));
+FlashTest.of(Main::app)
+        .replace(UserService.class, new InMemoryUserService())
+        .replace(Clock.class, Clock.fixed(instant, ZoneOffset.UTC));
 ```
 
 Any object is accepted — a hand-written fake, or a Mockito mock you created yourself. This module
 depends on no mocking library.
 
-Prefer a constructor parameter when the application already takes one:
-`new AdminApi(upstreamUri)` needs no override at all. `mock` is for what you do not control —
-services declared inside `configure`, or provided by an installed extension.
+Prefer a parameter when the application already takes one: `Main.api(upstreamUri)` needs no
+replacement at all. `replace` is for what you do not control — services a module adds.
 
-Calling `mock` after the server has started throws.
+Calling `replace` after the server has started throws.
 
 ## More than one server
 
@@ -128,19 +125,12 @@ so declaration order does the wiring, with no `@Order` and no reliance on JUnit'
 ordering:
 
 ```java
-@RegisterExtension static FlashTest auth = FlashTest.of(new FakeOidcApp());
-@RegisterExtension static FlashTest api  = FlashTest.of(new BlogApp(auth.baseUri()));
+@RegisterExtension static FlashTest auth = FlashTest.of(FakeOidc::app);
+@RegisterExtension static FlashTest api  = FlashTest.of(() -> Main.api(auth.baseUri()));
 ```
 
-Because binding happens when the app is created rather than when it starts, an application can
-even be configured against its own address:
-
-```java
-FlashTest.of(app -> app.install(new McpExtension(
-        McpConfig.builder("srv").resourceIdentifier("http://127.0.0.1:" + app.port() + "/mcp").build())));
-```
-
-A server nothing touches is never booted.
+The app itself is built only then too, so one that reads a `@TempDir` sees it populated. A server
+nothing touches is never booted.
 
 ## Scope
 
@@ -148,11 +138,11 @@ A `static` field boots once for the test class; a non-static field boots a fresh
 test. That is stock JUnit field semantics — the isolation switch is the keyword, not an option:
 
 ```java
-@RegisterExtension static FlashTest shared = FlashTest.of(new BlogApp());   // one boot per class
-@RegisterExtension        FlashTest fresh  = FlashTest.of(new BlogApp());   // one boot per test
+@RegisterExtension static FlashTest shared = FlashTest.of(Main::app);   // one boot per class
+@RegisterExtension        FlashTest fresh  = FlashTest.of(Main::app);   // one boot per test
 ```
 
-A class-scoped server shares state across its tests, including anything a `mock` fake accumulates.
+A class-scoped server shares state across its tests, including anything a replacement accumulates.
 Reset it in `@BeforeEach`, or use an instance field.
 
 ## WebSockets
@@ -170,13 +160,13 @@ connection the server already dropped must not mask the failure the test was rep
 
 ## Configuration
 
-`profile` customises the `FlashConfiguration` — timeouts, HTTP/2 switches, buffer sizes:
+`config` customises the `ServerConfig` — timeouts, HTTP/2 switches, limits, dev mode:
 
 ```java
-FlashTest.of(new BlogApp()).profile(cfg -> cfg.http2CleartextEnabled(true));
+FlashTest.of(Main::app).config(cfg -> cfg.http2CleartextEnabled(true));
 ```
 
-Host, port and the shutdown drain window are stamped **after** the profile runs, so it cannot
+Host, port and the shutdown drain window are stamped **after** it runs, so it cannot
 break the harness. `listener(...)` and `tls(...)` are rejected — see [limits](limits.md).
 
 ## Teardown
@@ -187,8 +177,8 @@ default 15s drain would otherwise be paid on every test class. The harness pins 
 uses `shutdownNow()` rather than `close()`, which blocks until every operation completes and would
 hang on a leaked WebSocket.
 
-Service cleanup registered with `FlashContext.onClose` runs after the drain, so a pooled
-`DataSource` is released between test classes rather than at JVM exit.
+The app closes its `AutoCloseable` services after the drain, so a pooled `DataSource` is released
+between test classes rather than at JVM exit.
 
 ## See also
 

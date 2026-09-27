@@ -1,15 +1,15 @@
 package dev.relism.flash;
 
 import dev.relism.flash.bytes.ByteScan;
-import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.http.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.MutableHeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestBody;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.MutableHeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestBody;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.bytes.FastPathViews;
 import dev.relism.flash.transport.BufferedByteSource;
 
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +19,7 @@ import javax.net.ssl.SSLSocket;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.Set;
 
 /**
  * One instance per connection. The buffer is allocated once and reused across
@@ -45,7 +46,7 @@ import java.util.Arrays;
  * header, a malformed byte where the grammar forbids one — is reported as a
  * {@link MalformedRequestException} carrying the exact status the caller must respond with.
  * This is distinct from {@link IOException}, which still means "the socket failed" (EOF,
- * reset, timeout). The caller ({@code HttpServer.process}) must always close the connection
+ * reset, timeout). The caller ({@code Http1Connection}) must always close the connection
  * after a {@link MalformedRequestException}, never keep it alive — RFC 9112 §6.1's rationale
  * for rejecting {@code Content-Length} + {@code Transfer-Encoding} outright is exactly that a
  * kept-alive connection after a disputed request boundary is what a smuggling attack needs.
@@ -55,16 +56,18 @@ public class RequestParser {
     private static final int INITIAL_BUFFER_SIZE = 8192;
 
     private final int               maxHeaderBufferSize;
+    private final long              maxBodySize;
+    private final Set<String>       trustedProxies;
     private final InetSocketAddress remoteAddress;
     private final SSLSocket         sslSocket;
     private final Http1HeaderMap    headerMap   = new Http1HeaderMap();
     private final MutableHeaderMap  trailerMap  = new MutableHeaderMap();
-    // request — same idiom as headerMap above.
+    // Pooled per connection and reset for every request, like headerMap above.
     private final RequestLine       requestLine = new RequestLine();
     private final Request           request     = new Request();
     private final RequestBody       requestBody = new RequestBody();
-    // RequestLine/Response themselves. queryView is only reset and used when a query string is
-    // actually present; RequestLine.getQuery() must keep returning null otherwise (see reset()).
+    // Views over the parse buffer, repositioned per request instead of allocated. queryView is only
+    // reset and used when a query string is actually present; RequestLine.getQuery() must keep returning null otherwise (see reset()).
     private final FastPathViews.RequestByteView pathView     = new FastPathViews.RequestByteView(null, 0, 0);
     private final FastPathViews.RequestByteView queryView    = new FastPathViews.RequestByteView(null, 0, 0);
     private final FastPathViews.RequestByteView protocolView = new FastPathViews.RequestByteView(null, 0, 0);
@@ -75,17 +78,18 @@ public class RequestParser {
     private int bufBase = 0;
     private int bufLen  = 0;
 
-    public RequestParser() { this(64 * 1024, null, null); }
-    public RequestParser(int maxHeaderBufferSize) { this(maxHeaderBufferSize, null, null); }
-    public RequestParser(int maxHeaderBufferSize, InetSocketAddress remoteAddress) {
-        this(maxHeaderBufferSize, remoteAddress, null);
-    }
+    /** A parser with default limits and no connection: for tests. */
+    public RequestParser() { this(ServerConfig.builder().build(), null, null); }
 
     /** {@code sslSocket} is {@code null} for a plain connection — see {@link Request#isSecure()}. */
-    public RequestParser(int maxHeaderBufferSize, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
-        this.maxHeaderBufferSize = maxHeaderBufferSize;
+    public RequestParser(ServerConfig config, InetSocketAddress remoteAddress, SSLSocket sslSocket) {
+        this.maxHeaderBufferSize = config.getMaxHeaderBufferSize();
+        this.maxBodySize         = config.getMaxBodySize();
         this.remoteAddress       = remoteAddress;
         this.sslSocket           = sslSocket;
+        this.trustedProxies      = remoteAddress != null && remoteAddress.getAddress() != null
+                && config.getTrustedProxies().contains(remoteAddress.getAddress().getHostAddress())
+                ? config.getTrustedProxies() : null;
         this.buffer = new byte[Math.min(INITIAL_BUFFER_SIZE, maxHeaderBufferSize)];
     }
 
@@ -237,7 +241,7 @@ public class RequestParser {
 
             if (ByteScan.equalsIgnoreCaseAscii(buffer, current, colon, "content-length")) {
                 // parseLong, which silently accepted "5abc" as 5 and "-1" as 1.
-                long parsed = parseContentLengthStrict(buffer, valueStart, lineEnd);
+                long parsed = parseContentLengthStrict(buffer, valueStart, lineEnd, maxBodySize);
                 // Multiple Content-Length lines with differing values is itself a smuggling
                 // permits a recipient to treat that as one value).
                 if (contentLengthSeen && parsed != contentLength) {
@@ -297,25 +301,22 @@ public class RequestParser {
         // chunked case, never reallocated.
         if (isChunked) {
             requestBody.reset(
-                    new ChunkedInputStream(in, buffer, bodyStart, preBufLen, trailerMap),
+                    new ChunkedInputStream(in, buffer, bodyStart, preBufLen, trailerMap, maxBodySize),
                     -1L, null, 0, 0);
         } else {
             requestBody.reset(in, contentLength, buffer, bodyStart, preBufLen);
         }
-        Request parsed = Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+        Request parsed = Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket, trustedProxies);
         parsed.setTrailers(trailerMap);
         return parsed;
     }
 
     /**
-     * value, any non-digit byte (including a leading {@code +}/{@code -}, which are not
-     * digits), more than 19 digits (the longest possible {@code Long.MAX_VALUE}), arithmetic
-     * overflow past {@code Long.MAX_VALUE}, and a value above
-     * {@link Http1Limits#MAX_CONTENT_LENGTH}. The pre-existing {@code parseLong} silently
-     * skipped any non-digit character instead of rejecting it — {@code "5abc"} parsed as
-     * {@code 5} and {@code "-1"} parsed as {@code 1}.
+     * A {@code Content-Length} value, strictly: rejects an empty value, any non-digit byte
+     * (a sign included), more than 19 digits, overflow past {@code Long.MAX_VALUE}, and a value
+     * above the configured body limit, which is a 413 before a byte of the body is read.
      */
-    private static long parseContentLengthStrict(byte[] buf, int start, int end) throws MalformedRequestException {
+    private static long parseContentLengthStrict(byte[] buf, int start, int end, long max) throws MalformedRequestException {
         int len = end - start;
         if (len == 0) throw new MalformedRequestException(400, "Empty Content-Length value");
         if (len > 19) throw new MalformedRequestException(400, "Content-Length value too long");
@@ -331,8 +332,8 @@ public class RequestParser {
             }
             value = value * 10 + digit;
         }
-        if (value > Http1Limits.MAX_CONTENT_LENGTH) {
-            throw new MalformedRequestException(413, "Content-Length exceeds configured maximum");
+        if (value > max) {
+            throw new MalformedRequestException(413, "Request body exceeds " + max + " bytes");
         }
         return value;
     }

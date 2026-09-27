@@ -107,15 +107,16 @@ public abstract class Repository<T, ID> {
 
 ## Composing with Flash
 
-`DataExtension` registers:
+`new DataModule(txManager)` (or `new DataModule(txManager, data)`) adds:
 
-- `Tx` in the `FlashContext`
-- `TxManager` in the `FlashContext`
-- an annotation processor for `@Transactional`
-- `TxManager.close()` as an `onClose` callback, so stopping the app releases the manager's
-  session factory and connection pool; give the manager a pool you want closed with the app
+- `TxManager`, `Tx` and, when given, `Data` as services, so a repository or handler takes them
+  through its constructor
+- `@Transactional` on a handler class: the whole request runs in one transaction, `NEVER` refuses
+  to run inside one, and `dontRollbackOn` commits and still rethrows
+- the manager's `close()` when the app stops, releasing its session factory and connection pool;
+  give the manager a pool you want closed with the app
 
-This makes the data layer composable with Flash's extension system without global state.
+Nothing is global: two apps in one JVM each have their own transactions.
 
 ## Implementation notes
 

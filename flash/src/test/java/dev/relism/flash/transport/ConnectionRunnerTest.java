@@ -2,11 +2,9 @@ package dev.relism.flash.transport;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import dev.relism.flash.extension.FlashConfiguration;
-import dev.relism.flash.routing.AbstractRouter;
-import dev.relism.flash.routing.AbstractWsRouter;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathWsRouterImpl;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.routing.Errors;
+import dev.relism.flash.routing.Router;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -31,9 +29,9 @@ class ConnectionRunnerTest {
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     ScratchPool scratchPool = new ScratchPool();
-    AbstractRouter router = new FastPathRouterImpl();
-    AbstractWsRouter wsRouter = new FastPathWsRouterImpl();
-    FlashConfiguration configuration = FlashConfiguration.builder().port(0).build();
+    Router router = new Router();
+    router.compile(Errors.notFound(false), Errors.handler(false));
+    ServerConfig configuration = ServerConfig.builder().port(0).build();
 
     ConnectionProtocol throwingProtocol =
         ctx -> {
@@ -46,7 +44,6 @@ class ConnectionRunnerTest {
             activeSockets,
             scratchPool,
             router,
-            wsRouter,
             configuration,
             throwingProtocol,
             () -> throwingProtocol);
@@ -87,10 +84,10 @@ class ConnectionRunnerTest {
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     ScratchPool scratchPool = new ScratchPool();
-    AbstractRouter router = new FastPathRouterImpl();
-    AbstractWsRouter wsRouter = new FastPathWsRouterImpl();
-    FlashConfiguration configuration =
-        FlashConfiguration.builder().port(0).maxConnections(1).build();
+    Router router = new Router();
+    router.compile(Errors.notFound(false), Errors.handler(false));
+    ServerConfig configuration =
+        ServerConfig.builder().port(0).maxConnections(1).build();
 
     AtomicInteger protocolInvocations = new AtomicInteger();
     ConnectionProtocol countingProtocol =
@@ -105,7 +102,6 @@ class ConnectionRunnerTest {
             activeSockets,
             scratchPool,
             router,
-            wsRouter,
             configuration,
             countingProtocol,
             () -> countingProtocol);

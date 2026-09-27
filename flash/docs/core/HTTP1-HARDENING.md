@@ -4,7 +4,7 @@ Audience: operators. This is the document to read when a `400`/`413`/`414`/`431`
 in the logs and it isn't obvious why. Every rejection rule Flash's HTTP/1.1 parser enforces is
 listed here with its RFC citation and the status it produces. Contributor-level detail (why each
 check is implemented the way it is, the exact code paths) lives in the Javadoc of
-`RequestParser`, `ChunkedInputStream`, and `dev.relism.flash.exceptions.MalformedRequestException`.
+`RequestParser`, `ChunkedInputStream`, and `dev.relism.flash.http.MalformedRequestException`.
 
 Every rejection in this document has one thing in common: **the connection is always closed
 afterwards, never kept alive.** A rejected request is exactly the situation a smuggling attack
@@ -27,7 +27,7 @@ needs a reusable connection for, so none of these rejections offer one — see
 | Any non-digit byte (including a leading `+` or `-`) | `400` |
 | More than 19 digits | `400` |
 | Value overflows `Long.MAX_VALUE` | `400` |
-| Value exceeds `Http1Limits.MAX_CONTENT_LENGTH` (4 GiB by default) | `413` |
+| Value exceeds `ServerConfig.maxBodySize` (10 MiB by default) | `413` |
 
 The previous parser silently skipped non-digit characters (`"5abc"` parsed as `5`; `"-1"` parsed
 as `1`) instead of rejecting them — this is the fix.
@@ -65,7 +65,7 @@ as `1`) instead of rejecting them — this is the fix.
 Trailers are consumed within the bounds above and exposed through `Request.trailers()` on both
 HTTP/1.1 and HTTP/2.
 
-## Timeouts (`FlashConfiguration`)
+## Timeouts (`ServerConfig`)
 
 | Setting | Default | Covers |
 |---|---|---|
@@ -88,5 +88,5 @@ implemented on top of the JDK's per-read-only timeout API.
   suite list is filtered against the RFC 9113 Appendix A blocklist
   (`TlsConfig.TLS12_H2_BLOCKED_CIPHERS`, ~280 entries). TLS 1.3 is never affected — none of its
   cipher suites are on that list.
-- `FlashConfiguration.http2Enabled` advertises `h2` on TLS listeners. The independent
+- `ServerConfig.http2Enabled` advertises `h2` on TLS listeners. The independent
   `http2CleartextEnabled` switch accepts the h2c prior-knowledge preface on plaintext listeners.

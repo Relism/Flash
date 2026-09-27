@@ -8,8 +8,9 @@ import java.sql.SQLException;
 import java.util.Objects;
 
 public class JdbcTxManager implements TxManager {
-    private static final TxResourceKey JDBC_STATUS_KEY = TxResourceKey.of("jdbc.tx.status");
-    private static final TxResourceKey JDBC_SUSPENDED_KEY = TxResourceKey.of("jdbc.tx.suspended");
+    // Per manager, not per class: two databases on one thread never join each other's transaction.
+    private final TxResourceKey JDBC_STATUS_KEY = TxResourceKey.of("jdbc.tx.status");
+    private final TxResourceKey JDBC_SUSPENDED_KEY = TxResourceKey.of("jdbc.tx.suspended");
 
     private final DataSource ds;
 
@@ -89,15 +90,16 @@ public class JdbcTxManager implements TxManager {
 
     private TxStatus joinExisting(TxDefinition definition) {
         JdbcTxStatus existing = ResourceRegistry.get(JDBC_STATUS_KEY, JdbcTxStatus.class);
-        if (definition.readOnly() && !existing.isReadOnly()) {
-            throw new TxException("Cannot join read-write tx as read-only");
+        // A read joins whatever it finds; a write cannot run inside a transaction opened read-only.
+        if (!definition.readOnly() && existing.isReadOnly()) {
+            throw new TxException("Cannot write inside a read-only transaction");
         }
         // Baseline 0 is never read: a joined status isn't a new transaction, so commit()/rollback()
         // hand it straight back to the transaction it joined without firing anything.
         return new JdbcTxStatus(
                 existing.connection(),
                 false,
-                definition.readOnly(),
+                existing.isReadOnly(),
                 null,
                 existing.rollbackMarker(),
                 0

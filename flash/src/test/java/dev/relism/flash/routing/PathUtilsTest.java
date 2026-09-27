@@ -49,10 +49,10 @@ class PathUtilsTest {
     }
 
     @Test
-    void join_preventsDoubleNamespace() {
-        // Path already starts with base
-        assertEquals("/api/users", PathUtils.join("/api", "/api/users"));
-        assertEquals("/api/users", PathUtils.join("/api/", "/api/users/"));
+    void join_alwaysPrefixes() {
+        // A path that merely starts like the prefix is still a path under it.
+        assertEquals("/api/api/users", PathUtils.join("/api", "/api/users"));
+        assertEquals("/api/apiary", PathUtils.join("/api/", "/apiary/"));
     }
 
     @Test

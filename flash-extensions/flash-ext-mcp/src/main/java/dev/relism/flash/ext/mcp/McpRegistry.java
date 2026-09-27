@@ -1,13 +1,14 @@
 package dev.relism.flash.ext.mcp;
 
 import com.fasterxml.jackson.core.JsonGenerator;
-import dev.relism.flash.exceptions.InitializationException;
-import dev.relism.flash.ext.security.SecurityExtension;
+import dev.relism.flash.Scanner;
+import dev.relism.flash.Services;
+import dev.relism.flash.ext.security.Security;
 import dev.relism.flash.ext.security.SecurityPolicy;
-import dev.relism.flash.extension.FlashContext;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,41 +43,52 @@ final class McpRegistry {
     private McpRegistry() {}
 
     /** @param security {@code null} for a server running with {@link McpSecurity#NONE} */
-    static McpRegistry scan(String packageName, FlashContext ctx, SecurityExtension security) {
-        McpPackageScanner.ScanResult found = McpPackageScanner.scan(packageName);
+    @SuppressWarnings("unchecked")
+    static McpRegistry scan(String packageName, Services services, Security security) {
         McpRegistry registry = new McpRegistry();
+        List<Class<? extends McpTool>> tools = new ArrayList<>();
+        List<Class<? extends McpResource>> resources = new ArrayList<>();
+        List<Class<? extends McpPrompt>> prompts = new ArrayList<>();
+        for (Class<?> cls : Scanner.classes(packageName)) {
+            if (Modifier.isAbstract(cls.getModifiers())) continue;
+            if (McpTool.class.isAssignableFrom(cls) && cls.isAnnotationPresent(Tool.class)) tools.add((Class<? extends McpTool>) cls);
+            else if (McpResource.class.isAssignableFrom(cls) && cls.isAnnotationPresent(Resource.class)) resources.add((Class<? extends McpResource>) cls);
+            else if (McpPrompt.class.isAssignableFrom(cls) && cls.isAnnotationPresent(Prompt.class)) prompts.add((Class<? extends McpPrompt>) cls);
+        }
+        if (tools.isEmpty() && resources.isEmpty() && prompts.isEmpty())
+            throw new IllegalStateException("McpConfig.toolsPackage(\"" + packageName + "\") has no @Tool, @Resource or @Prompt class");
 
-        for (Class<? extends McpTool> cls : found.tools()) {
+        for (Class<? extends McpTool> cls : tools) {
             Tool ann = cls.getAnnotation(Tool.class);
-            McpTool instance = instantiate(cls);
-            instance.bind(ctx);
             if (security == null && SecurityPolicy.of(cls) != null)
-                throw new InitializationException("MCP tool \"" + ann.name() + "\" declares security annotations, but the server runs with McpSecurity.NONE");
+                throw new IllegalStateException("MCP tool \"" + ann.name() + "\" declares security annotations, but the server runs with McpSecurity.NONE");
+            McpTool instance = services.create(cls);
+            instance.onInit();
             SecurityPolicy policy = security == null ? null : security.policy(cls);
             if (registry.tools.putIfAbsent(ann.name(), new RegisteredTool(ann.name(), instance, policy)) != null)
-                throw new InitializationException("Duplicate MCP tool name: \"" + ann.name() + "\"");
+                throw new IllegalStateException("Duplicate MCP tool name: \"" + ann.name() + "\"");
         }
-        for (Class<? extends McpResource> cls : found.resources()) {
+        for (Class<? extends McpResource> cls : resources) {
             Resource ann = cls.getAnnotation(Resource.class);
-            McpResource instance = instantiate(cls);
-            instance.bind(ctx);
+            McpResource instance = services.create(cls);
+            instance.onInit();
             if (registry.resources.putIfAbsent(ann.uri(), new RegisteredResource(ann.uri(), instance)) != null)
-                throw new InitializationException("Duplicate MCP resource uri: \"" + ann.uri() + "\"");
+                throw new IllegalStateException("Duplicate MCP resource uri: \"" + ann.uri() + "\"");
         }
-        for (Class<? extends McpPrompt> cls : found.prompts()) {
+        for (Class<? extends McpPrompt> cls : prompts) {
             Prompt ann = cls.getAnnotation(Prompt.class);
-            McpPrompt instance = instantiate(cls);
-            instance.bind(ctx);
+            McpPrompt instance = services.create(cls);
+            instance.onInit();
             if (registry.prompts.putIfAbsent(ann.name(), new RegisteredPrompt(ann.name(), instance)) != null)
-                throw new InitializationException("Duplicate MCP prompt name: \"" + ann.name() + "\"");
+                throw new IllegalStateException("Duplicate MCP prompt name: \"" + ann.name() + "\"");
         }
 
-        if (!found.tools().isEmpty())
-            registry.toolsListJson = McpJson.buildString(gen -> writeToolsArray(gen, found.tools()));
-        if (!found.resources().isEmpty())
-            registry.resourcesListJson = McpJson.buildString(gen -> writeResourcesArray(gen, found.resources()));
-        if (!found.prompts().isEmpty())
-            registry.promptsListJson = McpJson.buildString(gen -> writePromptsArray(gen, found.prompts()));
+        if (!tools.isEmpty())
+            registry.toolsListJson = McpJson.buildString(gen -> writeToolsArray(gen, tools));
+        if (!resources.isEmpty())
+            registry.resourcesListJson = McpJson.buildString(gen -> writeResourcesArray(gen, resources));
+        if (!prompts.isEmpty())
+            registry.promptsListJson = McpJson.buildString(gen -> writePromptsArray(gen, prompts));
 
         return registry;
     }
@@ -168,16 +180,5 @@ final class McpRegistry {
             gen.writeEndObject();
         }
         gen.writeEndArray();
-    }
-
-    private static <T> T instantiate(Class<T> cls) {
-        try {
-            Constructor<T> ctor = cls.getDeclaredConstructor();
-            return ctor.newInstance();
-        } catch (Exception e) {
-            throw new InitializationException(
-                    "Failed to instantiate " + cls.getName() +
-                    " — ensure it has a public no-arg constructor", e);
-        }
     }
 }

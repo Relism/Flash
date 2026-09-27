@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.PURGE, path = "…")}. */
-@Route(method = HttpMethod.PURGE, path = "")
+/** A handler class that answers {@code PURGE} at the given path. */
+@Verb(HttpMethod.PURGE)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface PURGE {

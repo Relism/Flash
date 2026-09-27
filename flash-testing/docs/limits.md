@@ -5,12 +5,12 @@ consequence of a real constraint, not an unfinished feature.
 
 ## TLS
 
-`profile(cfg -> cfg.tls(...))` is rejected. The harness serves plaintext on loopback and hands you
+`config(cfg -> cfg.tls(...))` is rejected. The harness serves plaintext on loopback and hands you
 a client bound to `http://127.0.0.1:<port>`; a TLS listener would leave that base URI pointing at
 the wrong scheme, and the client would need the test certificate in a trust store.
 
-**Instead:** build the app directly with `FlashApp.create(...)` and a raw `SSLSocket`, as
-`HttpServerTlsTest` does. `port(0)` plus `FlashApp.port()` still removes the free-port dance.
+**Instead:** start the app directly with `Server.start(app, config)` and a raw `SSLSocket`, as
+`HttpServerTlsTest` does. `port(0)` plus `server.port()` still removes the free-port dance.
 
 Lifting this is the only limit here worth reconsidering, and only if application-level TLS testing
 is actually wanted — transport-level TLS is already covered by the core suite.
@@ -57,23 +57,14 @@ intended pattern, not a workaround.
 `flash-testing` depends on `flash`, so `flash`'s own tests cannot depend on `flash-testing` —
 Maven rejects module cycles regardless of scope.
 
-**Instead:** core tests use `FlashApp.create(...)` with `port(0)` and read `port()` back. Every
+**Instead:** core tests use `Server.start(...)` with `port(0)` and read `port()` back. Every
 core suite already does this. Unblocking it would need a third module depending on both, which is
 not worth it for the two suites that would benefit.
 
-## Scoped services
-
-`mock` writes to the app's root `FlashContext`. `FlashContext.require` checks its own bindings
-before its parent's, so a service declared inside a `mount(...)` scope's child context shadows the
-root and is **not** reachable from `mock`.
-
-**Instead:** declare the service on the app rather than inside the scope, or assert against the
-real one. Child-context targeting would be a small addition if a scoped service ever needs faking.
-
 ## Shutdown draining
 
-The harness pins `shutdownDrainTimeoutMs` to 250ms after any profile runs, so a test cannot
+The harness pins `shutdownDrainTimeoutMs` to 250ms after `config` runs, so a test cannot
 exercise graceful-drain behaviour through it.
 
-**Instead:** `ServerLifecycleGracefulShutdownTest` builds its app directly. A profile escape hatch
+**Instead:** `ServerLifecycleGracefulShutdownTest` builds its app directly. An escape hatch
 would be easy to add if this ever comes up twice.

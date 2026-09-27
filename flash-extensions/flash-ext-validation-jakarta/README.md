@@ -3,8 +3,8 @@
 Jakarta Validation, as Hibernate Validator implements it.
 
 ```java
-app.install(new JsonExtension())
-   .install(new JakartaValidationExtension());
+app.install(new JsonModule())
+   .install(new JakartaValidation());
 ```
 
 Nothing is asked of the build. Every constraint of the specification, cascading through `@Valid`,
@@ -39,7 +39,7 @@ being documented.
 
 ## Notes
 
-- `new JakartaValidationExtension(validator)` takes a validator configured by hand: a message
+- `new JakartaValidation(validator)` takes a validator configured by hand: a message
   interpolator, a clock, a parameter name provider.
 - Brings `expressly`, the Jakarta EL implementation the engine wants for message interpolation.
   Without it the defaults of `@DecimalMin` and `@DecimalMax` come back un-interpolated and the

@@ -1,13 +1,13 @@
 package dev.relism.flash.ext.view.jte;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Binds a handler to a jte template.
- */
+/** The jte template a {@link dev.relism.flash.ext.view.core.ViewHandler} renders, relative to the template root. */
+@Inherited
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Template {

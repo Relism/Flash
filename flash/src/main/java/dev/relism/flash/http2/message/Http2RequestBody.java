@@ -6,7 +6,7 @@ import dev.relism.flash.http2.Http2StreamException;
 import dev.relism.flash.http2.message.DataBufferPool.DataBuffer;
 import java.io.IOException;
 import java.io.InputStream;
-import dev.relism.flash.models.BodyCompletion;
+import dev.relism.flash.http.BodyCompletion;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -26,6 +26,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
   private DataBuffer tail;
   private ConsumptionListener listener;
   private long declaredLength;
+  private long maxBodySize;
   private long received;
   private int inlinePosition;
   private int inlineFlowControlledBytes;
@@ -37,7 +38,8 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     this.pool = pool;
   }
 
-  public void begin(long declaredLength, boolean inlineMode, ConsumptionListener listener) {
+  public void begin(long declaredLength, boolean inlineMode, ConsumptionListener listener, long maxBodySize) {
+    this.maxBodySize = maxBodySize;
     releaseQueued();
     this.declaredLength = declaredLength;
     this.inlineMode = inlineMode;
@@ -53,7 +55,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
   public void offer(
       int streamId, byte[] source, int offset, int length, int flowControlledBytes) {
     long next = received + length;
-    if (next > Http2Limits.MAX_REQUEST_BODY_SIZE) {
+    if (next > maxBodySize) {
       throw new Http2StreamException(
           streamId, Http2ErrorCode.PROTOCOL_ERROR, "request body exceeds configured limit");
     }

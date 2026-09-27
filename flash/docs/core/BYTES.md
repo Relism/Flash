@@ -119,37 +119,20 @@ an independent scanner.
 
 ## `EX-05`: pooled slices
 
-`Http1HeaderMap.view`, `QueryParams.view`, and `PathParams.view` used to allocate a fresh anonymous
-`ByteView` (plus its capturing instance) on every call. Each now draws from a small
-(`VIEW_POOL_SIZE = 4`) `SlicePool` of reusable `PooledSlice` instances instead. The lifetime
-contract, restated on each method: **a returned view stays valid until either the request ends,
-or the same `view()` method is called `VIEW_POOL_SIZE` more times on the same instance —
-whichever comes first** — at which point the ring silently repositions the same object over
-different bytes. This is a real, demonstrated hazard, not a hypothetical one:
-`SlicePoolTest#wraparoundAliasesThePreviouslyReturnedSlice` and the analogous tests in
-`Http1HeaderMapIndexTest`, `QueryParamsFastPathTest`, and `PathParamsTest` all show a 5th call
-returning the exact same object instance the 1st call did, now aliased to different content.
+`Http1HeaderMap.view` used to allocate a fresh anonymous `ByteView` (plus its capturing instance)
+on every call. It now draws from a small (`VIEW_POOL_SIZE = 4`) `SlicePool` of reusable
+`PooledSlice` instances instead. The lifetime contract, restated on the method: **a returned view
+stays valid until either the request ends, or `view()` is called `VIEW_POOL_SIZE` more times on
+the same map — whichever comes first** — at which point the ring silently repositions the same
+object over different bytes. This is a real, demonstrated hazard, not a hypothetical one:
+`SlicePoolTest#wraparoundAliasesThePreviouslyReturnedSlice` and `Http1HeaderMapIndexTest` show a
+5th call returning the exact same object instance the 1st call did, now aliased to different
+content. Path and query parameters have no views: `Request.paramLong`/`queryLong` and friends
+parse their bytes in place.
 
-`QueryParams` and `PathParams`'s pools are created **lazily**, on the first actual `view()` call
-— not eagerly in the constructor — because both classes are otherwise-cheap objects created per
-request (or, for `PathParams`'s `FastPathRouterImpl`-owned reusable instance, once per
-connection) regardless of whether `view()` is ever invoked; an eager pool would add
-`VIEW_POOL_SIZE` allocations to every such object whether or not it needed them; `Http1HeaderMap`'s
-pool, by contrast, is unconditionally useful (every request's map handles headers) and is
-constructed eagerly for simplicity.
+## `EX-19`/`EX-06` (router half): the `Router` scratch
 
-**Two documented, deliberately-kept exceptions to "no `new ByteView()` remains"**: `QueryParams.view`
-and `PathParams.view` each retain a fallback anonymous `ByteView` for the case where their
-backing source is *not* `ArrayBackedByteView` — structurally unreachable on the real request path
-today (`RequestParser` only ever constructs array-backed views), kept because both constructors
-are `public` and could in principle be called with an arbitrary `ByteView`. A silent, correct,
-allocating fallback was judged preferable to either crashing on a technically-valid input or
-deleting a case that only test code could exercise. `Http1HeaderMap.view` has no such fallback
-— it is always buffer-backed by construction.
-
-## `EX-19`/`EX-06` (router half): the `FastPathRouterImpl` scratch
-
-`FastPathRouterImpl.RouteScratch` (created once per connection via `AbstractRouter#newScratch`,
+`Router.Scratch` (created once per connection via `Router#newScratch`,
 replacing the `ThreadLocal<MatchResult>`/`ThreadLocal<MethodPathByteView>` pair, as an opaque
 caller-owned object rather than an extension of `ConnectionScratch`) also owns the reusable
 path-param arrays and a single long-lived

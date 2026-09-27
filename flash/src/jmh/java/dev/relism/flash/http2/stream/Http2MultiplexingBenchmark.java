@@ -48,7 +48,7 @@ public class Http2MultiplexingBenchmark {
     for (int i = 0; i < streams.length; i++) {
       Http2Stream stream = table.acquire(i * 2 + 1);
       decoder.decode(encoded.array(), 0, encoded.length(), stream.headerBlock());
-      stream.assembleRequest(null, null);
+      stream.assembleRequest(null, null, null);
       streams[i] = stream;
     }
   }

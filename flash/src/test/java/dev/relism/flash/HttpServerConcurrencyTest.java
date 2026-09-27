@@ -1,9 +1,10 @@
 package dev.relism.flash;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -24,17 +25,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HttpServerConcurrencyTest {
 
-    private static FlashApp app;
+    private static App app;
+
+    private static Server server;
     private static int port;
     private static HttpClient httpClient;
 
     @BeforeAll
     static void setUp() {
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config1 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
-                .build());
-        port = app.port();
+                .build();
+        app = App.create();
 
         app.get("/ping", (req, res) -> "pong");
         app.post("/echo", (req, res) -> {
@@ -42,7 +45,8 @@ class HttpServerConcurrencyTest {
             return new Response(200, body, ContentType.TEXT_PLAIN);
         });
 
-        app.start();
+        server = Server.start(app, config1);
+        port = server.port();
 
         httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -51,7 +55,7 @@ class HttpServerConcurrencyTest {
 
     @AfterAll
     static void tearDown() {
-        if (app != null) app.stop().join();
+        if (server != null) server.stop().join();
     }
 
     // --- helpers ---
@@ -171,18 +175,19 @@ class HttpServerConcurrencyTest {
     void concurrent_lazyCompile_noRaceCondition() throws Exception {
         // Deliberately a brand-new app: this test is about compiling routes lazily on first
         // use, so it must not share the class-scoped server.
-        FlashApp freshApp = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config2 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
-                .build());
-        int freshPort = freshApp.port();
+                .build();
+        App freshApp = App.create();
 
         for (int i = 0; i < 10; i++) {
             final int idx = i;
             freshApp.get("/route" + idx, (req, res) -> "handler" + idx);
         }
 
-        freshApp.start();
+        Server server = Server.start(freshApp, config2);
+        int freshPort = server.port();
 
         int count = 20;
         ExecutorService pool = Executors.newFixedThreadPool(count);
@@ -215,7 +220,7 @@ class HttpServerConcurrencyTest {
             assertTrue(errors.isEmpty(), () -> "Unexpected errors: " + errors);
             assertEquals(count, successes.get());
         } finally {
-            freshApp.stop();
+            server.stop();
         }
     }
 }

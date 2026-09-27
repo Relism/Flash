@@ -1,7 +1,8 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,11 +22,13 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ServerLifecycleGracefulShutdownTest {
 
-    private FlashApp app;
+    private App app;
+
+    private Server server;
 
     @AfterEach
     void tearDown() {
-        if (app != null) app.stop();
+        if (server != null) server.stop();
     }
 
 
@@ -34,17 +37,18 @@ class ServerLifecycleGracefulShutdownTest {
         CountDownLatch handlerStarted  = new CountDownLatch(1);
         CountDownLatch releaseHandler  = new CountDownLatch(1);
 
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config1 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .shutdownDrainTimeoutMs(5_000)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/slow", (req, res) -> {
             handlerStarted.countDown();
             assertTrue(releaseHandler.await(5, TimeUnit.SECONDS));
             return "done";
         });
-        app.start();
+        server = Server.start(app, config1);
+        int port = server.port();
 
         try (Socket socket = new Socket("127.0.0.1", port)) {
             socket.setSoTimeout(5_000);
@@ -55,7 +59,7 @@ class ServerLifecycleGracefulShutdownTest {
             assertTrue(handlerStarted.await(2, TimeUnit.SECONDS));
 
             // Begin shutdown while the handler is still running.
-            CompletableFuture<Void> stopping = app.stop();
+            CompletableFuture<Void> stopping = server.stop();
             // Give stop() a moment to mark the server as stopping and close the listener.
             Thread.sleep(100);
             releaseHandler.countDown();
@@ -75,13 +79,14 @@ class ServerLifecycleGracefulShutdownTest {
 
     @Test
     void stop_closesListener_soNewConnectionsAreRefused() throws Exception {
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config2 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .shutdownDrainTimeoutMs(500)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config2);
+        int port = server.port();
 
         // Confirm the server actually answers before stopping it.
         try (Socket probe = new Socket("127.0.0.1", port)) {
@@ -92,7 +97,7 @@ class ServerLifecycleGracefulShutdownTest {
             assertTrue(probe.getInputStream().read() != -1);
         }
 
-        app.stop().get(5, TimeUnit.SECONDS);
+        server.stop().get(5, TimeUnit.SECONDS);
 
         assertThrows(Exception.class, () -> {
             try (Socket socket = new Socket()) {

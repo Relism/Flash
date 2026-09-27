@@ -6,7 +6,7 @@ import dev.relism.flash.ext.mcp.ResourceContents;
 import dev.relism.flash.ext.mcp.TextResourceContents;
 
 @Resource(uri = "greeting://hello", description = "A greeting", mimeType = "text/plain")
-public class GreetingResource extends McpResource {
+public class GreetingResource implements McpResource {
 
     @Override
     public ResourceContents read() {

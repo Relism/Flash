@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** In-process {@link CacheManager} backed by Caffeine. */
-final class CaffeineCacheManager implements CacheManager {
+final class CaffeineCacheManager implements CacheManager, AutoCloseable {
 
     private final Map<String, Entry> caches = new ConcurrentHashMap<>();
 
@@ -42,8 +42,9 @@ final class CaffeineCacheManager implements CacheManager {
         return Set.copyOf(caches.keySet());
     }
 
-    /** Releases every entry so a stopped app does not keep its values alive. */
-    void clear() {
+    /** Drops every cache: the app is stopping. */
+    @Override
+    public void close() {
         caches.values().forEach(entry -> entry.cache.invalidateAll());
         caches.clear();
     }

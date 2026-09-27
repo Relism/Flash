@@ -1,13 +1,13 @@
 package dev.relism.flash.ext.view.thymeleaf;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Binds a handler to a Thymeleaf template.
- */
+/** The Thymeleaf template a {@link dev.relism.flash.ext.view.core.ViewHandler} renders, without prefix or suffix. */
+@Inherited
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Template {

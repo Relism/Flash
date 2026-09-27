@@ -10,6 +10,7 @@ import dev.relism.flash.bytes.ByteWriter;
  * size is rarely known before it is serialized (an HPACK-encoded header block, in particular,
  * has no cheap way to be measured in advance).
  *
+ * The whole frame is assembled here first and the owner
  * issues one bulk {@code write}, rather than streaming bytes as they are produced: streaming
  * would require knowing the length <em>before</em> the first byte goes out, which back-patching
  * deliberately avoids needing.

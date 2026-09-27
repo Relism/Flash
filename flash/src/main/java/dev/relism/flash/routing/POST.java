@@ -7,8 +7,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Shorthand for {@code @Route(method = HttpMethod.POST, path = "…")}. */
-@Route(method = HttpMethod.POST, path = "")
+/** A handler class that answers {@code POST} at the given path. */
+@Verb(HttpMethod.POST)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface POST {

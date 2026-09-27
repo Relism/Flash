@@ -3,7 +3,7 @@
 ## Confirm which protocol was selected
 
 For TLS, the client and server must both offer `h2` through ALPN. Enable
-`FlashConfiguration.http2Enabled`, use a certificate valid for the requested hostname, then check
+`ServerConfig.http2Enabled`, use a certificate valid for the requested hostname, then check
 with `curl --http2 -v https://host/path` or `nghttp -nv https://host/path`. The trace must report
 ALPN `h2`; a successful HTTP/1.1 response usually means HTTP/2 was not enabled or the client did
 not offer it.

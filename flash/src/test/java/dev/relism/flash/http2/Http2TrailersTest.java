@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackEncoder;
@@ -18,28 +19,28 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class Http2TrailersTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
   void requestTrailersReachHandlerAfterBodyEof() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.post("/trailers", (request, response) -> {
       assertEquals("abc", new String(request.body().bytes(), StandardCharsets.US_ASCII));
       return request.trailers().first("grpc-status");
     });
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     byte[] initial = requestHeaders("/trailers");
     ByteWriter trailer = new ByteWriter(32);
@@ -99,16 +100,15 @@ class Http2TrailersTest {
   }
 
   private int startBlockingRoute() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config2 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.post("/trailers", (request, response) -> request.body().bytes());
-    app.start();
+    server = Server.start(app, config2);
+    int port = server.port();
     return port;
   }
 

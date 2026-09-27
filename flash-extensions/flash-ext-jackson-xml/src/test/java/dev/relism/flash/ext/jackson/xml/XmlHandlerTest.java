@@ -2,19 +2,21 @@ package dev.relism.flash.ext.jackson.xml;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
-import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.http.HttpException;
 import dev.relism.flash.ext.jackson.json.Json;
 import dev.relism.flash.ext.serde.CodecHandler;
-import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.App;
+import dev.relism.flash.testing.FlashTest;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.bytes.FastPathViews;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.charset.StandardCharsets;
 
@@ -23,6 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** The same handler shape as JSON, over the same types. What checks them is a validation engine's. */
 class XmlHandlerTest {
+
+    @RegisterExtension
+    static FlashTest app = FlashTest.of(() -> App.create().add(Xml.class, new Xml(XmlMapper.builder().build())).add(Json.class, new Json(new ObjectMapper())));
 
     public record Order(@NotBlank String reference) {}
     public record Receipt(String number) {}
@@ -49,8 +54,7 @@ class XmlHandlerTest {
 
     @Test
     void theBodyArrivesParsedAsTheTypeTheHandlerDeclares() throws Exception {
-        Place handler = new Place();
-        handler.bind(context());
+        Place handler = app.services().create(Place.class);
 
         Object answer = handler.handle(request("<Order><reference>A-1</reference></Order>"), response());
 
@@ -59,8 +63,7 @@ class XmlHandlerTest {
 
     @Test
     void aMalformedBodyIsABadRequest() throws Exception {
-        Place handler = new Place();
-        handler.bind(context());
+        Place handler = app.services().create(Place.class);
 
         HttpException refused = assertThrows(HttpException.class,
                 () -> handler.handle(request("<Order><reference>"), response()));
@@ -70,35 +73,26 @@ class XmlHandlerTest {
 
     @Test
     void aHandlerAnswersInTheCodecItNamesForTheAnswer() throws Exception {
-        Ship handler = new Ship();
-        handler.bind(context());
+        Ship handler = app.services().create(Ship.class);
         Response response = response();
 
         Object body = handler.handle(request("<Order><reference>A-1</reference></Order>"), response);
 
-        assertEquals("{\"number\":\"A-1\"}", body);
+        assertEquals("{\"number\":\"A-1\"}", new String((byte[]) body, StandardCharsets.UTF_8));
         assertEquals("application/json", new String(response.getContentType(), StandardCharsets.UTF_8));
     }
 
     @Test
     void aHandlerThatReadsNothingStillAnswersItsOwnFormat() throws Exception {
-        Catalog handler = new Catalog();
-        handler.bind(context());
+        Catalog handler = app.services().create(Catalog.class);
         Response response = new Response(200, ContentType.NONE);
 
         Object body = handler.handle(request(""), response);
 
-        assertEquals("<Receipt><number>catalog</number></Receipt>", body);
+        assertEquals("<Receipt><number>catalog</number></Receipt>", new String((byte[]) body, StandardCharsets.UTF_8));
         assertEquals("application/xml", new String(response.getContentType(), StandardCharsets.UTF_8));
     }
 
-    private static FlashContext context() {
-        FlashContext ctx = new FlashContext();
-        ctx.provide(Xml.class, new Xml(XmlMapper.builder().build()));
-        ctx.provide(Json.class, new Json(new ObjectMapper()));
-        ctx.complete();
-        return ctx;
-    }
 
     private static Response response() {
         return new Response(200, ContentType.XML);

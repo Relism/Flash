@@ -1,7 +1,7 @@
 # WebSockets over HTTP/2
 
 Flash implements RFC 8441 extended CONNECT alongside the existing HTTP/1.1 WebSocket upgrade.
-Both transports resolve the same `ws(path, handler)` registration through `AbstractWsRouter` and
+Both transports resolve the same `ws(path, handler)` registration through `Router.dispatch` and
 run the same `WebSocketSession`, frame parser, handler callbacks, and close lifecycle.
 
 ## Protocol negotiation

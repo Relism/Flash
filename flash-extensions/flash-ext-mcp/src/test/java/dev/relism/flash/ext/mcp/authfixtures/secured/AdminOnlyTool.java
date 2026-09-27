@@ -9,7 +9,7 @@ import dev.relism.flash.ext.security.RolesAllowed;
 
 @Tool(name = "admin_only", description = "Only callable with the admin role")
 @RolesAllowed(value = "admin", on = "project")
-public class AdminOnlyTool extends McpTool {
+public class AdminOnlyTool implements McpTool {
 
     @Override
     public ToolResponse call(ToolArguments args) {

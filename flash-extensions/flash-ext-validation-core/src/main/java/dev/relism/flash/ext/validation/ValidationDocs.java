@@ -1,8 +1,6 @@
 package dev.relism.flash.ext.validation;
 
 import dev.relism.flash.ext.openapi.OpenApiContributor;
-import dev.relism.flash.ext.openapi.OpenApiContributorRegistry;
-import dev.relism.flash.extension.FlashContext;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -15,26 +13,22 @@ import java.util.function.BiConsumer;
  *
  * <p>The walk is here because it is the same for every engine — a property, its annotations, the
  * facts they add. Which annotations exist and what they mean is never here: it arrives through
- * {@link Constraints} when the engine is installed.
+ * {@link Constraints} from the engine. Installed by {@link Validation#docs()}, and loaded only when
+ * flash-ext-openapi is there.
  *
  * <p>Built once per document revision, so nothing on this path is on a request.
  */
-final class ValidationDocs {
+final class ValidationDocs implements OpenApiContributor {
 
-    private ValidationDocs() {}
+    private final Declared declared = new Declared();
 
-    static void register(FlashContext ctx, Validation validation) {
-        Declared declared = new Declared();
+    ValidationDocs(Validation validation) {
         validation.describe(declared);
-        if (declared.mappers.isEmpty()) return;
+    }
 
-        ctx.onReady(() -> {
-            try {
-                OpenApi.add(ctx, declared);
-            } catch (NoClassDefFoundError absent) {
-                // flash-ext-openapi is not on the classpath
-            }
-        });
+    @Override
+    public boolean property(Field field, Map<String, Object> schema) {
+        return !declared.mappers.isEmpty() && declared.apply(field, schema);
     }
 
     /** What the engine registered, and the walk that applies it to one property. */
@@ -93,18 +87,6 @@ final class ValidationDocs {
 
         @Override public void required() {
             required = true;
-        }
-    }
-
-    /** Isolated so this module loads without flash-ext-openapi on the classpath. */
-    private static final class OpenApi {
-
-        static void add(FlashContext ctx, Declared declared) {
-            ctx.find(OpenApiContributorRegistry.class).ifPresent(registry -> registry.add(new OpenApiContributor() {
-                @Override public boolean property(Field field, Map<String, Object> schema) {
-                    return declared.apply(field, schema);
-                }
-            }));
         }
     }
 }

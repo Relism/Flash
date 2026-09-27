@@ -12,7 +12,7 @@ Add it when there is a second replica that actually needs shared state.
 so switching backend is an install-line change:
 
 ```java
-.install(new RedisCacheExtension(RedisConfig.of("redis://localhost:6379")))
+.install(new RedisCacheModule(RedisConfig.of("redis://localhost:6379")))
 ```
 
 ## The part that is not a drop-in

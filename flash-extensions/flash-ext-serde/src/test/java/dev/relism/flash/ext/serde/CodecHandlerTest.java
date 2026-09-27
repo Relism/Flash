@@ -1,17 +1,22 @@
 package dev.relism.flash.ext.serde;
 
-import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.App;
+import dev.relism.flash.Services;
+import dev.relism.flash.testing.FlashTest;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.bytes.FastPathViews;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,6 +41,8 @@ class CodecHandlerTest {
 
     /** Writes, and refuses to read. */
     static final class Out implements Codec {
+        final List<Type> prepared = new ArrayList<>();
+        @Override public void prepare(Type type) { prepared.add(type); }
         @Override public <T> T read(Request request, Type type) { throw new UnsupportedOperationException(); }
         @Override public Object write(Response response, Object value) {
             response.type(ContentType.JSON);
@@ -68,10 +75,21 @@ class CodecHandlerTest {
         @Override public ContentType contentType() { return ContentType.JSON; }
     }
 
+    private static final Out OUT = new Out();
+
+    @RegisterExtension
+    static FlashTest app = FlashTest.of(() -> App.create().add(In.class, new In()).add(Out.class, OUT));
+
+    @RegisterExtension
+    static FlashTest writeOnly = FlashTest.of(() -> App.create().add(Out.class, new Out()));
+
+    private static Services services() {
+        return app.services();
+    }
+
     @Test
     void eachEndGoesThroughTheCodecItNames() throws Exception {
-        Echo handler = new Echo();
-        handler.bind(context());
+        Echo handler = services().create(Echo.class);
         Response response = new Response(200, ContentType.NONE);
 
         Object body = handler.handle(request("hello"), response);
@@ -82,12 +100,7 @@ class CodecHandlerTest {
 
     @Test
     void aHandlerThatReadsNothingNeverAsksForARequestCodec() throws Exception {
-        FlashContext ctx = new FlashContext();
-        ctx.provide(Out.class, new Out());
-        ctx.complete();
-
-        Answer handler = new Answer();
-        handler.bind(ctx);
+        Answer handler = writeOnly.services().create(Answer.class);
 
         assertEquals("said:nothing", handler.handle(request(""), new Response(200, ContentType.NONE)));
     }
@@ -96,38 +109,35 @@ class CodecHandlerTest {
     void aTextOrBytesAnswerIsAlreadyABodyAndIsLeftAlone() throws Exception {
         Response response = new Response(200, ContentType.NONE);
 
-        Object body = new Text().bound(context()).handle(request(""), response);
+        Object body = services().create(Text.class).handle(request(""), response);
 
         assertEquals("plain", body);
     }
 
     @Test
-    void aHandlerThatLeavesItsTypesOpenIsRefusedAtBoot() {
-        FlashContext ctx = context();
+    void eachCodecPreparesTheTypeItCarriesAndNothingItPassesThrough() {
+        OUT.prepared.clear();
 
-        assertTrue(assertThrows(IllegalStateException.class, () -> new Open().bind(ctx))
+        services().create(Echo.class);
+        services().create(Text.class);
+
+        assertEquals(List.of(Said.class), OUT.prepared, "a String answer is already a body");
+    }
+
+    @Test
+    void aHandlerThatLeavesItsTypesOpenIsRefusedAtBoot() {
+        assertTrue(assertThrows(IllegalStateException.class, () -> services().create(Open.class))
                 .getMessage().contains("leaves its type arguments open"));
     }
 
     @Test
-    void aCodecNothingProvidesFailsTheBootNamingIt() {
-        FlashContext ctx = context();
-
-        assertTrue(assertThrows(IllegalStateException.class, () -> new Unprovided().bind(ctx))
+    void aCodecTheAppDoesNotHaveFailsTheBootNamingIt() {
+        assertTrue(assertThrows(IllegalStateException.class, () -> services().create(Unprovided.class))
                 .getMessage().contains(Missing.class.getName()));
     }
 
     static final class Text extends CodecHandler<In, Void, Out, String> {
         @Override protected String handle(Request request, Response response, Void nothing) { return "plain"; }
-        Text bound(FlashContext ctx) { bind(ctx); return this; }
-    }
-
-    private static FlashContext context() {
-        FlashContext ctx = new FlashContext();
-        ctx.provide(In.class, new In());
-        ctx.provide(Out.class, new Out());
-        ctx.complete();
-        return ctx;
     }
 
     private static Request request(String body) {

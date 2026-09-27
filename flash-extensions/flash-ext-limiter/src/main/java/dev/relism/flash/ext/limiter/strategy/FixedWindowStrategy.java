@@ -25,7 +25,7 @@ import dev.relism.flash.ext.limiter.RateLimitStrategy;
 public final class FixedWindowStrategy implements RateLimitStrategy {
 
     @Override
-    public boolean check(Bucket bucket, LimitConfig cfg, long[] out) {
+    public long check(Bucket bucket, LimitConfig cfg) {
         long now       = System.currentTimeMillis();
         long absEpoch  = now / cfg.windowMs();
         int  epoch     = (int)(absEpoch & 0xFFFFFFFFL);  // reduced epoch, collision-safe
@@ -44,9 +44,8 @@ public final class FixedWindowStrategy implements RateLimitStrategy {
             long newPacked = ((long) epoch << 32) | (newCount & 0xFFFFFFFFL);
 
             if (bucket.slot0.compareAndSet(packed, newPacked)) {
-                out[0] = Math.max(0L, cfg.limit() - newCount);
-                out[1] = (absEpoch + 1) * cfg.windowMs() / 1000L;
-                return newCount <= cfg.limit();
+                return RateLimitStrategy.verdict(newCount <= cfg.limit(), Math.max(0L, cfg.limit() - newCount),
+                        (absEpoch + 1) * cfg.windowMs() / 1000L);
             }
             // CAS lost — contention; re-read and retry.
         }

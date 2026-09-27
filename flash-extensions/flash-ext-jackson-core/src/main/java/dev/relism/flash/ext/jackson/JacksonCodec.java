@@ -3,17 +3,18 @@ package dev.relism.flash.ext.jackson;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.Bound;
+import dev.relism.flash.Services;
 import dev.relism.flash.ext.serde.Codec;
 import dev.relism.flash.ext.validation.Validation;
-import dev.relism.flash.extension.FlashContext;
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.Response;
-import lombok.extern.slf4j.Slf4j;
+import dev.relism.flash.http.HttpException;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
-import java.util.Optional;
 
 /**
  * One Jackson mapper, in the shape a handler needs it.
@@ -22,22 +23,17 @@ import java.util.Optional;
  * the whole of what a format module has to say: which mapper, and which content type it writes.
  * What the annotations mean and how a type is described are the same for all of them.
  *
- * <p>Retrieve it once at boot — {@code @Inject private Json json;} — and call it on the hot path.
- * The underlying {@link ObjectMapper} is thread-safe once configured.
+ * <p>A handler takes it as a constructor parameter and calls it on the hot path: the underlying
+ * {@link ObjectMapper} is thread-safe once configured.
  */
-@Slf4j
-public abstract class JacksonCodec implements Codec {
+public abstract class JacksonCodec implements Codec, Bound {
+
+    private static final Logger log = LoggerFactory.getLogger(JacksonCodec.class);
 
     private final ObjectMapper mapper;
     private final ContentType contentType;
 
-    /**
-     * The engine that checks what is read, or null when no application installed one.
-     *
-     * <p>Written once from a ready callback, which runs while the application boots and long
-     * before a request thread exists: the thread that serves a request starts after that write and
-     * therefore sees it.
-     */
+    /** The engine that checks what is read, or null when none is installed; written once at boot. */
     private Validation validation;
 
     protected JacksonCodec(ObjectMapper mapper, ContentType contentType) {
@@ -68,11 +64,11 @@ public abstract class JacksonCodec implements Codec {
         return value;
     }
 
-    /** Serializes {@code value} and sets this codec's content type on the response. */
+    /** Serializes {@code value} into the one array the response sends, and sets this codec's content type. */
     @Override
-    public String write(Response response, Object value) throws Exception {
+    public byte[] write(Response response, Object value) throws Exception {
         response.type(contentType);
-        return mapper.writeValueAsString(value);
+        return mapper.writeValueAsBytes(value);
     }
 
     @Override
@@ -85,19 +81,10 @@ public abstract class JacksonCodec implements Codec {
         return mapper;
     }
 
-    /**
-     * Binds the installed validation engine at boot, and says so when there is none: a body that
-     * declares rules nobody checks is worth one line in the log.
-     *
-     * <p>Called by the format's own extension, from {@code configure}.
-     */
-    public void bindValidation(FlashContext ctx) {
-        ctx.onReady(() -> {
-            Optional<Validation> engine = ctx.find(Validation.class);
-            engine.ifPresent(found -> validation = found);
-            if (engine.isEmpty()) {
-                log.info("No validation engine installed: {} bodies are parsed and not checked", contentType);
-            }
-        });
+    /** Takes the app's validation engine at start, and says so once when there is none. */
+    @Override
+    public void bind(Services services) {
+        validation = services.find(Validation.class).orElse(null);
+        if (validation == null) log.info("No validation engine installed: {} bodies are parsed and not checked", contentType);
     }
 }

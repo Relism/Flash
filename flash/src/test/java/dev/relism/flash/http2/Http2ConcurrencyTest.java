@@ -4,8 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackEncoder;
@@ -20,27 +21,27 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class Http2ConcurrencyTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
   void thousandMultiplexedStreamsCompleteOnOneConnection() throws Exception {
     AtomicInteger handled = new AtomicInteger();
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(2_000)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get("/work", (request, response) -> Integer.toString(handled.incrementAndGet()));
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     byte[] headers = requestHeaders();
     try (Socket socket = new Socket("127.0.0.1", port)) {

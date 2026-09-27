@@ -3,7 +3,8 @@ package dev.relism.flash;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.http.MalformedRequestException;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.transport.BufferedByteSource;
 import dev.relism.flash.testing.FuzzMemory;
 import java.io.ByteArrayInputStream;
@@ -30,7 +31,7 @@ class RequestParserFuzzTest {
               input[i] = (byte) state;
             }
             try {
-              new RequestParser(512)
+              new RequestParser(ServerConfig.builder().maxHeaderBufferSize(512).build(), null, null)
                   .parse(
                       new BufferedByteSource(
                           new ByteArrayInputStream(input, 0, length), null, 256));

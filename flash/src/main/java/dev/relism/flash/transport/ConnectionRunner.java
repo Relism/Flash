@@ -1,8 +1,7 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.extension.FlashConfiguration;
-import dev.relism.flash.routing.AbstractRouter;
-import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.routing.Router;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -23,8 +22,8 @@ import lombok.extern.slf4j.Slf4j;
  * active-socket tracking) regardless of how the protocol implementation exits.
  *
  * <p>Sole responsibility: connection setup/teardown. It contains no HTTP semantics at all — those
- * live entirely inside whichever {@link ConnectionProtocol} it dispatches to (today, always {@code
- * Http1Connection}; an {@code H2} negotiation result is closed cleanly, since
+ * live entirely inside whichever {@link ConnectionProtocol} it dispatches to: {@code Http1Connection}
+ * or, when negotiated, {@code Http2Connection}.
  */
 @Slf4j
 public final class ConnectionRunner {
@@ -32,9 +31,8 @@ public final class ConnectionRunner {
   private final ExecutorService executorService;
   private final Set<Socket> activeSockets;
   private final ScratchPool scratchPool;
-  private final AbstractRouter router;
-  private final AbstractWsRouter wsRouter;
-  private final FlashConfiguration configuration;
+  private final Router router;
+  private final ServerConfig configuration;
   private final ConnectionProtocol http1Protocol;
   private final Supplier<? extends ConnectionProtocol> http2ProtocolFactory;
 
@@ -42,16 +40,14 @@ public final class ConnectionRunner {
       ExecutorService executorService,
       Set<Socket> activeSockets,
       ScratchPool scratchPool,
-      AbstractRouter router,
-      AbstractWsRouter wsRouter,
-      FlashConfiguration configuration,
+      Router router,
+      ServerConfig configuration,
       ConnectionProtocol http1Protocol,
       Supplier<? extends ConnectionProtocol> http2ProtocolFactory) {
     this.executorService = executorService;
     this.activeSockets = activeSockets;
     this.scratchPool = scratchPool;
     this.router = router;
-    this.wsRouter = wsRouter;
     this.configuration = configuration;
     this.http1Protocol = http1Protocol;
     this.http2ProtocolFactory = http2ProtocolFactory;
@@ -64,7 +60,7 @@ public final class ConnectionRunner {
    *
    * <p>Rejects before any per-connection state exists — no TLS handshake, no protocol
    * negotiation, no HPACK tables — once {@code activeSockets} reaches {@link
-   * FlashConfiguration#getMaxConnections()}. This is an approximate check (accept runs on up to
+   * ServerConfig#getMaxConnections()}. This is an approximate check (accept runs on up to
    * {@link TransportTuning#ACCEPT_THREADS} concurrent threads, so a burst can briefly land a few
    * connections past the limit), not an atomic guarantee; it only needs to bound worst-case
    * growth, not enforce an exact count.
@@ -104,7 +100,7 @@ public final class ConnectionRunner {
 
       SSLSocket sslSocket = socket instanceof SSLSocket ssl ? ssl : null;
       if (sslSocket != null) {
-        // protocol decision — SSLSocket#getApplicationProtocol() (which
+        // The handshake must finish before the protocol decision — SSLSocket#getApplicationProtocol() (which
         // ProtocolNegotiator relies on) returns null until the handshake has run.
         socket.setSoTimeout(configuration.getHeaderReadTimeoutMs());
         sslSocket.startHandshake();
@@ -128,7 +124,6 @@ public final class ConnectionRunner {
               (InetSocketAddress) socket.getRemoteSocketAddress(),
               scratch,
               router,
-              wsRouter,
               configuration,
               executorService,
               stopped);

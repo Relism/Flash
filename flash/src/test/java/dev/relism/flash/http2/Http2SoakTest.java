@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackEncoder;
@@ -25,11 +26,12 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @Tag("nightly")
 @EnabledIfSystemProperty(named = "flash.http2.soak", matches = "true")
 class Http2SoakTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
@@ -37,20 +39,19 @@ class Http2SoakTest {
     long seconds = Long.getLong("flash.http2.soak.seconds", 600L);
     byte[] streamBody = new byte[8 * 1024];
     Arrays.fill(streamBody, (byte) 's');
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(100_000)
                 .h2MaxStreamsPerConnection(0)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get("/get", (request, response) -> "get");
     app.post("/post", (request, response) -> request.body().bytes());
     app.get("/stream", (request, response) -> response.chunked(new ByteArrayInputStream(streamBody)));
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     long baseline = FuzzMemory.snapshot();
     long deadline = System.nanoTime() + Duration.ofSeconds(seconds).toNanos();

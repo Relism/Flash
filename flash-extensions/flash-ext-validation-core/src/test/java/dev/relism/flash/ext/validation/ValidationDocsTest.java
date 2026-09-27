@@ -1,13 +1,12 @@
 package dev.relism.flash.ext.validation;
 
-import dev.relism.flash.ext.openapi.OpenApiExtension;
+import dev.relism.flash.App;
+import dev.relism.flash.Module;
+import dev.relism.flash.ext.openapi.OpenApiModule;
 import dev.relism.flash.ext.openapi.SchemaProperty;
-import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
-import dev.relism.flash.extension.FlashRegistrar;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.GET;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
@@ -35,14 +34,14 @@ class ValidationDocsTest {
                           @SchemaProperty(description = "Already said.") @Rule(max = 8) String code) {}
 
     @GET("/accounts")
-    public static final class Accounts extends RequestHandler {
+    public static final class Accounts implements Handler {
         @Override public Account handle(Request req, Response res) { return null; }
     }
 
     /** Verifies nothing, describes one rule: enough to prove the seam. */
-    static final class Engine implements FlashExtension, Validation {
-        @Override public void configure(FlashRegistrar<?> app, FlashContext ctx) {
-            Validation.install(ctx, this);
+    static final class Engine implements Module, Validation {
+        @Override public void install(App app) {
+            app.add(Validation.class, this).install(Validation.docs());
         }
         @Override public void verify(Object value) {}
         @Override public void describe(Constraints constraints) {
@@ -55,11 +54,9 @@ class ValidationDocsTest {
     }
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new Engine());
-        configured.install(new OpenApiExtension("/openapi", "Accounts", "1.0.0"));
-        configured.scan("dev.relism.flash.ext.validation");
-    });
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .install(new Engine(), new OpenApiModule("/openapi", "Accounts", "1.0.0"))
+            .scan("dev.relism.flash.ext.validation"));
 
     @Test
     void whatTheEngineSaysOfItsRuleIsInTheSchema() {

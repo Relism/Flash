@@ -1,8 +1,8 @@
 package dev.relism.flash.http2.message;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.PreEncodedHeader;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.PreEncodedHeader;
+import dev.relism.flash.http.Response;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;

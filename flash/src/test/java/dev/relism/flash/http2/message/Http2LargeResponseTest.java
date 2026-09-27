@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 

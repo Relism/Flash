@@ -4,20 +4,7 @@ import dev.relism.flash.ext.limiter.strategy.FixedWindowStrategy;
 import dev.relism.flash.ext.limiter.strategy.SlidingWindowStrategy;
 import dev.relism.flash.ext.limiter.strategy.TokenBucketStrategy;
 
-/**
- * Enumeration of built-in rate-limit algorithms. Each constant is a factory
- * for its corresponding {@link RateLimitStrategy} implementation.
- *
- * <p>New algorithms can be added here without touching the rest of the extension.
- * The enum value is referenced by {@link Limit#strategy()} so user code refers
- * to the algorithm by name ({@code LimitStrategy.FIXED_WINDOW}) rather than
- * instantiating strategy objects directly.
- *
- * <pre>{@code
- * @Limit(key = "ip", requests = 100, window = 1, strategy = LimitStrategy.TOKEN_BUCKET)
- * public class SearchHandler extends RequestHandler { ... }
- * }</pre>
- */
+/** The rate-limit algorithms, by name: {@code @Limit(requests = 100, window = 1, strategy = TOKEN_BUCKET)}. */
 public enum LimitStrategy {
 
     /**

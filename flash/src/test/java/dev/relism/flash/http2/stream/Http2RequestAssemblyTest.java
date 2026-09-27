@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import dev.relism.flash.bytes.PooledSlice;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +20,7 @@ class Http2RequestAssemblyTest {
     field(stream, ":authority", "example.com");
     field(stream, "x-trace", "abc");
 
-    Request request = stream.assembleRequest(null, null);
+    Request request = stream.assembleRequest(null, null, null);
 
     assertEquals(HttpMethod.GET, request.method());
     assertEquals("/users/42", request.path());

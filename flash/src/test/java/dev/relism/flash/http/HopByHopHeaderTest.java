@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.bytes.PooledSlice;
 import dev.relism.flash.http.HopByHopHeaders.Protocol;
-import dev.relism.flash.models.MutableHeaderMap;
+import dev.relism.flash.http.MutableHeaderMap;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 

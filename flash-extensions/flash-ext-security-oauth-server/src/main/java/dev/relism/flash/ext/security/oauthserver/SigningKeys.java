@@ -46,7 +46,7 @@ final class SigningKeys {
         }
     }
 
-    /** A JWK set holding one new private P-256 key — what {@link OAuthServerExtension#signingKeys(String)} takes. */
+    /** A JWK set holding one new private P-256 key — what {@link OAuthServer#signingKeys(String)} takes. */
     static String generate() {
         try {
             return new JWKSet(new ECKeyGenerator(Curve.P_256).keyUse(KeyUse.SIGNATURE).keyID(UUID.randomUUID().toString()).generate()).toString(false);

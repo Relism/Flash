@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@link ProtocolNegotiator#negotiate} is a pure, directly-testable detector (see its Javadoc
- * for why it does not itself consult {@code FlashConfiguration}) — every case here
+ * for why it does not itself consult {@code ServerConfig}) — every case here
  * calls it directly rather than through {@code Http1Connection}/{@code ConnectionRunner}.
  */
 class ProtocolNegotiatorTest {

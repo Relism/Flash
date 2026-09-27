@@ -40,7 +40,7 @@ public final class BufferedByteSource extends InputStream {
 
     /**
      * Default internal buffer size. Matches the relay-buffer convention already used elsewhere
-     * in this codebase (the 8 KB {@code STREAM_RELAY_BUFFER} in {@code HttpServer}) rather than
+     * in this codebase (the 8 KB {@code ConnectionScratch.RELAY_BUFFER_SIZE}) rather than
      * introducing a new tuning constant nothing has calibrated yet.
      */
     public static final int DEFAULT_BUFFER_SIZE = 8192;
@@ -90,6 +90,7 @@ public final class BufferedByteSource extends InputStream {
      * ({@code SO_TIMEOUT = 0}). Must be called before any read the caller wants to be
      * unbounded (e.g. handing the connection off to a long-lived WebSocket session loop).
      *
+     * A {@code null} socket (every
      * test in this codebase that constructs a {@code BufferedByteSource} directly over a
      * {@code ByteArrayInputStream} passes {@code null}, since there is no real connection to
      * bound) is treated as "no OS-level timeout to clear", not an error — only the deadline
@@ -252,6 +253,7 @@ public final class BufferedByteSource extends InputStream {
      * before reading, so a {@link SocketTimeoutException} from {@code in.read} unambiguously
      * means the deadline — not merely one read — has elapsed; see the class Javadoc.
      *
+     * The deadline itself is enforced
      * regardless of whether a real {@link Socket} is present; only the OS-level
      * {@code setSoTimeout} call — meaningless without a socket, and previously called
      * unconditionally, which NPE'd the instant any deadline-bounded read ran against a
