@@ -1,7 +1,7 @@
 package dev.relism.flash.http2;
 
 import dev.relism.flash.bytes.Pairs;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlIntent;
 import dev.relism.flash.http2.Http2ConnectionScratch.ControlKind;
 import dev.relism.flash.http2.frame.FrameFlags;
@@ -66,6 +66,7 @@ public final class Http2Connection implements ConnectionProtocol {
   private int dispatchCount;
   private final Http2AbuseGuard abuse = new Http2AbuseGuard();
   private long streamIdleTimeoutNanos = Http2Limits.STREAM_IDLE_TIMEOUT_MS * 1_000_000L;
+  private long maxBodySize = Long.MAX_VALUE;
   private final Http2Stream[] idleSweep = new Http2Stream[Http2Limits.MAX_CONCURRENT_STREAMS];
 
   public Http2Connection() {
@@ -321,7 +322,7 @@ public final class Http2Connection implements ConnectionProtocol {
           dispatch = !stream.dispatched();
         } else {
           if (streamDispatcher != null) stream.validateHeaders();
-          dispatch = stream.prepareRequestBody(flowController, headerBlocks.endStream());
+          dispatch = stream.prepareRequestBody(flowController, headerBlocks.endStream(), maxBodySize);
           stream.transition(
               headerBlocks.endStream()
                   ? Http2StreamState.Event.RECV_HEADERS_ES
@@ -507,8 +508,9 @@ public final class Http2Connection implements ConnectionProtocol {
     peerGoAway = true;
   }
 
-  void configure(FlashConfiguration configuration) {
+  void configure(ServerConfig configuration) {
     abuse.configure(configuration);
+    maxBodySize = configuration.getMaxBodySize();
     long idle = configuration.getH2StreamIdleTimeoutMs();
     if (idle <= 0) throw new IllegalArgumentException("h2StreamIdleTimeoutMs must be positive");
     streamIdleTimeoutNanos = idle > Long.MAX_VALUE / 1_000_000L

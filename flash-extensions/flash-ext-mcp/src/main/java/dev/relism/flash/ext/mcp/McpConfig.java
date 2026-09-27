@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Immutable configuration for {@link McpExtension}.
+ * Immutable configuration for {@link McpModule}.
  *
  * <pre>{@code
  * McpConfig.builder("my-mcp-server")

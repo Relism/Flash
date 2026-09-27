@@ -1,5 +1,6 @@
 package dev.relism.flash.testing;
 
+import dev.relism.flash.App;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -18,9 +19,9 @@ class FlashTestPerMethodScopeTest {
     private static final AtomicInteger boots = new AtomicInteger();
 
     @RegisterExtension
-    FlashTest app = FlashTest.of(configured -> {
+    FlashTest app = FlashTest.of(() -> {
         boots.incrementAndGet();
-        configured.get("/ping", (req, res) -> "pong");
+        return App.create().get("/ping", (req, res) -> "pong");
     });
 
     @AfterAll

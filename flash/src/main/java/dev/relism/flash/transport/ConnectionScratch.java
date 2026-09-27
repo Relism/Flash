@@ -6,8 +6,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * {@link ThreadLocal} on {@code HttpServer}: the decimal-formatting scratch, the streaming
- * relay buffer, and the WebSocket-handshake {@link MessageDigest}.
+ * Per-connection scratch that would otherwise be a {@link ThreadLocal}: the decimal-formatting
+ * scratch, the streaming relay buffer, and the WebSocket-handshake {@link MessageDigest}.
  *
  * <h3>Why not {@code ThreadLocal}</h3>
  * {@code ThreadLocal} is the right idiom for a bounded platform-thread pool, where "one per
@@ -24,10 +24,8 @@ import java.security.NoSuchAlgorithmException;
  * pool when the connection closes. Never shared between two connections at once — there is no
  * synchronization here because none is needed.
  *
- * class: {@code routing} has no dependency on {@code transport} today, and folding the router's
- * the opaque-per-connection-object mechanism ({@code AbstractRouter#newScratch}) used instead.
- * This class gains HTTP/2 write/HPACK scratch in later phases, where {@code h2} already depends
- * on {@code transport} and no such boundary concern applies.
+ * The router's matching state is not here: {@code routing} does not depend on {@code transport},
+ * so the connection holds a {@code Router.Scratch} of its own.
  */
 public final class ConnectionScratch {
 
@@ -41,6 +39,7 @@ public final class ConnectionScratch {
     public final byte[] relayBuffer = new byte[RELAY_BUFFER_SIZE];
 
     /**
+     * The buffer an HTTP/1.1 response head is assembled in
      * (status line, {@code Content-Type}, {@code Date}, custom headers, {@code Content-Length}/
      * {@code Connection}, and — for small fixed bodies — the body itself) into before issuing a
      * single bulk {@code write()}, instead of ~10 small {@code OutputStream.write} calls.

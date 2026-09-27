@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,29 +32,30 @@ class H2LoadMeasurementTest {
   private static final Pattern REQUESTS =
       Pattern.compile("requests: (\\d+) total, .*? (\\d+) succeeded, (\\d+) failed");
 
-  private FlashApp app;
+  private App app;
+
+  private Server server;
   private Process reference;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
     if (reference != null) reference.destroyForcibly();
   }
 
   @Test
   void measureFlashAndNghttpdMatrix(@TempDir Path directory) throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
                 .h2MaxStreamsCreatedPerInterval(Integer.MAX_VALUE)
                 .h2MaxStreamsPerConnection(0)
-                .build());
-    int flashPort = app.port();
+                .build();
+    app = App.create();
     app.get("/index.html", (request, response) -> "flash-load");
-    app.start();
+    server = Server.start(app, config1);
+    int flashPort = server.port();
 
     int referencePort = freePort();
     Files.writeString(directory.resolve("index.html"), "flash-load");
@@ -135,7 +137,7 @@ class H2LoadMeasurementTest {
 
   /**
    * Still needed here: this port is handed to an external nghttpd process, which has no
-   * equivalent of {@code FlashApp.port()} to read an OS-assigned port back from.
+   * equivalent of {@code Server.port()} to read an OS-assigned port back from.
    */
   private static int freePort() throws Exception {
     try (ServerSocket socket = new ServerSocket(0)) {

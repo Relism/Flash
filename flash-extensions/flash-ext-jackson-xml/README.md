@@ -3,13 +3,15 @@
 XML bodies and XML responses, over the same types as every other Jackson format.
 
 ```java
-app.install(new XmlExtension());
+app.install(new XmlModule());
 ```
 
 ```java
 @POST("/orders")
 public final class PlaceOrder extends XmlHandler<Order, Receipt> {
-    @Inject private OrderService orders;
+    private final OrderService orders;
+
+    public PlaceOrder(OrderService orders) { this.orders = orders; }
 
     @Override protected Receipt handle(Request req, Response res, Order body) {
         return orders.place(body);

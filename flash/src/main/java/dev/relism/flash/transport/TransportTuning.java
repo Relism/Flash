@@ -28,7 +28,7 @@ final class TransportTuning {
 
     /**
      * Socket send/receive buffer sizes. Matched to the WS frame read buffer
-     * ({@code FlashConfiguration#getWsFrameBufferSize()}) so the kernel never
+     * ({@code ServerConfig#getWsFrameBufferSize()}) so the kernel never
      * needs to fragment a full frame into multiple TCP segments on the receive
      * side, and never blocks a write waiting for the send buffer to drain.
      *

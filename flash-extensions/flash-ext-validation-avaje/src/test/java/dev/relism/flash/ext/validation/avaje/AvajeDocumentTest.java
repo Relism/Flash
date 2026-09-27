@@ -1,10 +1,11 @@
 package dev.relism.flash.ext.validation.avaje;
 
-import dev.relism.flash.ext.jackson.json.JsonExtension;
+import dev.relism.flash.App;
+import dev.relism.flash.ext.jackson.json.JsonModule;
 import dev.relism.flash.ext.jackson.json.JsonHandler;
-import dev.relism.flash.ext.openapi.OpenApiExtension;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.ext.openapi.OpenApiModule;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.POST;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
@@ -19,12 +20,9 @@ class AvajeDocumentTest {
     }
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new JsonExtension());
-        configured.install(new AvajeValidationExtension());
-        configured.install(new OpenApiExtension("/openapi", "Registrations", "1.0.0"));
-        configured.scan("dev.relism.flash.ext.validation.avaje");
-    });
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .install(new JsonModule(), new AvajeValidation(), new OpenApiModule("/openapi", "Registrations", "1.0.0"))
+            .scan("dev.relism.flash.ext.validation.avaje"));
 
     @Test
     void jakartaRulesAppearInTheSchema() {

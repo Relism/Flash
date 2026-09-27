@@ -1,8 +1,7 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.extension.FlashConfiguration;
-import dev.relism.flash.routing.AbstractRouter;
-import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.routing.Router;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -24,8 +23,7 @@ import javax.net.ssl.SSLSocket;
  * @param rawOut the unbuffered output stream — for WebSocket, whose writes are already bulk (see
  *     {@code WebSocketSession})
  * @param remoteAddress the client's address, or {@code null} if unavailable
- * @param router the HTTP router
- * @param wsRouter the WebSocket router
+ * @param router the app's routes, HTTP and WebSocket
  * @param configuration the server configuration (timeouts, limits, feature flags)
  * @param stopped {@code true} once the server has begun shutting down — a protocol implementation's
  *     request loop must check this and exit promptly
@@ -38,8 +36,7 @@ public record ConnectionContext(
     OutputStream rawOut,
     InetSocketAddress remoteAddress,
     ConnectionScratch scratch,
-    AbstractRouter router,
-    AbstractWsRouter wsRouter,
-    FlashConfiguration configuration,
+    Router router,
+    ServerConfig configuration,
     ExecutorService executor,
     BooleanSupplier stopped) {}

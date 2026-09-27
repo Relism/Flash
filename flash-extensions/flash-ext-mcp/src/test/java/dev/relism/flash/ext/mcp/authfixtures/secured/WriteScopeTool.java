@@ -9,7 +9,7 @@ import dev.relism.flash.ext.security.ScopesAllowed;
 
 @Tool(name = "write_only", description = "Only callable with the write scope")
 @ScopesAllowed("write")
-public class WriteScopeTool extends McpTool {
+public class WriteScopeTool implements McpTool {
 
     @Override
     public ToolResponse call(ToolArguments args) {

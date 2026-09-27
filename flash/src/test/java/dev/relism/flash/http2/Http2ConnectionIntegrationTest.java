@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
@@ -38,11 +39,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class Http2ConnectionIntegrationTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stopApp() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
@@ -54,18 +56,17 @@ class Http2ConnectionIntegrationTest {
             "http2-route.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get(
         "/users/{id}", (request, response) -> request.param("id") + ":" + request.header("host"));
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     HttpClient client =
         HttpClient.newBuilder()
@@ -98,21 +99,20 @@ class Http2ConnectionIntegrationTest {
     byte[] download = new byte[2 * 1024 * 1024 + 17];
     for (int i = 0; i < download.length; i++) download[i] = (byte) (i * 17);
 
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config2 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.post("/echo", (request, response) -> request.body().bytes());
     app.get("/fixed", (request, response) -> response.body(download));
     app.get(
         "/stream",
         (request, response) -> response.chunked(new ByteArrayInputStream(download)));
-    app.start();
+    server = Server.start(app, config2);
+    int port = server.port();
 
     HttpClient client =
         HttpClient.newBuilder()
@@ -150,15 +150,13 @@ class Http2ConnectionIntegrationTest {
             "http2-push-stream.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config3 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get(
         "/push",
         (request, response) ->
@@ -177,7 +175,8 @@ class Http2ConnectionIntegrationTest {
                 throw new RuntimeException(failure);
               }
             }));
-    app.start();
+    server = Server.start(app, config3);
+    int port = server.port();
 
     HttpClient client =
         HttpClient.newBuilder()
@@ -204,15 +203,14 @@ class Http2ConnectionIntegrationTest {
             "http2-large-bodies.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config4 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
+                .maxBodySize(200L * 1024 * 1024)
+                .build();
+    app = App.create();
     app.post(
         "/upload",
         (request, response) -> {
@@ -222,7 +220,8 @@ class Http2ConnectionIntegrationTest {
     app.get(
         "/download",
         (request, response) -> response.stream(new PatternInputStream(length), length));
-    app.start();
+    server = Server.start(app, config4);
+    int port = server.port();
 
     HttpClient client =
         HttpClient.newBuilder()
@@ -250,16 +249,15 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void bodylessGetRunsExistingRouteAndReturnsHeadersAndData() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config5 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get("/api/ping", (request, response) -> "pong");
-    app.start();
+    server = Server.start(app, config5);
+    int port = server.port();
 
     ByteWriter block = new ByteWriter(64);
     HpackEncoder.writeIndexed(block, 2);
@@ -315,21 +313,20 @@ class Http2ConnectionIntegrationTest {
   void resetQueuedStreamCannotReleaseOrReuseItBeforeDispatchObservesCancellation()
       throws Exception {
     AtomicInteger calls = new AtomicInteger();
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config6 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get(
         "/queued",
         (request, response) -> {
           calls.incrementAndGet();
           return "ok";
         });
-    app.start();
+    server = Server.start(app, config6);
+    int port = server.port();
 
     ByteWriter block = new ByteWriter(64);
     HpackEncoder.writeIndexed(block, 2);
@@ -385,14 +382,12 @@ class Http2ConnectionIntegrationTest {
   @Test
   void h2cTransportDispatchesControlFramesWithoutRunningApplicationWork() throws Exception {
     AtomicBoolean handlerEntered = new AtomicBoolean();
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config7 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
+                .build();
+    app = App.create();
     app.get(
         "/",
         (request, response) -> {
@@ -400,7 +395,8 @@ class Http2ConnectionIntegrationTest {
           Thread.sleep(5_000);
           return "late";
         });
-    app.start();
+    server = Server.start(app, config7);
+    int port = server.port();
 
     byte[] clientPing = "client!!".getBytes(StandardCharsets.US_ASCII);
     try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -442,16 +438,15 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void serverStopInitiatesTwoStageGoAwayOnIdleConnection() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config8 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
                 .shutdownDrainTimeoutMs(5_000)
-                .build());
-    int port = app.port();
-    app.start();
+                .build();
+    app = App.create();
+    server = Server.start(app, config8);
+    int port = server.port();
 
     try (Socket socket = new Socket("127.0.0.1", port)) {
       socket.setSoTimeout(5_000);
@@ -468,7 +463,7 @@ class Http2ConnectionIntegrationTest {
       readFrame(socket.getInputStream()); // initial connection WINDOW_UPDATE
       readFrame(socket.getInputStream()); // SETTINGS ACK
 
-      CompletableFuture<Void> stopped = app.stop();
+      CompletableFuture<Void> stopped = server.stop();
       app = null;
       Http2TestFrames.WireFrame firstGoAway = readUntil(socket, FrameType.GOAWAY);
       assertEquals(Integer.MAX_VALUE, Http2TestFrames.readInt(firstGoAway.payload(), 0));
@@ -485,15 +480,14 @@ class Http2ConnectionIntegrationTest {
 
   @Test
   void protocolStateDoesNotLeakAcrossConsecutiveConnections() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config9 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
-    app.start();
+                .build();
+    app = App.create();
+    server = Server.start(app, config9);
+    int port = server.port();
 
     try (Socket first = new Socket("127.0.0.1", port)) {
       first.setSoTimeout(5_000);
@@ -543,16 +537,15 @@ class Http2ConnectionIntegrationTest {
             "http2.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config10 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
-    app.start();
+                .build();
+    app = App.create();
+    server = Server.start(app, config10);
+    int port = server.port();
 
     try (SSLSocket socket =
         (SSLSocket)

@@ -31,10 +31,6 @@ public final class Data {
     public void write(Tx.TxRunnable work) { tx.run(work); }
     public <T> T write(Tx.TxCallable<T> work) { return tx.call(work); }
     /** Transitional low-level access for infrastructure that needs an explicit definition. */
-    public void run(Tx.TxRunnable work) { tx.run(work); }
-    public <T> T call(Tx.TxCallable<T> work) { return tx.call(work); }
-    public <T> T call(TxDefinition definition, Tx.TxCallable<T> work) { return tx.call(definition, work); }
-    public TxDefinition readOnly() { return tx.readOnly(); }
 
     /** Registers work that runs only after the enclosing write transaction commits. */
     public void afterCommit(Runnable work) {

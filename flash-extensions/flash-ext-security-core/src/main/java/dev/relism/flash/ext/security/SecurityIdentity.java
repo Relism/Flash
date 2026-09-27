@@ -1,6 +1,6 @@
 package dev.relism.flash.ext.security;
 
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 
 /**
  * The authenticated caller of the current request: the {@link Principal} a mechanism produced, the
@@ -11,11 +11,11 @@ public final class SecurityIdentity {
     static final ThreadLocal<SecurityIdentity> CURRENT = new ThreadLocal<>();
 
     private final Principal principal;
-    private final SecurityExtension security;
+    private final Security security;
     private final Request request;
     private Object user;
 
-    SecurityIdentity(Principal principal, SecurityExtension security, Request request) {
+    SecurityIdentity(Principal principal, Security security, Request request) {
         this.principal = principal;
         this.security = security;
         this.request = request;
@@ -59,7 +59,7 @@ public final class SecurityIdentity {
     }
 
     public boolean hasRole(String role, Target on) {
-        if (security.roles == null) throw new IllegalStateException("No RoleResolver configured — SecurityExtension.roles(...)");
+        if (security.roles == null) throw new IllegalStateException("No RoleResolver configured — SecurityModule.roles(...)");
         return security.roles.hasRole(this, role, on);
     }
 }

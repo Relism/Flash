@@ -6,8 +6,8 @@ its rules. No engine of its own: install
 [`flash-ext-validation-avaje`](../flash-ext-validation-avaje).
 
 ```java
-app.install(new JsonExtension())
-   .install(new JakartaValidationExtension());
+app.install(new JsonModule())
+   .install(new JakartaValidation());
 ```
 
 That is the whole of it. A JSON or XML body is checked as soon as it is read: a malformed body is a

@@ -1,6 +1,6 @@
 package dev.relism.flash.transport;
 
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.TlsConfig;
 
 import javax.net.ssl.SSLServerSocket;
@@ -10,7 +10,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 
 /**
- * Turns a {@link FlashConfiguration.Listener} into a bound {@link ServerSocket}. Sole
+ * Turns a {@link ServerConfig.Listener} into a bound {@link ServerSocket}. Sole
  * responsibility: binding — not accepting, not connection handling.
  *
  * <p>A TLS listener gets its {@link ServerSocket} from {@link TlsConfig#serverSocketFactory()}
@@ -24,7 +24,7 @@ public final class ListenerBinder {
     private ListenerBinder() {
     }
 
-    public static BoundListener bind(FlashConfiguration.Listener spec) throws IOException {
+    public static BoundListener bind(ServerConfig.Listener spec) throws IOException {
         TlsConfig tls = spec.tls();
 
         ServerSocket socket = tls != null ? tls.serverSocketFactory().createServerSocket() : new ServerSocket();

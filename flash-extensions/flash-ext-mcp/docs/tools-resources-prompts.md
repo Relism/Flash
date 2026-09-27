@@ -2,20 +2,20 @@
 
 ## One class per feature
 
-Every tool, resource, and prompt is its own class — the same shape as a Flash `RequestHandler`,
-minus the HTTP-specific bits:
+Every tool, resource, and prompt is its own class — the same shape as a Flash `Handler`, minus
+the HTTP-specific bits:
 
 ```java
-public abstract class McpTool {
-    protected void onInit() {}                       // cache services here, once, at boot
-    protected <T> T require(Class<T> type) { ... }    // FlashContext lookup
-    public abstract ToolResponse call(ToolArguments args) throws Exception;  // hot path
+public interface McpTool {
+    ToolResponse call(ToolArguments args) throws Exception;  // hot path
+    default void onInit() {}                                 // boot-time work, once
 }
 ```
 
 `McpResource` (`read()`) and `McpPrompt` (`render(PromptArguments)`) follow the exact same
-shape. There is deliberately no CDI-style `@Inject` and no method-per-tool bean class — Flash5
-handlers are classes, and MCP features follow that convention.
+shape. The app builds each class through its constructor, so a tool takes its services there.
+There is deliberately no field injection and no method-per-tool bean class — Flash5 handlers are
+classes, and MCP features follow that convention.
 
 ## Declaring metadata
 
@@ -31,7 +31,7 @@ method signatures — the whole JSON Schema is known at scan time and compiled o
         @ToolArg(name = "days", type = ToolArgType.INTEGER, description = "Forecast horizon")
     }
 )
-public class GetWeatherTool extends McpTool {
+public final class GetWeatherTool implements McpTool {
     @Override
     public ToolResponse call(ToolArguments args) {
         String city = args.getString("city");
@@ -60,15 +60,15 @@ args.raw("filters");   // escape hatch: JsonNode for nested/array arguments
 
 `McpConfig.toolsPackage("com.example.tools")` scans that package (and subpackages) for concrete
 `McpTool`/`McpResource`/`McpPrompt` subclasses carrying `@Tool`/`@Resource`/`@Prompt`. Same
-fail-fast contract as `FlashApp.scan()`: missing package, missing no-arg constructor, or a class
-that fails to load aborts startup immediately with a clear message. Duplicate names/URIs also
+fail-fast contract as `App.scan()`: a missing package, a constructor the app cannot satisfy, or a
+class that fails to load aborts startup immediately with a clear message. Duplicate names/URIs also
 fail fast at boot.
 
 ## Resources and Prompts
 
 ```java
 @Resource(uri = "config://app-settings", description = "Application settings", mimeType = "application/json")
-public class AppSettingsResource extends McpResource {
+public final class AppSettingsResource implements McpResource {
     @Override
     public ResourceContents read() {
         return TextResourceContents.of(uri(), "application/json", settingsJson());
@@ -76,7 +76,7 @@ public class AppSettingsResource extends McpResource {
 }
 
 @Prompt(name = "summarize", args = @PromptArg(name = "text", required = true))
-public class SummarizePrompt extends McpPrompt {
+public final class SummarizePrompt implements McpPrompt {
     @Override
     public PromptMessage render(PromptArguments args) {
         return PromptMessage.withUserRole(new TextContent("Summarize: " + args.getString("text")));

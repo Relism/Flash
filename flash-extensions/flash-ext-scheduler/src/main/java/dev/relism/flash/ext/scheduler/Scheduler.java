@@ -1,11 +1,15 @@
 package dev.relism.flash.ext.scheduler;
 
+import dev.relism.flash.App;
+import dev.relism.flash.Module;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -13,11 +17,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Runs background jobs on an interval or a cron expression.
+ * Runs background jobs on an interval or a cron expression, and stops with the app: running jobs
+ * get a grace period, then are interrupted.
  *
  * <pre>{@code
- * Scheduler jobs = ctx.require(Scheduler.class);
- *
+ * Scheduler jobs = new Scheduler();
+ * app.install(jobs);
  * jobs.every(Duration.ofMinutes(5), reports::refresh);
  * jobs.cron("0 0 3 * * *", archive::sweep);
  * }</pre>
@@ -29,23 +34,37 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * running at once is a bug in every case anyone has needed so far, and a flag would only let it
  * be configured wrongly. A skipped run is logged at WARN with how long the previous one has been
  * going.
+ *
+ * <p>ponytail: schedules are per-instance. Two replicas run every job twice. The fix is a
+ * distributed lock, and it should not exist until there is a second replica.
  */
 @Slf4j
-public final class Scheduler {
+public final class Scheduler implements Module, AutoCloseable {
 
     private final ScheduledExecutorService clock;
-    private final ScheduledExecutorService workers;
+    private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     private final List<Job> jobs = new CopyOnWriteArrayList<>();
+    private final Duration grace;
     private volatile boolean stopped;
 
-    Scheduler() {
+    public Scheduler() {
+        this(Duration.ofSeconds(10));
+    }
+
+    /** @param grace how long closing waits for running jobs before interrupting them */
+    public Scheduler(Duration grace) {
+        this.grace = grace;
         ThreadFactory timing = runnable -> {
             Thread thread = new Thread(runnable, "flash-scheduler");
             thread.setDaemon(true);
             return thread;
         };
         this.clock = Executors.newSingleThreadScheduledExecutor(timing);
-        this.workers = Executors.newScheduledThreadPool(0, Thread.ofVirtual().factory());
+    }
+
+    @Override
+    public void install(App app) {
+        app.add(Scheduler.class, this);
     }
 
     /** Runs {@code work} every {@code interval}, starting one interval from now. */
@@ -69,13 +88,18 @@ public final class Scheduler {
         cron(callerName(work), expression, work);
     }
 
-    /** Runs {@code work} on a cron schedule under an explicit name. */
+    /** Runs {@code work} on a cron schedule under an explicit name, in the system time zone. */
     public void cron(String name, String expression, Runnable work) {
+        cron(name, expression, ZoneId.systemDefault(), work);
+    }
+
+    /** Runs {@code work} on a cron schedule read in {@code zone}. */
+    public void cron(String name, String expression, ZoneId zone, Runnable work) {
         Cron cron = Cron.parse(expression);
         Job job = new Job(name, work);
         jobs.add(job);
-        scheduleNext(job, cron);
-        log.info("Scheduled '{}' at cron [{}]", name, expression);
+        scheduleNext(job, cron, zone);
+        log.info("Scheduled '{}' at cron [{}] {}", name, expression, zone);
     }
 
     /** Job names in registration order — for a health or ops endpoint. */
@@ -83,13 +107,13 @@ public final class Scheduler {
         return jobs.stream().map(job -> job.name).toList();
     }
 
-    private void scheduleNext(Job job, Cron cron) {
+    private void scheduleNext(Job job, Cron cron, ZoneId zone) {
         if (stopped) return;
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = ZonedDateTime.now(zone);
         long delay = Math.max(1, Duration.between(now, cron.nextAfter(now)).toMillis());
         clock.schedule(() -> {
             dispatch(job);
-            scheduleNext(job, cron);
+            scheduleNext(job, cron, zone);
         }, delay, TimeUnit.MILLISECONDS);
     }
 
@@ -113,8 +137,8 @@ public final class Scheduler {
         });
     }
 
-    /** Called by {@link SchedulerExtension} through {@code FlashContext.onClose}. */
-    void shutdown(Duration grace) {
+    @Override
+    public void close() {
         stopped = true;
         clock.shutdownNow();
         workers.shutdown();

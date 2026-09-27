@@ -12,15 +12,15 @@ import dev.relism.flash.http2.message.Http2HeaderMap;
 import dev.relism.flash.http2.message.Http2RequestBody;
 import dev.relism.flash.http2.message.Http2ResponseWriter;
 import dev.relism.flash.http2.message.PseudoHeaders;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestBody;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.routing.AbstractRouter;
-import dev.relism.flash.routing.AbstractWsRouter;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestBody;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.routing.Router;
 import dev.relism.fpr.core.ByteView;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Set;
 import javax.net.ssl.SSLSocket;
 
 /** Per-stream request, response, decoded-header and write state. */
@@ -60,8 +60,7 @@ public final class Http2Stream
   private int consumedReceiveBytes;
   private int emptyDataFrames;
   private Http2StreamTable owner;
-  private Object routeScratch;
-  private Object wsRouteScratch;
+  private Router.Scratch routeScratch;
   private volatile boolean dispatched;
   private volatile boolean cancelled;
   private boolean headersValidated;
@@ -103,14 +102,12 @@ public final class Http2Stream
   }
 
   void clear() {
-    request.recycle();
-    response.recycle();
     id = 0;
     owner = null;
     state = Http2StreamState.CLOSED;
   }
 
-  public Request assembleRequest(InetSocketAddress remoteAddress, SSLSocket sslSocket) {
+  public Request assembleRequest(InetSocketAddress remoteAddress, SSLSocket sslSocket, Set<String> trustedProxies) {
     validateHeaders();
     headers.reset(headerBlock, pseudoHeaders);
     PooledSlice rawPath = pseudoHeaders.path();
@@ -141,7 +138,7 @@ public final class Http2Stream
     requestLine.reset(method, path, question < 0 ? null : query, protocol, headers);
     requestBody.reset(http2Body, http2Body.declaredLength(), null, 0, 0);
     Request assembled =
-        Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket);
+        Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket, trustedProxies);
     assembled.setTrailers(trailers);
     return assembled;
   }
@@ -152,12 +149,12 @@ public final class Http2Stream
     headersValidated = true;
   }
 
-  public boolean prepareRequestBody(Http2FlowController flowController, boolean endStream) {
+  public boolean prepareRequestBody(Http2FlowController flowController, boolean endStream, long maxBodySize) {
     this.flowController = flowController;
-    long contentLength = parseContentLength();
+    long contentLength = parseContentLength(maxBodySize);
     if (contentLength < 0 && endStream) contentLength = 0;
     boolean inline = contentLength >= 0 && contentLength <= Http2Limits.INLINE_BODY_THRESHOLD;
-    http2Body.begin(contentLength, inline, this);
+    http2Body.begin(contentLength, inline, this, maxBodySize);
     if (endStream) http2Body.finish(id);
     return endStream || !inline;
   }
@@ -175,12 +172,12 @@ public final class Http2Stream
     trailers.reset(trailerBlock);
   }
 
-  private long parseContentLength() {
+  private long parseContentLength(long max) {
     long parsed = -1;
     for (int i = 0; i < headerBlock.count(); i++) {
       headerBlock.get(i, scanName, scanValue);
       if (!equals(scanName, "content-length")) continue;
-      long value = parseDecimal(scanValue);
+      long value = parseDecimal(scanValue, max);
       if (parsed >= 0 && parsed != value) {
         throw new Http2StreamException(
             id, Http2ErrorCode.PROTOCOL_ERROR, "conflicting content-length fields");
@@ -190,14 +187,14 @@ public final class Http2Stream
     return parsed;
   }
 
-  private long parseDecimal(ByteView value) {
+  private long parseDecimal(ByteView value, long max) {
     if (value.length() == 0) {
       throw new Http2StreamException(id, Http2ErrorCode.PROTOCOL_ERROR, "empty content-length");
     }
     long parsed = 0;
     for (int i = 0; i < value.length(); i++) {
       int digit = (value.byteAt(i) & 0xff) - '0';
-      if (digit < 0 || digit > 9 || parsed > (Http2Limits.MAX_REQUEST_BODY_SIZE - digit) / 10L) {
+      if (digit < 0 || digit > 9 || parsed > (max - digit) / 10L) {
         throw new Http2StreamException(
             id, Http2ErrorCode.PROTOCOL_ERROR, "invalid or oversized content-length");
       }
@@ -278,14 +275,9 @@ public final class Http2Stream
     return true;
   }
 
-  public Object routeScratch(AbstractRouter router) {
+  public Router.Scratch routeScratch(Router router) {
     if (routeScratch == null) routeScratch = router.newScratch();
     return routeScratch;
-  }
-
-  public Object wsRouteScratch(AbstractWsRouter router) {
-    if (wsRouteScratch == null) wsRouteScratch = router.newScratch();
-    return wsRouteScratch;
   }
 
   public boolean websocketConnect() {

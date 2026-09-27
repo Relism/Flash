@@ -3,7 +3,7 @@ package dev.relism.flash.http2.stream;
 import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.http2.hpack.HpackDecoder;
 import dev.relism.flash.http2.hpack.HpackEncoder;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -67,7 +67,7 @@ public class Http2StreamBenchmark {
   public int lifecycle() {
     Http2Stream stream = streams.acquire(1);
     decoder.decode(requestBlock, 0, requestLength, stream.headerBlock());
-    stream.assembleRequest(null, null);
+    stream.assembleRequest(null, null, null);
     Response response = stream.resetResponse().body(BODY);
     stream
         .responseWriter()
@@ -83,10 +83,10 @@ public class Http2StreamBenchmark {
   public int postOneKiB() {
     Http2Stream stream = streams.acquire(1);
     decoder.decode(postBlock, 0, postLength, stream.headerBlock());
-    stream.prepareRequestBody(null, false);
+    stream.prepareRequestBody(null, false, Long.MAX_VALUE);
     stream.receiveData(POST_BODY, 0, POST_BODY.length, POST_BODY.length);
     stream.finishRequestBody();
-    stream.assembleRequest(null, null);
+    stream.assembleRequest(null, null, null);
     stream
         .responseWriter()
         .prepare(

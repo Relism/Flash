@@ -21,7 +21,7 @@ JMH on JDK 21 measures one rate-counter increment at 38.083 ns/op and approximat
 | `MAX_PING_QUEUE_DEPTH` | 64 | Bounds queued PING control writes. |
 | `MAX_EMPTY_DATA_FRAMES_PER_STREAM` | 1,000 | Stops DATA work that spends no flow-control credit. |
 | `INITIAL_WINDOW_SIZE_LOCAL` | 1 MiB | Matches the bounded DATA pool; consumption, not receipt, returns credit. |
-| `MAX_REQUEST_BODY_SIZE` | 100 MiB | Hard per-stream request body bound. |
+| `ServerConfig.maxBodySize` | 10 MiB | Per-stream request body bound, shared with HTTP/1.1. |
 | `HEADER_BLOCK_ASSEMBLY_TIMEOUT_MS` | 10 s | Absolute HEADERS-to-END_HEADERS deadline. |
 | `STREAM_IDLE_TIMEOUT_MS` | 60 s | Cancels retained inactive streams; tune with `h2StreamIdleTimeoutMs`. |
 | `FRAME_READ_TIMEOUT_MS` | 20 s | Absolute partial-frame deadline. |

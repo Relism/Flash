@@ -78,6 +78,40 @@ public enum ContentType {
     return hpackBytes;
   }
 
+  /** The media type of a file named with {@code extension} (no dot, any case); text is UTF-8. */
+  public static String ofExtension(String extension) {
+    return switch (extension.toLowerCase(java.util.Locale.ROOT)) {
+      case "html", "htm" -> "text/html; charset=utf-8";
+      case "js", "mjs" -> "text/javascript; charset=utf-8";
+      case "css" -> "text/css; charset=utf-8";
+      case "txt" -> "text/plain; charset=utf-8";
+      case "csv" -> "text/csv; charset=utf-8";
+      case "md" -> "text/markdown; charset=utf-8";
+      case "json", "map" -> "application/json";
+      case "webmanifest" -> "application/manifest+json";
+      case "xml" -> "application/xml";
+      case "pdf" -> "application/pdf";
+      case "zip" -> "application/zip";
+      case "wasm" -> "application/wasm";
+      case "svg" -> "image/svg+xml";
+      case "png" -> "image/png";
+      case "jpg", "jpeg" -> "image/jpeg";
+      case "gif" -> "image/gif";
+      case "webp" -> "image/webp";
+      case "avif" -> "image/avif";
+      case "ico" -> "image/x-icon";
+      case "woff" -> "font/woff";
+      case "woff2" -> "font/woff2";
+      case "ttf" -> "font/ttf";
+      case "otf" -> "font/otf";
+      case "mp3" -> "audio/mpeg";
+      case "ogg" -> "audio/ogg";
+      case "mp4" -> "video/mp4";
+      case "webm" -> "video/webm";
+      default -> "application/octet-stream";
+    };
+  }
+
   /** Finds the boot-time HPACK rendering for a response content-type byte array. */
   public static byte[] hpackBytesFor(byte[] value) {
     for (ContentType type : ALL) {

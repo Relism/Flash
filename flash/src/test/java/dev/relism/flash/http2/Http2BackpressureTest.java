@@ -19,7 +19,7 @@ class Http2BackpressureTest {
     Http2Stream stream = new Http2StreamTable(1).acquire(1);
     DataBufferPool pool = new DataBufferPool(Http2Limits.MAX_FRAME_SIZE_LOCAL, 32);
     Http2RequestBody body = new Http2RequestBody(pool);
-    body.begin(-1, false, bytes -> flow.consumed(stream, bytes));
+    body.begin(-1, false, bytes -> flow.consumed(stream, bytes), Long.MAX_VALUE);
     byte[] frame = new byte[Http2Limits.MAX_FRAME_SIZE_LOCAL];
 
     for (int i = 0; i < 32; i++) {

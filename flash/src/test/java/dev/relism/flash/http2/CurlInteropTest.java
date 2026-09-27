@@ -4,8 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import java.net.ServerSocket;
@@ -23,11 +24,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 @EnabledIfSystemProperty(named = "curl.executable", matches = ".+")
 class CurlInteropTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
@@ -38,38 +40,34 @@ class CurlInteropTest {
             "curl.p12",
             "changeit",
             TestKeystores.Entry.of("server", "localhost", "localhost"));
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .tls(TlsConfig.keystore(keystore, "changeit"))
                 .http2Enabled(true)
-                .build());
-    int port = app.port();
-    exercise(directory, "https://localhost:" + port, "--http2", "--insecure");
+                .build();
+    exercise(directory, config1, "https://localhost:", "--http2", "--insecure");
   }
 
   @Test
   void cleartextGetPostLargeUploadAndLargeDownload(@TempDir Path directory) throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config2 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
-                .build());
-    int port = app.port();
-    exercise(directory, "http://127.0.0.1:" + port, "--http2-prior-knowledge");
+                .build();
+    exercise(directory, config2, "http://127.0.0.1:", "--http2-prior-knowledge");
   }
 
-  private void exercise(Path directory, String origin, String... mode) throws Exception {
+  private void exercise(Path directory, ServerConfig config, String scheme, String... mode) throws Exception {
+    app = App.create();
     byte[] large = new byte[2 * 1024 * 1024 + 17];
     for (int i = 0; i < large.length; i++) large[i] = (byte) (i * 31);
     app.get("/get", (request, response) -> "curl-get");
     app.post("/post", (request, response) -> request.body().bytes());
     app.get("/large", (request, response) -> response.body(large));
-    app.start();
+    server = Server.start(app, config);
+    String origin = scheme + server.port();
 
     Path upload = directory.resolve("upload.bin");
     Path output = directory.resolve("output.bin");

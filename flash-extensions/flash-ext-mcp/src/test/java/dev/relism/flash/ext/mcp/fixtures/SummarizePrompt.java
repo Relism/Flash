@@ -9,7 +9,7 @@ import dev.relism.flash.ext.mcp.TextContent;
 
 @Prompt(name = "summarize", description = "Summarizes the given text",
         args = @PromptArg(name = "text", required = true))
-public class SummarizePrompt extends McpPrompt {
+public class SummarizePrompt implements McpPrompt {
 
     @Override
     public PromptMessage render(PromptArguments args) {

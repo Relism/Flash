@@ -9,7 +9,7 @@ import dev.relism.flash.ext.mcp.ToolResponse;
 
 @Tool(name = "echo", description = "Echoes the given text",
       args = @ToolArg(name = "text", description = "Text to echo", required = true))
-public class EchoTool extends McpTool {
+public class EchoTool implements McpTool {
 
     @Override
     public ToolResponse call(ToolArguments args) {

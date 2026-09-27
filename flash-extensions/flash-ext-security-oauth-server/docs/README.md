@@ -6,16 +6,16 @@ application's own resources. It is the server side of OAuth; signing users in *t
 provider is [`flash-ext-security-oidc`](../../flash-ext-security-oidc/docs/README.md).
 
 ```java
-SecurityExtension security = new SecurityExtension().origin("https://app.example").loginPage("/login");
-OAuthServerExtension oauth = new OAuthServerExtension("/mcp")   // the resources tokens are for
+SecurityModule security = new SecurityModule().origin("https://app.example").loginPage("/login");
+OAuthServer oauth = new OAuthServer("/mcp")   // the resources tokens are for
         .store(new JdbcOAuthStore(db))                          // default: in memory
         .signingKeys(System.getenv("OAUTH_SIGNING_KEYS"));       // default: generated at boot
 
-app.install(security).install(new CaffeineCacheExtension()).install(oauth)
-   .install(new McpExtension(McpConfig.builder("app").toolsPackage("com.example.tools").mechanisms(oauth).build()));
+app.install(security, new CaffeineCacheModule(), oauth,
+        new McpModule(McpConfig.builder("app").toolsPackage("com.example.tools").mechanisms(oauth).build()));
 ```
 
-The issuer is `SecurityExtension.origin(...)`. The server is also an `AuthenticationMechanism`: a bearer
+The issuer is `SecurityModule.origin(...)`. The server is also an `AuthenticationMechanism`: a bearer
 token it issued authenticates as an `OAuthPrincipal` (`name()` is `sub`, `clientId()`, `claim(...)`,
 `hasScope`, `hasAudience`). Any other bearer is left to other mechanisms. A token is good only under the
 resource it was issued for: one for `/mcp` is `401 invalid_token` on `/api/...`, whatever the route asks.
@@ -87,7 +87,7 @@ may grow with what they send. The RFC 8414 document is cached per issuer.
 on restart.
 
 `signingKeys(jwkSet)` takes a JWK set whose first key is a private P-256 key; the others only verify, so a
-key rotates by putting its successor first. `OAuthServerExtension.generateSigningKeys()` makes one.
+key rotates by putting its successor first. `OAuthServer.generateSigningKeys()` makes one.
 
 ## Testing
 

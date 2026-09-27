@@ -12,7 +12,7 @@
 
     <artifactId>flash-ext-jackson-core</artifactId>
     <name>flash-ext-jackson-core</name>
-    <description>What every Jackson data format shares: the codec, the body handler and the constraints a body is checked against.</description>
+    <description>What every Jackson data format shares: the codec that reads a body, has the installed engine check it, and writes an answer.</description>
 
     <dependencies>
         <dependency>
@@ -28,10 +28,6 @@
             <artifactId>flash-ext-validation-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-        </dependency>
-        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
@@ -39,13 +35,12 @@
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
-        <!-- The constraint annotations a body is checked against; no implementation, no transitives. -->
-
         <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <scope>provided</scope>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-openapi</artifactId>
+            <optional>true</optional>
         </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

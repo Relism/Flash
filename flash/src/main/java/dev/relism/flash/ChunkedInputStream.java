@@ -1,9 +1,9 @@
 package dev.relism.flash;
 
-import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.http.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
-import dev.relism.flash.models.BodyCompletion;
-import dev.relism.flash.models.MutableHeaderMap;
+import dev.relism.flash.http.BodyCompletion;
+import dev.relism.flash.http.MutableHeaderMap;
 import dev.relism.flash.transport.BufferedByteSource;
 
 import java.io.IOException;
@@ -14,6 +14,7 @@ import java.io.InputStream;
  * Handles pre-buffered bytes from the header read-ahead, chunk framing, and trailer consumption.
  * Returns -1 at end of the final chunk; the underlying socket is left positioned for the next request.
  *
+ * Reads through the connection's {@link BufferedByteSource}
  * instead of the raw, unbuffered socket stream. Chunk-size digits, the trailing CRLF after each
  * chunk, and trailer lines are all read one byte at a time by design (the framing is
  * byte-oriented) — that used to mean one {@code read(2)} syscall per byte on the raw socket;
@@ -28,17 +29,19 @@ final class ChunkedInputStream extends InputStream implements BodyCompletion {
     private boolean done           = false;
     private int     chunksSeen     = 0;
     private final MutableHeaderMap trailers;
+    private long budget;
     private final byte[] trailerLine = new byte[Http1Limits.MAX_HEADER_VALUE_LENGTH];
 
     ChunkedInputStream(BufferedByteSource src, byte[] preBuf, int preBufOff, int preBufLen,
-                       MutableHeaderMap trailers) {
+                       MutableHeaderMap trailers, long maxBodySize) {
         this.src = src;
         this.trailers = trailers;
+        this.budget = maxBodySize;
         if (preBufLen > 0) src.prependOnce(preBuf, preBufOff, preBufLen);
     }
 
     ChunkedInputStream(BufferedByteSource src, byte[] preBuf, int preBufOff, int preBufLen) {
-        this(src, preBuf, preBufOff, preBufLen, new MutableHeaderMap());
+        this(src, preBuf, preBufOff, preBufLen, new MutableHeaderMap(), Long.MAX_VALUE);
     }
 
     @Override
@@ -109,6 +112,7 @@ final class ChunkedInputStream extends InputStream implements BodyCompletion {
             b = src.read();
         }
         if (digits == 0) throw new MalformedRequestException(400, "Malformed chunk size");
+        if ((budget -= size) < 0) throw new MalformedRequestException(413, "Request body exceeds the configured limit");
 
         int extLen = 0;
         while (b != -1 && b != '\r') {

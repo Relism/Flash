@@ -10,7 +10,7 @@ import java.nio.ByteOrder;
  * The single home for protocol-neutral byte scanning: single-byte search, the four-byte
  * {@code \r\n\r\n} header-terminator search (SWAR-accelerated), case-insensitive comparison,
  * comma-separated token-list scanning ({@code Connection: a, b, c}), RFC 9110 {@code tchar}
- * validation, and the case-insensitive header-name hash {@link dev.relism.flash.models.Http1HeaderMap}'s
+ * validation, and the case-insensitive header-name hash {@link dev.relism.flash.http.Http1HeaderMap}'s
  *
  * <p>Every method here is {@code static} and allocates nothing. Every SWAR method has a plain
  * scalar counterpart ({@code *Scalar}) that exists for two reasons: it is what the tests use as
@@ -196,6 +196,22 @@ public final class ByteScan {
         return true;
     }
 
+    /**
+     * Where lowercase ASCII {@code needle} starts in {@code view} at or after {@code from}, case
+     * ignored, or -1 (also for a null view: a missing header).
+     */
+    public static int indexOfIgnoreCase(ByteView view, byte[] needle, int from) {
+        if (view == null) return -1;
+        outer:
+        for (int i = from, last = view.length() - needle.length; i <= last; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (foldAsciiUpper(view.byteAt(i + j)) != needle[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
     /** Case-insensitive (ASCII) equality of {@code view[start, end)} against {@code target}. */
     public static boolean equalsIgnoreCase(ByteView view, int start, int end, String target) {
         int len = end - start;
@@ -235,7 +251,7 @@ public final class ByteScan {
 
     /**
      * Case-insensitive (ASCII fold) 32-bit FNV-1a hash of {@code buf[start, start + len)}. Used
-     * by {@link dev.relism.flash.models.Http1HeaderMap}'s per-request index to compare a cheap hash
+     * by {@link dev.relism.flash.http.Http1HeaderMap}'s per-request index to compare a cheap hash
      * before falling back to a full case-insensitive {@code memcmp}-equivalent
      * ({@link #equalsIgnoreCaseAscii}) — two header names that differ anywhere hash differently
      * with overwhelming probability, so the common "not the header I'm looking for" case resolves
@@ -254,7 +270,7 @@ public final class ByteScan {
      * Same hash as {@link #hashNameIgnoreCaseAscii(byte[], int, int)}, computed directly from a
      * lookup-key {@code String} (e.g. {@code "Content-Type"}) instead of already-scanned bytes —
      * the two must agree bit-for-bit on equivalent ASCII content for
-     * {@link dev.relism.flash.models.Http1HeaderMap}'s index (hash the request-declared bytes once at
+     * {@link dev.relism.flash.http.Http1HeaderMap}'s index (hash the request-declared bytes once at
      * {@code reset()}; hash the caller's lookup key once per {@code first()}/{@code all()} call;
      * compare the two cheap hashes before ever touching a full case-insensitive comparison).
      */

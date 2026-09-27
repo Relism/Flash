@@ -1,7 +1,8 @@
 package dev.relism.flash;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
@@ -22,17 +23,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HttpServerWebSocketTest {
 
-    private FlashApp app;
+    private App app;
+
+    private Server server;
     private int port;
     private final AtomicReference<Integer> closed = new AtomicReference<>();
 
     @BeforeEach
     void setUp() throws Exception {
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config1 = ServerConfig.builder()
                 .port(0)
                 .host("127.0.0.1")
-                .build());
-        port = app.port();
+                .build();
+        app = App.create();
 
         app.ws("/chat", new WebSocketHandler() {
             @Override
@@ -56,12 +59,13 @@ class HttpServerWebSocketTest {
             @Override public void onClose(WebSocketSession session, int code) { closed.set(code); }
         });
 
-        app.start();
+        server = Server.start(app, config1);
+        port = server.port();
     }
 
     @AfterEach
     void tearDown() {
-        if (app != null) app.stop();
+        if (server != null) server.stop();
     }
 
     private static final int SOCKET_TIMEOUT_MS = 5000;

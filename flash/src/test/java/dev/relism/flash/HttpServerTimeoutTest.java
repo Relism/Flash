@@ -1,7 +1,8 @@
 package dev.relism.flash;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -22,24 +23,27 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class HttpServerTimeoutTest {
 
-    private FlashApp app;
+    private App app;
+
+    private Server server;
 
     @AfterEach
     void tearDown() {
-        if (app != null) app.stop();
+        if (server != null) server.stop();
     }
 
     @Test
     void slowlorisHeaderDribble_disconnectedWithinHeaderReadTimeout() throws Exception {
         int headerTimeoutMs = 300;
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config1 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(headerTimeoutMs)
                 .idleKeepAliveTimeoutMs(60_000)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/", (req, res) -> "ok");
-        app.start();
+        server = Server.start(app, config1);
+        int port = server.port();
 
         long start = System.nanoTime();
         try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -64,14 +68,15 @@ class HttpServerTimeoutTest {
     @Test
     void idleKeepAliveConnection_disconnectedWithinIdleTimeout() throws Exception {
         int idleTimeoutMs = 300;
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config2 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(10_000)
                 .idleKeepAliveTimeoutMs(idleTimeoutMs)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/", (req, res) -> "ok");
-        app.start();
+        server = Server.start(app, config2);
+        int port = server.port();
 
         long start = System.nanoTime();
         try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -89,15 +94,16 @@ class HttpServerTimeoutTest {
     @Test
     void slowBodyDribble_disconnectedWithinBodyReadTimeout() throws Exception {
         int bodyTimeoutMs = 300;
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config3 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(10_000)
                 .idleKeepAliveTimeoutMs(10_000)
                 .bodyReadTimeoutMs(bodyTimeoutMs)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.post("/echo", (req, res) -> req.body().bytes());
-        app.start();
+        server = Server.start(app, config3);
+        int port = server.port();
 
         long start = System.nanoTime();
         try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -123,14 +129,15 @@ class HttpServerTimeoutTest {
         int headerTimeoutMs = 300;
         Path ks = TestKeystores.build(dir, "timeout.p12", "changeit",
                 TestKeystores.Entry.of("only", "timeout.test"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config4 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
                 .headerReadTimeoutMs(headerTimeoutMs)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/", (req, res) -> "ok");
-        app.start();
+        server = Server.start(app, config4);
+        int port = server.port();
 
         long start = System.nanoTime();
         // A plain socket that never speaks TLS at all — the server's explicit
@@ -150,15 +157,16 @@ class HttpServerTimeoutTest {
 
     @Test
     void wellBehavedRequest_wellWithinTimeouts_unaffected() throws Exception {
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config5 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .headerReadTimeoutMs(300)
                 .idleKeepAliveTimeoutMs(300)
                 .bodyReadTimeoutMs(300)
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config5);
+        int port = server.port();
 
         try (Socket socket = new Socket("127.0.0.1", port)) {
             socket.setSoTimeout(5_000);

@@ -1,7 +1,10 @@
 package dev.relism.flash.testing;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashApplication;
+import dev.relism.flash.App;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.HttpMethod;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -27,15 +30,15 @@ class FlashTestSelfTest {
     private static final AtomicInteger downstreamBoots = new AtomicInteger();
 
     @RegisterExtension
-    static FlashTest upstream = FlashTest.of(app -> app
+    static FlashTest upstream = FlashTest.of(() -> App.create()
             .get("/health", (req, res) -> "UP")
             .get("/echo", (req, res) -> "upstream:" + req.query("v")));
 
     // upstream.baseUri() boots it right here, during this field's initialiser — declaration
     // order does the wiring, with no @Order and no reliance on JUnit's extension ordering.
     @RegisterExtension
-    static FlashTest downstream = FlashTest.of(new Downstream(upstream.baseUri()))
-            .mock(Greeter.class, () -> "faked");
+    static FlashTest downstream = FlashTest.of(() -> downstream(upstream.baseUri()))
+            .replace(Greeter.class, () -> "faked");
 
     @AfterAll
     static void classScopedServerBootsExactlyOnce() {
@@ -57,19 +60,19 @@ class FlashTestSelfTest {
                 .expectBody("UP");
     }
 
-    // ── mocking ──────────────────────────────────────────────────────────────
+    // ── replacing ────────────────────────────────────────────────────────────
 
     @Test
-    void mockWinsOverAServiceProvidedByAnInstalledExtension() {
+    void aReplacementWinsOverAServiceAModuleAdds() {
         downstream.get("/greeting")
                 .expectStatus(200)
                 .expectBody("faked");
     }
 
     @Test
-    void mockAfterStartIsRejected() {
+    void replacingAfterStartIsRejected() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> downstream.mock(Greeter.class, () -> "too late"));
+                () -> downstream.replace(Greeter.class, () -> "too late"));
         assertTrue(error.getMessage().contains("before the server starts"));
     }
 
@@ -100,40 +103,44 @@ class FlashTestSelfTest {
     }
 
     @Test
+    void theRealServicesAreThereToAssertOn() {
+        assertEquals("faked", downstream.services().get(Greeter.class).greet());
+    }
+
+    @Test
     void unmatchedRoutesStillComeBackAsResponses() {
         upstream.get("/nope").expectStatus(404);
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────
 
-    /** Counts its own boots so the class-scoped lifecycle can be asserted. */
-    private record Downstream(URI upstream) implements FlashApplication {
+    /** Counts its own builds, so the class-scoped lifecycle can be asserted. */
+    static App downstream(URI upstream) {
+        downstreamBoots.incrementAndGet();
+        return App.create()
+                // Added by a module, so the replace(...) above has something real to beat.
+                .install(app -> app.add(Greeter.class, () -> "real"))
+                .route(HttpMethod.GET, "/greeting", Greeting.class)
+                .get("/call-upstream", (req, res) -> {
+                    try (HttpClient http = HttpClient.newHttpClient()) {
+                        return http.send(HttpRequest.newBuilder(upstream.resolve("/health")).build(),
+                                HttpResponse.BodyHandlers.ofString()).body();
+                    } catch (IOException failure) {
+                        throw new IllegalStateException(failure);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(interrupted);
+                    }
+                })
+                .post("/submit", (req, res) -> res.status(201)
+                        .header("X-Trace", req.header("X-Trace"))
+                        .body(req.body().bytes()));
+    }
 
-        @Override
-        public void configure(FlashApp app) {
-            downstreamBoots.incrementAndGet();
-
-            // Provided by an extension, so the .mock(...) above has something real to beat.
-            app.install((registrar, ctx) -> ctx.provide(Greeter.class, () -> "real"));
-
-            app.get("/greeting", (req, res) -> app.ctx().require(Greeter.class).greet());
-
-            app.get("/call-upstream", (req, res) -> {
-                try (HttpClient http = HttpClient.newHttpClient()) {
-                    return http.send(HttpRequest.newBuilder(upstream.resolve("/health")).build(),
-                            HttpResponse.BodyHandlers.ofString()).body();
-                } catch (IOException failure) {
-                    throw new IllegalStateException(failure);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException(interrupted);
-                }
-            });
-
-            app.post("/submit", (req, res) -> res.status(201)
-                    .header("X-Trace", req.header("X-Trace"))
-                    .body(req.body().bytes()));
-        }
+    public static final class Greeting implements Handler {
+        private final Greeter greeter;
+        public Greeting(Greeter greeter) { this.greeter = greeter; }
+        @Override public Object handle(Request request, Response response) { return greeter.greet(); }
     }
 
     @FunctionalInterface

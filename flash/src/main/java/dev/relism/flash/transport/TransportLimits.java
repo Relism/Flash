@@ -37,7 +37,7 @@ public final class TransportLimits {
   static final int MIN_MAX_CONNECTIONS = 64;
 
   /**
-   * Auto-scaled default for {@code FlashConfiguration#getMaxConnections()}. Computed from {@link
+   * Auto-scaled default for {@code ServerConfig#getMaxConnections()}. Computed from {@link
    * Runtime#maxMemory()} so the same default protects a 256 MiB container and an 8 GiB one
    * without operator input; set {@code maxConnections} explicitly to override it, or to {@code 0}
    * to disable the check (unlimited — the behavior every version before this had unconditionally).

@@ -1,7 +1,7 @@
 package dev.relism.flash.websocket;
 
 import dev.relism.flash.http1.Http1KeepAlive;
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.transport.ConnectionScratch;
 import dev.relism.fpr.core.ByteView;
 
@@ -30,20 +30,15 @@ public final class WebSocketUpgrade {
     private static final byte[] WS_HANDSHAKE_SUFFIX =
             "\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1);
 
-    public static final byte[] REJECT_400 =
-            "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    .getBytes(StandardCharsets.ISO_8859_1);
-
     private static final byte[] WS_GUID_BYTES =
             "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(StandardCharsets.ISO_8859_1);
 
     /**
-     * Whether {@code request} is a WebSocket upgrade request: {@code Upgrade: websocket} and a
-     * shared token-list scanner in {@link Http1KeepAlive} is what fixed the whole-value compare
-     * bug this check used to have too).
+     * Whether {@code request} asks for a WebSocket: {@code Upgrade: websocket} and {@code upgrade}
+     * among the {@code Connection} tokens, both compared token by token.
      */
     public static boolean isWebSocketUpgrade(Request request) {
-        ByteView upgrade = request.getRequestLine().getHeaders().view("Upgrade");
+        ByteView upgrade = request.requestLine().getHeaders().view("Upgrade");
         if (upgrade == null) return false;
         if (!Http1KeepAlive.tokenEqualsIgnoreCase(upgrade, 0, upgrade.length(), "websocket")) return false;
         return Http1KeepAlive.connectionContainsToken(request, "upgrade");
@@ -51,7 +46,7 @@ public final class WebSocketUpgrade {
 
     /** Writes and flushes the {@code 101 Switching Protocols} handshake response. */
     public static void performHandshake(OutputStream out, Request request, ConnectionScratch scratch) throws IOException {
-        ByteView keyView = request.getRequestLine().getHeaders().view("Sec-WebSocket-Key");
+        ByteView keyView = request.requestLine().getHeaders().view("Sec-WebSocket-Key");
         if (keyView == null) throw new IOException("Missing Sec-WebSocket-Key header");
 
         MessageDigest sha1 = scratch.sha1;

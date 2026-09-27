@@ -2,9 +2,10 @@ package dev.relism.flash.ext.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.exceptions.InitializationException;
-import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.App;
+import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,11 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpRegistryTest {
 
+    /** An app with nothing in it: the services the tools are built from. */
+    @RegisterExtension
+    static FlashTest empty = FlashTest.of(App::create);
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
     void scan_findsAndPrecompilesToolsResourcesPrompts() throws Exception {
-        McpRegistry registry = McpRegistry.scan("dev.relism.flash.ext.mcp.fixtures", new FlashContext(), null);
+        McpRegistry registry = McpRegistry.scan("dev.relism.flash.ext.mcp.fixtures", empty.services(), null);
 
         assertTrue(registry.hasTools());
         assertTrue(registry.hasResources());
@@ -45,9 +50,9 @@ class McpRegistryTest {
     }
 
     @Test
-    void scan_emptyPackage_throwsInitializationException() {
-        assertThrows(InitializationException.class,
-                () -> McpRegistry.scan("dev.relism.flash.ext.mcp.doesnotexist", new FlashContext(), null));
+    void scan_aPackageThatIsNotThere_failsTheBoot() {
+        assertThrows(IllegalStateException.class,
+                () -> McpRegistry.scan("dev.relism.flash.ext.mcp.doesnotexist", empty.services(), null));
     }
 
     private static JsonNode findByField(JsonNode array, String field, String value) {

@@ -2,7 +2,7 @@ package dev.relism.flash.http1;
 
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.transport.ConnectionScratch;
 import dev.relism.flash.transport.ScratchPool;
 import org.junit.jupiter.api.Test;

@@ -3,8 +3,9 @@ package dev.relism.flash.http2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
 import java.net.ServerSocket;
@@ -22,11 +23,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 @EnabledIfSystemProperty(named = "nghttp.executable", matches = ".+")
 class NghttpInteropTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
@@ -38,8 +40,8 @@ class NghttpInteropTest {
   }
 
   private void exercise(Path directory, boolean tls) throws Exception {
-    FlashConfiguration.FlashConfigurationBuilder builder =
-        FlashConfiguration.builder().host("127.0.0.1").port(0);
+    ServerConfig.ServerConfigBuilder builder =
+        ServerConfig.builder().host("127.0.0.1").port(0);
     if (tls) {
       Path keystore =
           TestKeystores.build(
@@ -52,12 +54,13 @@ class NghttpInteropTest {
       builder.http2CleartextEnabled(true);
     }
     byte[] large = new byte[2 * 1024 * 1024 + 29];
-    app = FlashApp.create(builder.build());
-    int port = app.port();
+    ServerConfig config1 = builder.build();
+    app = App.create();
     app.get("/get", (request, response) -> "nghttp-get");
     app.post("/post", (request, response) -> "uploaded-" + request.body().bytes().length);
     app.get("/large", (request, response) -> response.body(large));
-    app.start();
+    server = Server.start(app, config1);
+    int port = server.port();
 
     String origin = (tls ? "https://localhost:" : "http://127.0.0.1:") + port;
     Path upload = directory.resolve("nghttp-upload.bin");

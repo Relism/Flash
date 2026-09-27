@@ -10,6 +10,7 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash` | Core server library — HTTP/1.1 and HTTP/2 transport, router, request/response model |
 | `flash-testing` | JUnit 5 harness — boot an app on an ephemeral port, fake its services, assert on responses |
 | `flash-extensions/flash-ext-serde` | Handlers that name a codec and a type for each end |
+| `flash-extensions/flash-ext-avaje-jsonb` | JSON bodies and responses through Avaje Jsonb, adapters generated at build time |
 | `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: one mapper as a codec |
 | `flash-extensions/flash-ext-jackson-json` | JSON bodies and responses |
 | `flash-extensions/flash-ext-jackson-xml` | XML bodies and responses |
@@ -24,14 +25,19 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-security-oauth-server` | OAuth 2.1 authorization server for the application's own users and resources |
 | `flash-extensions/flash-ext-security-test` | Test identities, fake OpenID Provider |
 | `flash-extensions/flash-ext-mcp` | MCP (Model Context Protocol) server — Streamable HTTP, secured by flash-ext-security-core |
-| `flash-extensions/flash-ext-view-core` | Minimal shared SSR runtime primitives |
-| `flash-extensions/flash-ext-view-jte` | Opinionated jte SSR extension |
-| `flash-extensions/flash-ext-view-thymeleaf` | Opinionated Thymeleaf SSR extension |
-| `flash-extensions/flash-ext-vite` | Vite frontend: dev server in DEV, the built SPA from the jar otherwise |
+| `flash-extensions/flash-ext-view-core` | What every template engine module shares: `ViewHandler`, `ViewModel` |
+| `flash-extensions/flash-ext-view-jte` | jte templates, rendered to bytes |
+| `flash-extensions/flash-ext-view-thymeleaf` | Thymeleaf templates |
+| `flash-extensions/flash-ext-routeviewer` | Every route as a graph, in dev |
+| `flash-extensions/flash-ext-limiter` | Rate limits: `@Limit` or middleware, lock-free counters |
+| `flash-extensions/flash-ext-vite` | Vite frontend: dev server in dev, the built SPA from the jar otherwise |
 | `flash-extensions/flash-ext-vite-maven-plugin` | Builds the Vite frontend into the jar during `mvn package` |
 | `flash-extensions/flash-ext-scheduler` | Interval and cron background jobs on virtual threads |
 | `flash-extensions/flash-ext-cache-core` | Caching contract — `Cache`, `CacheManager`, `CacheSpec` |
 | `flash-extensions/flash-ext-cache-caffeine` | In-process cache backed by Caffeine |
+| `flash-extensions/flash-ext-data-core` | Transactions: `Tx`, `@Transactional`, repositories |
+| `flash-extensions/flash-ext-data-jdbc` | `TxManager` and repositories over a `DataSource` |
+| `flash-extensions/flash-ext-data-hibernate` | `TxManager` and repositories over a Hibernate `SessionFactory` |
 
 ## Requirements
 
@@ -41,61 +47,48 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 ## Quick start
 
 ```java
-FlashApp.create(8080)
-    .get("/ping", (req, res) -> "pong")
-    .start();
+Server.start(App.create().get("/ping", (req, res) -> "pong"),
+        ServerConfig.builder().port(8080).build()).await();
 ```
 
-With full configuration:
-
-```java
-FlashApp.create(
-    FlashConfiguration.builder()
-        .port(8080)
-        .host("0.0.0.0")
-        .maxHeaderBufferSize(65536)
-        .build()
-)
-.get("/ping", (req, res) -> "pong")
-.start();
-```
+An `App` is what the server runs: routes, middleware, modules, services. It knows nothing of ports,
+so a test runs the same app on a port of its own. `Server.start` builds every route, then opens
+the listeners; `stop()` drains in-flight requests and closes the app's services.
 
 ## Route registration
 
 ### Lambda routes
 
 ```java
-FlashApp app = FlashApp.create(8080);
+App app = App.create();
 
 app.get("/hello", (req, res) -> "world");
 
-app.post("/echo", (req, res) -> {
-    byte[] body = req.body().bytes();
-    return res.status(200).body(body);
-});
+app.post("/echo", (req, res) -> res.status(200).body(req.body().bytes()));
 
-app.get("/users/{id}", (req, res) -> {
-    String id = req.param("id");
-    return "user:" + id;
-});
+app.get("/users/{id}", (req, res) -> "user:" + req.param("id"));
 ```
 
 ### Class-based handlers
 
-Extend `RequestHandler`, annotate it, then scan its package. Dependencies are cached in
-`onInit()` after Flash has resolved its complete boot-time service graph:
+Implement `Handler`, annotate it, then scan its package. The app builds it through its only
+constructor, whose parameters are the services it needs:
 
 ```java
 @GET("/api/users")
-public class ListUsers extends RequestHandler {
-    private UserService users;
+public final class ListUsers implements Handler {
+    private final UserService users;
 
-    @Override protected void onInit() { users = require(UserService.class); }
+    public ListUsers(UserService users) { this.users = users; }
+
     @Override public Object handle(Request req, Response res) { return users.list(); }
 }
 
-app.scan("dev.example.api");
+app.add(UserService.class).scan("dev.example.api");
 ```
+
+`onInit()` is an optional hook that runs once at boot, for precomputation that belongs off the
+hot path.
 
 ### Middleware
 
@@ -120,8 +113,8 @@ app.get("/admin", handler, logging, auth, rateLimit);
 
 ### Classpath scan
 
-Scans a package for classes that extend `RequestHandler` and carry `@Route`. Each is
-instantiated via its public no-arg constructor:
+Scans a package, subpackages included, for handler classes carrying `@GET`, `@POST` and the
+other verbs, or `@Ws`. Each is built like any other service:
 
 ```java
 app.scan("dev.example.handlers");
@@ -129,9 +122,8 @@ app.scan("dev.example.handlers");
 
 ### Namespace mounting
 
-Mount a scoped sub-router under a prefix. All routes registered inside the scope get the
-prefix prepended automatically. The scope inherits the parent's extension context (annotation
-processors, services):
+Mount a scope under a prefix. Its routes get the prefix, and its middleware wraps only them; the
+services are the app's:
 
 ```java
 app.mount("/api", scope -> {
@@ -140,22 +132,29 @@ app.mount("/api", scope -> {
 });
 ```
 
-## Extensions
+## Modules and services
 
-Extensions have one declarative `configure` method. They declare services, processors and route
-callbacks; Flash resolves the complete graph, materialises routes, compiles both routers, then
-opens listeners. Extension install order never makes a service “not ready”.
+A `Module` is a reusable piece of an app: an extension is a module shipped in a jar, and an
+application splits itself into modules the same way.
 
 ```java
-FlashApp.create(8080)
-    .install(new JacksonExtension())
-    .install(new OpenApiExtension("/openapi", "My API", "1.0.0"))
-    .install(new OidcExtension(oidcConfig))
-    .scan("dev.example.handlers")
-    .start();
+App.create()
+    .install(new JsonModule(), new OpenApiModule("/openapi", "My API", "1.0.0"))
+    .install(new SecurityModule(), new OidcModule(OidcProvider.of("sso", issuer, clientId, secret)))
+    .scan("dev.example.handlers");
 ```
 
-See extension-specific READMEs for full details:
+Services are added by type, `add(type)`, `add(type, implementation)` or `add(type, instance)`,
+and built when the server starts, each through its only constructor. A parameter is `T`,
+`Optional<T>`, `List<T>` (every one added under `T`, in order) or `Services`. What a module
+contributes to others is a service too: `RouteHook` (middleware from a handler's annotations,
+and every route as it is built), `OpenApiContributor`, `AuthenticationMechanism`. Every
+`AutoCloseable` service is closed when the server stops. The `ServerConfig` the server starts
+with is itself a service, so a module's handler reads `isDev()` from it.
+
+See each module's README for details:
+- [`flash-ext-serde`](flash-extensions/flash-ext-serde/README.md)
+- [`flash-ext-avaje-jsonb`](flash-extensions/flash-ext-avaje-jsonb/README.md)
 - [`flash-ext-jackson-core`](flash-extensions/flash-ext-jackson-core/README.md)
 - [`flash-ext-jackson-json`](flash-extensions/flash-ext-jackson-json/README.md)
 - [`flash-ext-jackson-xml`](flash-extensions/flash-ext-jackson-xml/README.md)
@@ -170,6 +169,9 @@ See extension-specific READMEs for full details:
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
 - [`flash-ext-scheduler`](flash-extensions/flash-ext-scheduler/docs/README.md)
 - [`flash-ext-cache-caffeine`](flash-extensions/flash-ext-cache-caffeine/docs/README.md)
+- [`flash-ext-limiter`](flash-extensions/flash-ext-limiter/README.md)
+- [`flash-ext-vite`](flash-extensions/flash-ext-vite/docs/README.md)
+- [`flash-ext-data-core`](flash-extensions/flash-ext-data-core/docs/README.md)
 - [`flash-testing`](flash-testing/docs/README.md)
 
 ## Error handlers
@@ -177,14 +179,18 @@ See extension-specific READMEs for full details:
 ```java
 app.onNotFound((req, res) -> res.status(404).body("Not found: " + req.path()));
 
-app.onException((ex, req, res) -> {
-    if (ex instanceof IllegalArgumentException)
-        return res.status(400).body(ex.getMessage());
-    return res.status(500).body("Internal error");
+app.onError((failure, req, res) -> {
+    if (failure instanceof IllegalArgumentException)
+        return res.status(400).body(failure.getMessage());
+    return Errors.render(HttpException.internal("Internal error"), res);
 });
 ```
 
-## FlashConfiguration
+By default an `HttpException` is answered with its status, its headers and
+`{"error", "status"}`, and anything else is a logged 500 that reveals nothing; in dev both are
+HTML pages with the stack trace.
+
+## ServerConfig
 
 | Field | Default | Description |
 |---|---|---|
@@ -210,6 +216,9 @@ app.onException((ex, req, res) -> {
 | `h2MaxConnectionLifetimeMs` | `0` | Optional connection lifetime; `0` disables it. |
 | `h2StreamIdleTimeoutMs` | `60000` | Inactive open-stream deadline. |
 | `sendDate` | `true` | Add an RFC 9110 `Date` field to responses; disable when an upstream proxy supplies it. |
+| `dev` | `-Dflash.env=dev` or `FLASH_ENV=dev` | Development mode: error pages with stack traces, a request kept past its handler fails loudly, and modules switch to their dev behaviour (Vite's dev server, templates compiled on the fly). |
+| `maxBodySize` | `10485760` | Largest request body, over both protocols: a larger declared length is a 413 before the body is read. |
+| `trustedProxies` | `[]` | Proxies whose `X-Forwarded-For` `Request.clientAddress()` believes. |
 
 ## Protocols
 
@@ -255,13 +264,13 @@ upgrade or the HTTP/2 extended CONNECT. WSS does not require a separate route or
 ### Quick start
 
 ```java
-FlashApp.create(FlashConfiguration.builder()
+Server.start(App.create()
+        .get("/ping", (req, res) -> "pong")   // HTTPS
+        .ws("/live", handler),                // WSS, same route API
+    ServerConfig.builder()
         .port(443)
         .tls(TlsConfig.keystore(Path.of("cert.p12"), "changeit"))
-        .build())
-    .get("/ping", (req, res) -> "pong")   // HTTPS
-    .ws("/live", handler)                 // WSS, same route API
-    .start();
+        .build());
 ```
 
 ### Multiple listeners
@@ -269,15 +278,15 @@ FlashApp.create(FlashConfiguration.builder()
 One app can bind any number of ports, each independently plain or TLS:
 
 ```java
-FlashApp.create(FlashConfiguration.builder()
-        .listener(new FlashConfiguration.Listener(80))                                   // plain
-        .listener(new FlashConfiguration.Listener(443, TlsConfig.keystore(cert, pass)))  // TLS
+Server.start(app, ServerConfig.builder()
+        .listener(new ServerConfig.Listener(80))                                   // plain
+        .listener(new ServerConfig.Listener(443, TlsConfig.keystore(cert, pass)))  // TLS
         .build());
 ```
 
 A non-empty `listeners` list takes precedence over the top-level `port`/`host`/`tls` fields.
-Each listener gets its own accept threads; the router, WS router, and virtual-thread executor
-are shared by all of them — one app, N ports.
+Each listener gets its own accept threads; the router and the virtual-thread executor are shared
+by all of them — one app, N ports.
 
 ### `TlsConfig`
 
@@ -364,9 +373,10 @@ app.get("/slow", (req, res) -> {
 });
 ```
 
-Run with `-Dflash.env=dev` and a use-after-return access throws `IllegalStateException` immediately
-at the offending call site instead of silently reading the wrong request's data — turn this on in
-tests and local development. It's a no-op in production beyond a single `boolean` field read.
+In dev (`ServerConfig.dev`, `-Dflash.env=dev`) a use-after-return access throws
+`IllegalStateException` immediately at the offending call site instead of silently reading the
+wrong request's data — turn it on in tests and local development. In production the connection
+skips the step entirely.
 
 `req.body()`/`RequestBody` follows the same rule — materialise (`.bytes()`) or fully consume
 (`.stream()`) it inside the handler; don't stash the `RequestBody` itself for later.
@@ -383,9 +393,7 @@ private static final PreEncodedHeader NO_STORE =
 app.get("/health", (req, res) -> res.header(NO_STORE).body("ok"));
 ```
 
-`Response.header(byte[])` accepts a complete CRLF-terminated HTTP/1 field line and is therefore
-HTTP/1-only; HPACK needs the name and value as separate fields. Prefer `PreEncodedHeader` for shared
-application and middleware code.
+`header(name, long)` writes a number's digits straight into the response, with no `String`.
 
 ### Trailers and push streaming
 
@@ -433,8 +441,8 @@ a client pointed at it. Add it with test scope:
 class UserRoutesTest {
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(new BlogApp())
-            .mock(UserService.class, new InMemoryUserService());
+    static FlashTest app = FlashTest.of(Main::app)                 // the method production calls
+            .replace(UserService.class, new InMemoryUserService());
 
     @Test
     void listsUsers() {
@@ -446,78 +454,10 @@ class UserRoutesTest {
 }
 ```
 
-`FlashTest.of` takes a `FlashApplication` — your app's routes, extensions and services expressed
-independently of which port they run on:
-
-```java
-public final class BlogApp implements FlashApplication {
-    @Override public void configure(FlashApp app) {
-        app.install(new JacksonExtension());
-        app.mount("/api", scope -> scope.scan("dev.blog.api"));
-    }
-}
-
-FlashApp.create(8080).apply(new BlogApp()).startAndBlock();   // production
-```
-
-It is a functional interface, so a lambda works too:
-`FlashTest.of(app -> app.get("/ping", (req, res) -> "pong"))`.
-
-### Requests
-
-The HTTP verb sends the request; `expect*` assertions chain and report the real response body on
-failure. `get` and `delete` skip the builder when there is nothing to add.
-
-```java
-app.get("/api/users").expectStatus(200);
-
-app.request()
-   .header("Authorization", "Bearer " + token)
-   .json("{\"name\":\"bob\"}")
-   .post("/api/users")
-   .expectStatus(201);
-
-try (FlashWebSocket socket = app.ws("/live")) {
-    socket.sendText("hello");
-    assertEquals("echo:hello", socket.awaitText(Duration.ofSeconds(2)));
-}
-```
-
-### Replacing services
-
-`mock` installs replacements after everything your app and its extensions declare, so a fake always
-wins. Any object will do — `flash-testing` depends on no mocking library, so a hand-written fake and
-a Mockito mock are equally welcome.
-
-### More than one server
-
-`FlashTest` is an ordinary object in a field, so a test class can hold as many as it needs and wire
-one from another in plain Java. Startup is lazy — reading `baseUri()` boots that server on the spot
-— so declaration order does the wiring:
-
-```java
-@RegisterExtension static FlashTest auth = FlashTest.of(new FakeOidcApp());
-@RegisterExtension static FlashTest api  = FlashTest.of(new BlogApp(auth.baseUri()));
-```
-
-### Scope
-
-A `static` field boots once for the test class; a non-static field boots a fresh app for every test.
-That is stock JUnit field semantics — the isolation switch is the keyword, not an option.
-
-### Configuration
-
-Full reference: [`flash-testing/docs`](flash-testing/docs/README.md), including the
+`FlashTest.of` takes a `Supplier<App>`, so the test runs the app production runs; `replace` swaps
+one service, `config` adjusts the `ServerConfig`, and `services()` exposes the app's services as
+built. Full reference: [`flash-testing/docs`](flash-testing/docs/README.md), including the
 [limits](flash-testing/docs/limits.md) the harness deliberately does not cross.
-
-`profile` customises the `FlashConfiguration` — timeouts, HTTP/2 switches, buffer sizes. Host, port
-and the shutdown drain window are stamped afterwards, so a profile cannot break the harness;
-`listener(...)` and `tls(...)` are rejected because the harness owns the loopback listener it gives
-you a client for.
-
-```java
-FlashTest.of(new BlogApp()).profile(cfg -> cfg.http2CleartextEnabled(true));
-```
 
 ## Architecture
 
@@ -528,11 +468,11 @@ TransportFactory.create()           # binds every listener, wires the connection
       → ProtocolNegotiator          # ALPN / h2c-preface — decides the protocol once
       ├─ Http1Connection.run()      # request parser, router, handler, h1 response writer
       └─ Http2Connection.run()      # frame demux, HPACK, stream dispatch, flow control
-             → RequestHandler.handle()  # the same protocol-neutral request/response API
+             → Router.dispatch()    # one FSM for every route; the same Request/Response on both protocols
 ```
 
 - **Virtual threads** — each accepted socket runs on a virtual thread (`Executors.newVirtualThreadPerTaskExecutor()`, owned by `TransportFactory`). Java 21 required.
-- **Zero-allocation router** — `FastPathRouterImpl` uses `fpr-core`, a byte-level FSM that matches on `METHOD + path` bytes with no per-request allocation.
+- **Zero-allocation router** — `Router` uses `fpr-core`, a byte-level FSM that matches on `METHOD + path` bytes with no per-request allocation; WebSocket routes live in the same FSM under a method of their own.
 - **Keep-alive** — `RequestParser` reuses its header buffer across requests on the same connection.
 - **Chunked transfer** — both chunked request bodies (decoded via `ChunkedInputStream`) and chunked response bodies are supported.
 - **TLS is transport-only** — see [TLS](#tls). Listeners bind either a plain `ServerSocket` or an `SSLServerSocket`; nothing downstream of `accept()` branches on which.

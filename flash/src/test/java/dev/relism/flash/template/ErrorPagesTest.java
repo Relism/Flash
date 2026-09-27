@@ -1,10 +1,10 @@
 package dev.relism.flash.template;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.bytes.FastPathViews;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;

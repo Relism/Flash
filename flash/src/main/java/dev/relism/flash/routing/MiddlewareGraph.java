@@ -1,7 +1,6 @@
 package dev.relism.flash.routing;
 
-import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.models.SimpleHandler;
+import dev.relism.flash.http.Handler;
 
 import java.util.*;
 
@@ -46,10 +45,10 @@ public final class MiddlewareGraph {
         return ordered;
     }
 
-    /** Pre-composes a sorted chain once at boot. */
-    public static RequestHandler compose(RequestHandler handler, Middleware[] ordered) {
-        RequestHandler current = handler;
-        for (int i = ordered.length - 1; i >= 0; i--) current = new SimpleHandler(ordered[i].wrap(current));
+    /** The chain around {@code handler}, composed once at boot: the first middleware runs first. */
+    public static Handler compose(Handler handler, Middleware[] ordered) {
+        Handler current = handler;
+        for (int i = ordered.length - 1; i >= 0; i--) current = ordered[i].wrap(current);
         return current;
     }
 }

@@ -1,11 +1,10 @@
 package dev.relism.flash;
 
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestHandler;
-import dev.relism.flash.models.SimpleHandler;
-import dev.relism.flash.routing.Middleware;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathRouterImpl;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.routing.Errors;
+import dev.relism.flash.routing.Router;
 import dev.relism.flash.transport.BufferedByteSource;
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,8 +78,8 @@ public class RequestPipelineBenchmark {
 
   private RequestParser parser;
   private BufferedByteSource in;
-  private FastPathRouterImpl router;
-  private Object routeScratch;
+  private Router router;
+  private Router.Scratch routeScratch;
 
   @Setup(Level.Trial)
   public void setup() {
@@ -92,18 +91,17 @@ public class RequestPipelineBenchmark {
             + "\r\n";
     byte[] template = req.getBytes(StandardCharsets.US_ASCII);
     in = new BufferedByteSource(new RepeatingByteStream(template), null);
-    parser = new RequestParser(64 * 1024);
+    parser = new RequestParser();
 
-    router = new FastPathRouterImpl();
-    RequestHandler handler = new SimpleHandler((r, res) -> "ok");
-    router.doRegister(HttpMethod.GET, "/users/{id}", handler, new Middleware[0]);
-    router.compile();
+    router = new Router();
+    router.add(HttpMethod.GET, "/users/{id}", (r, res) -> "ok");
+    router.compile(Errors.notFound(false), Errors.handler(false));
     routeScratch = router.newScratch();
   }
 
   /** Parse and route without requesting user-facing header or parameter strings. */
   @Benchmark
-  public RequestHandler parseAndRoute() throws IOException {
+  public Handler parseAndRoute() throws IOException {
     Request request = parser.parse(in);
     request.drain();
     return router.route(request, routeScratch);
@@ -113,7 +111,7 @@ public class RequestPipelineBenchmark {
   @Benchmark
   public Object parseRouteAndExtractThreeFields() throws IOException {
     Request request = parser.parse(in);
-    RequestHandler handler = router.route(request, routeScratch);
+    Handler handler = router.route(request, routeScratch);
     String id = request.param("id");
     String host = request.header("Host");
     String auth = request.header("Authorization");

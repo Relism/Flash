@@ -1,13 +1,12 @@
 package dev.relism.flash.ext.serde;
 
+import dev.relism.flash.App;
+import dev.relism.flash.Module;
 import dev.relism.flash.ext.openapi.ApiOperation;
-import dev.relism.flash.ext.openapi.OpenApiExtension;
-import dev.relism.flash.extension.FlashContext;
-import dev.relism.flash.extension.FlashExtension;
-import dev.relism.flash.extension.FlashRegistrar;
+import dev.relism.flash.ext.openapi.OpenApiModule;
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.POST;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
@@ -35,11 +34,9 @@ class CodecDocsTest {
     }
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new Fake());
-        configured.install(new OpenApiExtension("/openapi", "Orders", "1.0.0"));
-        configured.scan("dev.relism.flash.ext.serde");
-    });
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .install(new Fake(), new OpenApiModule("/openapi", "Orders", "1.0.0"))
+            .scan("dev.relism.flash.ext.serde"));
 
     @Test
     void eachEndIsDocumentedAsItsOwnCodecWrites() {
@@ -51,12 +48,10 @@ class CodecDocsTest {
     }
 
     /** Two codecs and nothing else, installed the way a format module installs its own. */
-    static final class Fake implements FlashExtension {
+    static final class Fake implements Module {
 
-        @Override public void configure(FlashRegistrar<?> app, FlashContext ctx) {
-            ctx.provide(Xmlish.class, new Xmlish());
-            ctx.provide(Jsonish.class, new Jsonish());
-            CodecDocs.register(ctx);
+        @Override public void install(App app) {
+            app.add(Xmlish.class, new Xmlish()).add(Jsonish.class, new Jsonish()).install(CodecDocs.module());
         }
 
         static final class Xmlish implements Codec {

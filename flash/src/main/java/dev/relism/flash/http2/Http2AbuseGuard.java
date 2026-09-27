@@ -1,6 +1,6 @@
 package dev.relism.flash.http2;
 
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 
 /** Enforces per-connection HTTP/2 rate limits and lifetime budgets. */
 final class Http2AbuseGuard {
@@ -19,10 +19,10 @@ final class Http2AbuseGuard {
   private long streams;
 
   Http2AbuseGuard() {
-    configure(FlashConfiguration.builder().build());
+    configure(ServerConfig.builder().build());
   }
 
-  void configure(FlashConfiguration configuration) {
+  void configure(ServerConfig configuration) {
     long interval = configuration.getH2AbuseRateIntervalMs();
     if (interval < 2) throw new IllegalArgumentException("h2AbuseRateIntervalMs must be at least 2");
     resetRate = new RollingWindowCounter(interval);

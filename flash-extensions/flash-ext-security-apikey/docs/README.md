@@ -4,8 +4,8 @@ API keys for [`flash-ext-security-core`](../../flash-ext-security-core/docs/READ
 `Authorization: Bearer <prefix>_<id>.<secret>`.
 
 ```java
-ApiKeyExtension<Grant> apiKeys = new ApiKeyExtension<>("gk", id -> rows.find(id));   // ApiKeyStore<Grant>
-app.install(new SecurityExtension().roles(...)).install(apiKeys);
+ApiKeys<Grant> apiKeys = new ApiKeys<>("gk", id -> rows.find(id));   // ApiKeyStore<Grant>
+app.install(new SecurityModule().roles(...), apiKeys);
 
 GeneratedApiKey key = apiKeys.generate();         // show key.token() once
 rows.save(key.id(), key.secretHash(), grant);    // never the token

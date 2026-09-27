@@ -1,6 +1,6 @@
 package dev.relism.flash.http1;
 
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 import dev.relism.fpr.core.ByteView;
 
 /**
@@ -24,7 +24,7 @@ public final class Http1KeepAlive {
      */
     public static boolean isKeepAlive(Request request) {
         if (connectionContainsToken(request, "close")) return false;
-        ByteView protocol = request.getRequestLine().getProtocol();
+        ByteView protocol = request.requestLine().getProtocol();
         int plen = protocol.length();
         if (plen == 8) {
             byte minor = protocol.byteAt(7);
@@ -36,7 +36,7 @@ public final class Http1KeepAlive {
 
     /** Whether the request's {@code Connection} header lists {@code token} (case-insensitive). */
     public static boolean connectionContainsToken(Request request, String token) {
-        ByteView conn = request.getRequestLine().getHeaders().view("Connection");
+        ByteView conn = request.requestLine().getHeaders().view("Connection");
         if (conn == null) return false;
         return tokenListContains(conn, token);
     }

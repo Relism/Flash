@@ -16,21 +16,21 @@ In-process caching backed by [Caffeine](https://github.com/ben-manes/caffeine). 
 ## Quick start
 
 ```java
-FlashApp.create(8080)
-    .install(new CaffeineCacheExtension())
+App.create()
+    .install(new CaffeineCacheModule())
     .scan("dev.example.api");
 ```
 
 ```java
 @GET("/api/users/{id}")
-public final class GetUser extends RequestHandler {
+public final class GetUser implements Handler {
 
-    private Cache<String, User> users;
-    private UserRepository repo;
+    private final Cache<String, User> users;
+    private final UserRepository repo;
 
-    @Override protected void onInit() {
-        repo  = require(UserRepository.class);
-        users = require(CacheManager.class).build("users", spec -> spec
+    public GetUser(CacheManager caches, UserRepository repo) {
+        this.repo = repo;
+        this.users = caches.build("users", spec -> spec
                 .maxSize(10_000)
                 .ttl(Duration.ofMinutes(10)));
     }
@@ -41,7 +41,7 @@ public final class GetUser extends RequestHandler {
 }
 ```
 
-The extension takes no configuration. Each cache declares its own size and TTL where it is built.
+The module takes no configuration. Each cache declares its own size and TTL where it is built.
 
 ## Why Caffeine and not a `LinkedHashMap`
 
@@ -56,7 +56,7 @@ every lookup, or an eviction policy that throws away exactly the entries you wer
 
 ## Lifecycle
 
-Caches are released through `FlashContext.onClose`, so `app.stop()` drops every entry. That is
+The manager is `AutoCloseable` and closed with the app, so `server.stop()` drops every entry. That is
 invisible in production with one app per process and matters immediately under test, where many
 apps start and stop in one JVM.
 

@@ -12,8 +12,9 @@ import dev.relism.flash.http2.hpack.HpackDecoder;
 import dev.relism.flash.http2.hpack.HpackEncoder;
 import dev.relism.flash.http2.hpack.HpackHeaderBlock;
 import dev.relism.flash.http2.message.PseudoHeaders;
-import dev.relism.flash.extension.FlashConfiguration;
-import dev.relism.flash.extension.FlashApp;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
 import dev.relism.flash.transport.BufferedByteSource;
 import java.io.ByteArrayInputStream;
@@ -84,14 +85,14 @@ class Http2AbuseTest {
 
   @Test
   void operatorConnectionStreamAndByteBudgetsAreEnforced() throws Exception {
-    FlashConfiguration oneStream = FlashConfiguration.builder()
+    ServerConfig oneStream = ServerConfig.builder()
         .h2MaxStreamsPerConnection(1).build();
     List<byte[]> streams = base();
     streams.add(Http2TestFrames.frame(FrameType.HEADERS, FrameFlags.END_HEADERS, 1, new byte[0]));
     streams.add(Http2TestFrames.frame(FrameType.HEADERS, FrameFlags.END_HEADERS, 3, new byte[0]));
     assertCalm(runConfigured(streams, oneStream));
 
-    FlashConfiguration nineBytes = FlashConfiguration.builder()
+    ServerConfig nineBytes = ServerConfig.builder()
         .h2MaxBytesPerConnection(9).build();
     List<byte[]> bytes = base();
     bytes.add(Http2TestFrames.frame(FrameType.PING, 0, 0, new byte[8]));
@@ -123,7 +124,7 @@ class Http2AbuseTest {
       }
     };
     Http2Connection connection = new Http2Connection();
-    connection.configure(FlashConfiguration.builder().h2MaxConnectionLifetimeMs(1).build());
+    connection.configure(ServerConfig.builder().h2MaxConnectionLifetimeMs(1).build());
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     Http2FrameWriter writer = new Http2FrameWriter(output::write, 5_000);
     try {
@@ -183,17 +184,16 @@ class Http2AbuseTest {
 
   @Test
   void idleOpenStreamIsCancelledWithinConfiguredDeadline() throws Exception {
-    FlashApp app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
                 .h2StreamIdleTimeoutMs(20)
-                .build());
-    int port = app.port();
+                .build();
+    App app = App.create();
     app.post("/idle", (request, response) -> request.body().bytes());
-    app.start();
+    Server server = Server.start(app, config1);
+    int port = server.port();
     ByteWriter headers = new ByteWriter(64);
     HpackEncoder.writeIndexed(headers, 3);
     HpackEncoder.writeIndexed(headers, 6);
@@ -211,7 +211,7 @@ class Http2AbuseTest {
       Http2TestFrames.WireFrame rst = readUntil(socket.getInputStream(), FrameType.RST_STREAM);
       assertEquals(Http2ErrorCode.CANCEL.code(), Http2TestFrames.readInt(rst.payload(), 0));
     } finally {
-      app.stop().join();
+      server.stop().join();
     }
   }
 
@@ -248,7 +248,7 @@ class Http2AbuseTest {
     return new Run(Http2TestFrames.parse(result.output()));
   }
 
-  private static Run runConfigured(List<byte[]> frames, FlashConfiguration configuration)
+  private static Run runConfigured(List<byte[]> frames, ServerConfig configuration)
       throws Exception {
     Http2Connection connection = new Http2Connection();
     connection.configure(configuration);

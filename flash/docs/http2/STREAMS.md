@@ -22,7 +22,7 @@ consistency. Pseudo-fields are not exposed as regular headers; `:authority` is a
 
 The stream assembles the existing protocol-neutral `Request`, `RequestLine`, `RequestBody` and
 `HeaderView` models. Path/query splitting, routing, middleware, not-found handling and exception
-handling therefore use the same code as HTTP/1.1. `FastPathRouterImpl` is unchanged.
+handling therefore use the same code as HTTP/1.1: both call `Router.dispatch`.
 
 ## Dispatch and ownership
 

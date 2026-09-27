@@ -8,7 +8,9 @@ import dev.relism.flash.ext.serde.CodecHandler;
  * <pre>{@code
  * @POST("/users")
  * public final class CreateUser extends JsonHandler<NewUser, User> {
- *     @Inject private UserService users;
+ *     private final UserService users;
+ *
+ *     public CreateUser(UserService users) { this.users = users; }
  *
  *     @Override protected User handle(Request req, Response res, NewUser body) {
  *         return users.create(body);

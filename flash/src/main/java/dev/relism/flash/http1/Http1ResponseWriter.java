@@ -5,7 +5,7 @@ import dev.relism.flash.http.DateHeader;
 import dev.relism.flash.http.Http1Limits;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.transport.ConnectionScratch;
 
 import java.io.IOException;
@@ -51,7 +51,7 @@ public final class Http1ResponseWriter {
      * @param method   the request method — {@code null} is treated as "not HEAD" (used for
      *                  parser-rejection responses, which never reach a handler and so have no
      *                  associated method)
-     * @param sendDate whether to include the {@code Date} header ({@code FlashConfiguration#isSendDate()})
+     * @param sendDate whether to include the {@code Date} header ({@code ServerConfig#isSendDate()})
      */
     public static void writeResponse(OutputStream out, Response response, HttpMethod method,
                                       boolean keepAlive, boolean sendDate, ConnectionScratch scratch) throws IOException {

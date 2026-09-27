@@ -1,6 +1,6 @@
 # The message model
 
-Audience: contributors. This is the design record for `dev.relism.flash.models`'s shared
+Audience: contributors. This is the design record for `dev.relism.flash.http`'s shared
 request/response model: what is pooled, what that pooling means for callers, and how HTTP/1.1 and
 HTTP/2 retain the same public contract.
 
@@ -29,7 +29,7 @@ RequestParser (one per connection)
 Http1Connection (one per connection)
 └── Response pooledResponse — reset() per request (unless a handler returns its own Response)
 
-FastPathRouterImpl.RouteScratch (one per connection, via AbstractRouter#newScratch)
+Router.Scratch (one per connection, via Router#newScratch)
 └── PathParams pathParams — reset() per matched request (see BYTES.md, EX-19)
 ```
 
@@ -38,7 +38,7 @@ Every one of these follows the same three rules:
 1. **One instance per connection**, created once (in `RequestParser`'s or `Http1Connection`'s
    constructor, or in `newScratch()`), never re-allocated for the connection's lifetime except a
    backing array growing to a new high-water mark (e.g. `RequestParser.buffer` doubling, or
-   `RouteScratch.ensureParamCapacity`).
+   `Router.Scratch.ensureParamCapacity`).
 2. **`reset(...)` repositions, it does not allocate** — the method that transitions the instance
    from "describes request N" to "describes request N+1".
 3. **Do not retain past the handler.** A reference captured in a closure, a `CompletableFuture`
@@ -49,25 +49,20 @@ Every one of these follows the same three rules:
 ## The dev-mode use-after-recycle guard (`Request`, `Response`)
 
 `Request` and `Response` — the two objects most likely to be captured by user code — additionally
-track an `active` flag, set `true` by `reset()` and `false` by `recycle()` (called by
-`Http1Connection` once the handler and `drain()` have finished). Every public accessor calls
-`checkActive()` first:
+track an `active` flag, set `true` by `reset()` and `false` by `recycle()`. Every public accessor
+calls `checkActive()` first:
 
 ```java
 private void checkActive() {
-    if (poisoningEnabled && !active) {
-        throw new IllegalStateException("... do not retain a Request past the handler ...");
-    }
+    if (!active) throw new IllegalStateException("Request used after the handler returned: ...");
 }
 ```
 
-`poisoningEnabled` defaults to `Flash.DEV` (`-Dflash.env=dev`), so this is a zero-cost `static
-final`-guarded branch in production and a loud, precise `IllegalStateException` — thrown at the
-exact misusing call site — in development. Since `Flash.DEV` is itself `static final` (fixed at
-JVM startup) and therefore not something a single test can toggle, both classes expose a
-package-private `setPoisoningEnabledForTesting(boolean)` hook purely so
-`RequestRecycleGuardTest`/`ResponseRecycleGuardTest` can exercise the dev-mode branch without a
-fragile reflective override of a `static final` field — production code never touches it.
+`Http1Connection` calls `recycle()` once the handler and `drain()` have finished only when
+`ServerConfig.dev` is on, so in production `active` stays `true` and the check is one predictable
+branch, while in development a handler that kept a request gets a precise `IllegalStateException`
+at the exact misusing call site. The switch lives on the connection, not in a static flag, so a
+test exercises both modes by calling `recycle()` itself.
 
 `RequestBody`, `RequestLine`, `Http1HeaderMap`, and `PathParams` do **not** carry this guard: they
 are reached only through `Request`/`Response` (or, for `PathParams`, through `Request.param`),
@@ -95,11 +90,8 @@ the one `RequestParser` owns.
 Before Phase 6, `Response.header(String, String)` stored headers as `List<byte[]>` — one `String`
 concatenation and one `byte[]` allocation per call. `Response` now stores structured headers in a
 `ByteWriter`-backed name/value region plus parallel `int[]` quads (`nameOff, nameLen, valOff,
-valLen`), written via `ByteWriter.writeAscii` — zero-allocation on a warm connection. A second,
-separate store (`List<byte[]>`) still holds the legacy `header(byte[])` raw-line entries; a tagged
-sequence (`headerTags`/`headerRefs`) interleaves the two stores back into declaration order when
-serialized, so mixing `header(String,String)` and `header(byte[])` calls on the same response still
-produces headers in the order they were added.
+valLen`), written via `ByteWriter.writeAscii` — zero-allocation on a warm connection.
+`header(String, long)` writes a number's digits straight into the same region, with no `String`.
 
 `PreEncodedHeader` precomputes a header's name and value ASCII bytes once (for example, a constant
 response header set at boot). Preserving the boundary lets HTTP/1.1 render a field line and HTTP/2
@@ -110,8 +102,7 @@ headers a response has** — it enumerates `Content-Type` (if set) plus every st
 header, in order, and is the only place that knowledge lives. `Http1ResponseWriter` renders that
 sequence as `Name: Value\r\n` lines; `Http2ResponseWriter` renders the same sequence as HPACK.
 Deliberately excluded: `Content-Length`/`Connection`/`Date` (connection framing, not response
-object properties — and HTTP/2 has no `Connection` header at all, RFC 9113 §8.2.2) and raw
-`header(byte[])` entries (no recoverable name/value structure to hand the h2 encoder).
+object properties — and HTTP/2 has no `Connection` header at all, RFC 9113 §8.2.2).
 
 `Http1ResponseWriter` (`EX-27`) serializes the entire response head — status line, `Content-Type`,
 `Date`, every custom header, `Content-Length`/`Connection` — into
@@ -134,7 +125,7 @@ back down between requests. Both checks throw `IllegalStateException`, not
 
 `HeaderMap` split into `HeaderView` (the protocol-neutral read contract: `first`, `all`, `view`,
 `valueEqualsIgnoreCase`, `contains`, `count`, `forEach`) and `Http1HeaderMap` (the existing
-byte-buffer-backed implementation, kept in `dev.relism.flash.models` rather than moved to
+byte-buffer-backed implementation, kept in `dev.relism.flash.http` rather than moved to
 `dev.relism.flash.http1`: `RequestParser` (root package) owns and constructs it, and
 `http1`→root already exists via `Http1Connection`, so moving it to `http1` would create a
 `models`↔`http1` package cycle). `RequestLine.headers` is typed as the

@@ -18,8 +18,7 @@ import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.X509ExtendedKeyManager;
 
 /**
- * Declarative TLS configuration for a {@link
- * dev.relism.flash.extension.FlashConfiguration.Listener}.
+ * Declarative TLS configuration for a {@link dev.relism.flash.ServerConfig.Listener}.
  *
  * <h3>Two ways in</h3>
  *
@@ -56,6 +55,7 @@ public final class TlsConfig {
   private static final String[] SECURE_PROTOCOLS = {"TLSv1.3", "TLSv1.2"};
 
   /**
+   * RFC 9113 §9.2.2 says an HTTP/2 connection must not use the blocklisted
    * cipher suites over TLS 1.2 (the list is unchanged from RFC 7540 Appendix A, which 9113 carries
    * forward verbatim), and that it MUST support at least {@code
    * TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}. TLS 1.3 is unaffected: none of its cipher suites (the
@@ -440,7 +440,7 @@ public final class TlsConfig {
     return new TlsConfig(context, hardenDefaults, clientAuth, protocols.toArray(String[]::new));
   }
 
-  // ── Consumed by HttpServer at bind time — not meant for direct use ──────────
+  // ── Consumed by the transport at bind time — not meant for direct use ──────
 
   public SSLServerSocketFactory serverSocketFactory() {
     return context.getServerSocketFactory();

@@ -12,8 +12,8 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.frame.FrameWriteBuffer;
 import dev.relism.flash.http2.frame.WriteIntent;
 import dev.relism.flash.http2.hpack.HpackEncoder;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.models.ResponseSerializer;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.http.ResponseSerializer;
 import java.io.IOException;
 import java.io.InputStream;
 

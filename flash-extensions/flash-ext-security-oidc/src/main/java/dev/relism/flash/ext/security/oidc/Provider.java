@@ -20,6 +20,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.Map;
@@ -28,7 +29,9 @@ import java.util.Set;
 /** One discovered provider: its endpoints, its signing keys, and the two token verifiers they back. */
 final class Provider {
 
-    private static final HttpClient HTTP = HttpClient.newHttpClient();
+    /** An identity provider that does not answer fails the boot or the sign-in in seconds, never hangs it. */
+    private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     final OidcProvider config;
     final String issuer;
@@ -48,7 +51,7 @@ final class Provider {
         this.config = config;
         try {
             if (guarded) PublicUrl.require(config.discoveryUrl());
-            Map<String, Object> discovery = JSONObjectUtils.parse(HTTP.send(HttpRequest.newBuilder(URI.create(config.discoveryUrl())).build(),
+            Map<String, Object> discovery = JSONObjectUtils.parse(HTTP.send(HttpRequest.newBuilder(URI.create(config.discoveryUrl())).timeout(TIMEOUT).build(),
                     HttpResponse.BodyHandlers.ofString()).body());
             if (guarded) for (String key : new String[]{"authorization_endpoint", "token_endpoint", "jwks_uri"}) PublicUrl.require((String) discovery.get(key));
             issuer = (String) discovery.get("issuer");
@@ -89,7 +92,7 @@ final class Provider {
 
     /** A token endpoint call, authenticated as the client ({@code client_secret_basic}). */
     Map<String, Object> token(String form) throws Exception {
-        HttpResponse<String> response = HTTP.send(HttpRequest.newBuilder(URI.create(tokenEndpoint))
+        HttpResponse<String> response = HTTP.send(HttpRequest.newBuilder(URI.create(tokenEndpoint)).timeout(TIMEOUT)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("Authorization", clientAuthorization)
                 .POST(HttpRequest.BodyPublishers.ofString(form)).build(), HttpResponse.BodyHandlers.ofString());
@@ -106,7 +109,7 @@ final class Provider {
      */
     void verify(String redirectUri) {
         try {
-            HttpResponse<String> token = HTTP.send(HttpRequest.newBuilder(URI.create(tokenEndpoint))
+            HttpResponse<String> token = HTTP.send(HttpRequest.newBuilder(URI.create(tokenEndpoint)).timeout(TIMEOUT)
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .header("Authorization", clientAuthorization)
                     .POST(HttpRequest.BodyPublishers.ofString("grant_type=authorization_code&code=verify&redirect_uri=" + encode(redirectUri)))
@@ -119,7 +122,7 @@ final class Provider {
             URI hop = URI.create(authorizeUrl(redirectUri, "verify", "verify", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
             String authority = hop.getAuthority();
             for (int i = 0; i < 5; i++) {
-                HttpResponse<Void> answer = HTTP.send(HttpRequest.newBuilder(hop).build(), HttpResponse.BodyHandlers.discarding());
+                HttpResponse<Void> answer = HTTP.send(HttpRequest.newBuilder(hop).timeout(TIMEOUT).build(), HttpResponse.BodyHandlers.discarding());
                 if (answer.statusCode() >= 400) throw new IllegalArgumentException("The provider does not accept the redirect URI " + redirectUri);
                 String location = answer.headers().firstValue("Location").orElse(null);
                 if (answer.statusCode() / 100 != 3 || location == null) return;

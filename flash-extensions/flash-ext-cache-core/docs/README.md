@@ -60,5 +60,6 @@ nobody can relate back to the data it governs.
 
 ## Writing a backend
 
-Implement `CacheManager` and `Cache`, provide the manager from a `FlashExtension`, and register
-cleanup with `FlashContext.onClose` so a stopped app does not keep its values alive.
+Implement `CacheManager` and `Cache`, and add the manager from a module:
+`app.add(CacheManager.class, MyCacheManager.class)`. Make the manager `AutoCloseable`: the app
+closes it on stop, so a stopped app does not keep its values alive.

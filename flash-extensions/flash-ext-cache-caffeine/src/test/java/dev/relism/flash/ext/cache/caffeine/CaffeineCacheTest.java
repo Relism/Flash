@@ -1,10 +1,15 @@
 package dev.relism.flash.ext.cache.caffeine;
 
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.HttpMethod;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 import dev.relism.flash.ext.cache.Cache;
 import dev.relism.flash.ext.cache.CacheManager;
 import dev.relism.flash.ext.cache.CacheStats;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -19,19 +24,27 @@ class CaffeineCacheTest {
 
     private static final AtomicInteger loads = new AtomicInteger();
 
+    /** Builds its cache once, from the manager it is given. */
+    public static final class Users implements Handler {
+        private final Cache<String, String> users;
+
+        public Users(CacheManager caches) {
+            users = caches.build("users", spec -> spec.maxSize(100).ttl(Duration.ofMinutes(5)).recordStats());
+        }
+
+        @Override
+        public Object handle(Request req, Response res) {
+            return users.get(req.param("id"), id -> "loaded:" + id + ":" + loads.incrementAndGet());
+        }
+    }
+
     @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.install(new CaffeineCacheExtension());
-        configured.ctx().onReady(() -> {
-            Cache<String, String> users = configured.ctx().require(CacheManager.class)
-                    .build("users", spec -> spec.maxSize(100).ttl(Duration.ofMinutes(5)).recordStats());
-            configured.get("/users/{id}", (req, res) ->
-                    users.get(req.param("id"), id -> "loaded:" + id + ":" + loads.incrementAndGet()));
-        });
-    });
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .install(new CaffeineCacheModule())
+            .route(HttpMethod.GET, "/users/{id}", Users.class));
 
     private static CacheManager manager() {
-        return app.app().ctx().require(CacheManager.class);
+        return app.services().get(CacheManager.class);
     }
 
     @Test
@@ -142,18 +155,17 @@ class CaffeineCacheTest {
         assertNull(manager().cache("never-built"));
     }
 
-    /** Why CaffeineCacheExtension registers onClose: values must not outlive the app holding them. */
+    /** Why the manager is closed with the app: values must not outlive the app holding them. */
     @Test
     void stoppingTheAppReleasesEveryCache() {
-        FlashApp standalone = FlashApp.create(FlashConfiguration.builder()
-                .port(0).host("127.0.0.1").shutdownDrainTimeoutMs(250).build())
-                .install(new CaffeineCacheExtension());
-        standalone.start();
-        CacheManager manager = standalone.ctx().require(CacheManager.class);
+        App standalone = App.create().install(new CaffeineCacheModule());
+        Server server = Server.start(standalone, ServerConfig.builder()
+                .port(0).host("127.0.0.1").shutdownDrainTimeoutMs(250).build());
+        CacheManager manager = standalone.services().get(CacheManager.class);
         manager.build("scoped", spec -> spec.maxSize(10)).put("k", "v");
         assertEquals(1, manager.names().size());
 
-        standalone.stop().join();
+        server.stop().join();
 
         assertTrue(manager.names().isEmpty(), "caches must be released when the app stops");
     }

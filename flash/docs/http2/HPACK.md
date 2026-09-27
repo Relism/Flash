@@ -71,7 +71,7 @@ is a few more wire bytes for repeated custom response fields.
 
 Status and known content-type fields are HPACK-encoded during class initialization. The cached Date
 header refreshes both its HTTP/1 and HPACK forms once per second. Runtime values are raw literals by
-default; `FlashConfiguration.h2HuffmanDynamicValues` enables Huffman coding when deployment-specific
+default; `ServerConfig.h2HuffmanDynamicValues` enables Huffman coding when deployment-specific
 measurements justify its CPU/wire-size trade-off.
 
 `Http2ResponseWriter` is reusable per stream. It lowercases field names, removes forbidden

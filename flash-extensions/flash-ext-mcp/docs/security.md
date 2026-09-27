@@ -6,7 +6,7 @@ authenticate `/mcp` exactly as they authenticate every other route.
 
 | `McpConfig.security(...)` | |
 |---|---|
-| `REQUIRED` (default) | every call must be authenticated; boot fails without a `SecurityExtension` |
+| `REQUIRED` (default) | every call must be authenticated; boot fails without a `SecurityModule` |
 | `NONE` | a public endpoint; a tool carrying security annotations fails the boot |
 
 ## OAuth2 protected resource
@@ -15,7 +15,7 @@ When a registered mechanism publishes an OAuth2 issuer — `flash-ext-security-o
 behaves as the MCP authorization spec requires, with nothing to configure:
 
 - `GET /.well-known/oauth-protected-resource/mcp` serves RFC 9728 metadata: the `resource` (the
-  application's `SecurityExtension.origin(...)` plus the path), every issuer as `authorization_servers`,
+  application's `SecurityModule.origin(...)` plus the path), every issuer as `authorization_servers`,
   and `scopes_supported` when `McpConfig.scopesSupported(...)` is set;
 - an anonymous call gets `401` with `WWW-Authenticate: Bearer resource_metadata="…"`;
 - a token whose `aud` does not include the resource is `403` (RFC 8707) and logged at `WARN`. Credentials
@@ -50,7 +50,7 @@ authenticated:
 ```java
 @Tool(name = "approve", description = "Approves a pending proposal")
 @RolesAllowed(value = "REVIEWER", on = {"project", "locale"})   // read from the tool's arguments
-public class ApproveTool extends McpTool { … }
+public final class ApproveTool implements McpTool { … }
 ```
 
 A denial is a tool result with `isError: true` — the call reached the server, the tool did not run.

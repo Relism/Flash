@@ -13,9 +13,19 @@ public interface OpenApiContributor {
         return OpenApiOperationContribution.empty();
     }
 
+    /** The name {@code field} has on the wire, or null to leave it to another contributor or the field. */
+    default String name(Field field) {
+        return null;
+    }
+
+    /** Whether {@code field} is left out of what is written. */
+    default boolean ignored(Field field) {
+        return false;
+    }
+
     /**
      * Adds to one property's schema what the code already says elsewhere — a validation engine's
-     * rules, above all. Returns true when the property is required.
+     * rules, a format's read-only or write-only access. Returns true when the property is required.
      *
      * <p>Called while a type's schema is built, once per document revision.
      */

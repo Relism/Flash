@@ -1,8 +1,8 @@
 package dev.relism.flash.ext.serde;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 
 import java.lang.reflect.Type;
 
@@ -26,6 +26,13 @@ public interface Codec {
 
     /** Writes {@code value} and sets this codec's content type on the response. */
     Object write(Response response, Object value) throws Exception;
+
+    /**
+     * Called once at boot with each type a handler reads or writes through this codec. A codec
+     * that must know its types ahead — one whose bindings are generated at build time — resolves
+     * it here, so a type it cannot handle fails the boot instead of the first request.
+     */
+    default void prepare(Type type) {}
 
     /** What this codec writes, which is also what the published document says it writes. */
     ContentType contentType();

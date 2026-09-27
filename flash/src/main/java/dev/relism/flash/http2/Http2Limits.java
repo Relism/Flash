@@ -146,9 +146,6 @@ public final class Http2Limits {
   /** Largest request body retained contiguously before dispatching its handler. */
   public static final int INLINE_BODY_THRESHOLD = 64 * 1024;
 
-  /** Hard limit for request body bytes accepted on one stream. */
-  public static final int MAX_REQUEST_BODY_SIZE = 100 * 1024 * 1024;
-
   /** Number of frame-sized buffers available to streaming request bodies on one connection. */
   public static final int DATA_BUFFER_POOL_SIZE = 64;
 
@@ -194,7 +191,7 @@ public final class Http2Limits {
    * Maximum time, in milliseconds, a stream may remain open with no frame activity in either
    * direction. Bounds resource pinning by a peer that opens a stream and then goes silent without
    * closing it — the h2 equivalent of the h1 slowloris defence in {@code
-   * FlashConfiguration.idleKeepAliveTimeoutMs}.
+   * ServerConfig.idleKeepAliveTimeoutMs}.
    */
   public static final long STREAM_IDLE_TIMEOUT_MS = 60_000;
 

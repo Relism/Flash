@@ -1,7 +1,8 @@
 package dev.relism.flash;
 
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.tls.ClientAuth;
 import dev.relism.flash.tls.TestKeystores;
 import dev.relism.flash.tls.TlsConfig;
@@ -53,11 +54,13 @@ class HttpServerTlsTest {
 
     private static final int SOCKET_TIMEOUT_MS = 5000;
 
-    private FlashApp app;
+    private App app;
+
+    private Server server;
 
     @AfterEach
     void tearDown() {
-        if (app != null) app.stop();
+        if (server != null) server.stop();
     }
 
 
@@ -76,13 +79,14 @@ class HttpServerTlsTest {
     @Test
     void httpsRequest_servedOverModernTls(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config1 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config1);
+        int port = server.port();
 
         SSLSocketFactory factory = TestKeystores.trustAllClientContext().getSocketFactory();
         try (SSLSocket socket = (SSLSocket) factory.createSocket("127.0.0.1", port)) {
@@ -100,13 +104,14 @@ class HttpServerTlsTest {
         var ks = TestKeystores.build(dir, "sni.p12", "changeit",
                 TestKeystores.Entry.of("a", "a.test"),
                 TestKeystores.Entry.of("b", "b.test"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config2 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config2);
+        int port = server.port();
 
         assertEquals("a.test", peerCn(port, "a.test"));
         assertEquals("b.test", peerCn(port, "b.test"));
@@ -140,13 +145,14 @@ class HttpServerTlsTest {
     @Test
     void mTls_requireRejectsClientWithNoCertificate(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config3 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit").clientAuth(ClientAuth.REQUIRE))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config3);
+        int port = server.port();
 
         SSLSocketFactory factory = TestKeystores.trustAllClientContext().getSocketFactory();
         try (SSLSocket socket = (SSLSocket) factory.createSocket("127.0.0.1", port)) {
@@ -177,13 +183,14 @@ class HttpServerTlsTest {
         SSLContext serverCtx = SSLContext.getInstance("TLS");
         serverCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config4 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(serverCtx).clientAuth(ClientAuth.REQUIRE))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config4);
+        int port = server.port();
 
         KeyStore clientIdentity = load(clientKs, "changeit");
         KeyManagerFactory clientKmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -216,14 +223,15 @@ class HttpServerTlsTest {
     @Test
     void multipleListeners_plainAndTlsServeTheSameApp(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        app = FlashApp.create(FlashConfiguration.builder()
-                .listener(new FlashConfiguration.Listener(0, "127.0.0.1", null))
-                .listener(new FlashConfiguration.Listener(0, "127.0.0.1", TlsConfig.keystore(ks, "changeit")))
-                .build());
-        int plainPort = app.ports().get(0);
-        int tlsPort   = app.ports().get(1);
+        ServerConfig config5 = ServerConfig.builder()
+                .listener(new ServerConfig.Listener(0, "127.0.0.1", null))
+                .listener(new ServerConfig.Listener(0, "127.0.0.1", TlsConfig.keystore(ks, "changeit")))
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config5);
+        int plainPort = server.ports().get(0);
+        int tlsPort   = server.ports().get(1);
 
         try (Socket socket = new Socket("127.0.0.1", plainPort)) {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
@@ -284,13 +292,14 @@ class HttpServerTlsTest {
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(managers, null, null);
 
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config6 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(ctx))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config6);
+        int port = server.port();
 
         SSLSocketFactory factory = TestKeystores.trustAllClientContext().getSocketFactory();
 
@@ -361,13 +370,14 @@ class HttpServerTlsTest {
         SSLContext[] boxedCtx = new SSLContext[1];
         RecordingKeyManager recorder = buildRecordingContext(ks, boxedCtx);
 
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config7 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.ofContext(boxedCtx[0]).applicationProtocols("acme-tls/1", "http/1.1"))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/ping", (req, res) -> "pong");
-        app.start();
+        server = Server.start(app, config7);
+        int port = server.port();
 
         // Each connection below uses its own fresh client SSLContext, deliberately — reusing one
         // SSLContext across connections lets JSSE resume the second handshake's TLS session,
@@ -419,16 +429,17 @@ class HttpServerTlsTest {
     @Test
     void request_isSecureAndSessionAvailableOverTls(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config8 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/secure-info", (req, res) -> {
             SSLSession session = req.sslSession();
             return req.isSecure() + ":" + (session != null) + ":" + (session != null ? session.getCipherSuite() : "");
         });
-        app.start();
+        server = Server.start(app, config8);
+        int port = server.port();
 
         try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
                 .getSocketFactory().createSocket("127.0.0.1", port)) {
@@ -453,13 +464,13 @@ class HttpServerTlsTest {
         SSLContext serverCtx = SSLContext.getInstance("TLS");
         serverCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config9 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 // OPTIONAL, not REQUIRE: proves getPeerCertificates() works without also
                 // re-testing the REQUIRE-rejection path already covered elsewhere in this file.
                 .tls(TlsConfig.ofContext(serverCtx).clientAuth(ClientAuth.OPTIONAL))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
         app.get("/secure-info", (req, res) -> {
             try {
                 X509Certificate peer = (X509Certificate) req.sslSession().getPeerCertificates()[0];
@@ -468,7 +479,8 @@ class HttpServerTlsTest {
                 return "no-peer-cert";
             }
         });
-        app.start();
+        server = Server.start(app, config9);
+        int port = server.port();
 
         KeyStore clientIdentity = load(clientKs, "changeit");
         KeyManagerFactory clientKmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -485,10 +497,11 @@ class HttpServerTlsTest {
 
     @Test
     void request_isNotSecureAndSessionIsNullOnPlainListener() throws Exception {
-        app = FlashApp.create(FlashConfiguration.builder().port(0).host("127.0.0.1").build());
-        int port = app.port();
+        ServerConfig config10 = ServerConfig.builder().port(0).host("127.0.0.1").build();
+        app = App.create();
         app.get("/secure-info", (req, res) -> req.isSecure() + ":" + (req.sslSession() == null));
-        app.start();
+        server = Server.start(app, config10);
+        int port = server.port();
 
         try (Socket socket = new Socket("127.0.0.1", port)) {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
@@ -521,11 +534,11 @@ class HttpServerTlsTest {
     @Test
     void wss_sessionIsSecureAndExposesSslSession(@TempDir java.nio.file.Path dir) throws Exception {
         var ks = TestKeystores.build(dir, "id.p12", "changeit", TestKeystores.Entry.of("srv", "localhost"));
-        app = FlashApp.create(FlashConfiguration.builder()
+        ServerConfig config11 = ServerConfig.builder()
                 .port(0).host("127.0.0.1")
                 .tls(TlsConfig.keystore(ks, "changeit"))
-                .build());
-        int port = app.port();
+                .build();
+        app = App.create();
 
         AtomicReference<Boolean> observedSecure = new AtomicReference<>();
         AtomicReference<SSLSession> observedSession = new AtomicReference<>();
@@ -541,7 +554,8 @@ class HttpServerTlsTest {
             }
             @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {}
         });
-        app.start();
+        server = Server.start(app, config11);
+        int port = server.port();
 
         try (SSLSocket socket = (SSLSocket) TestKeystores.trustAllClientContext()
                 .getSocketFactory().createSocket("127.0.0.1", port)) {

@@ -36,7 +36,8 @@ Format: `<type>(<scope>): <short description>`
 | `chore` | Build, deps, tooling — no production code |
 | `ci` | Changes to GitHub Actions workflows |
 
-Allowed scopes: `core`, `testing`, `ext-jackson`, `ext-openapi`, `ext-oidc`, `ext-routeviewer`,
+Allowed scopes: `core`, `testing`, `ext-serde`, `ext-jackson`, `ext-avaje-jsonb`, `ext-openapi`, `ext-security`,
+`ext-oidc`, `ext-routeviewer`,
 `ext-view-core`, `ext-view-jte`, `ext-view-thymeleaf`, `ext-limiter`, `ext-vite`,
 `ext-mcp`, `ext-validation`, `ext-scheduler`, `ext-data-core`, `ext-data-jdbc`, `ext-data-hibernate`,
 `ext-cache-core`, `ext-cache-caffeine`, `release`, `deps`, `ci`.
@@ -96,6 +97,10 @@ chore(release): 2.1.0
   2. Add the dependency to `flash-extensions/pom.xml` `<dependencyManagement>`.
   3. Add the dependency to the root `pom.xml` `<dependencyManagement>`.
   4. Do **not** declare a `<version>` in the new module's POM — it inherits from the parent.
+  5. Expose it as a `Module`. What it adds to other modules goes through services (`RouteHook`,
+     `OpenApiContributor`, `AuthenticationMechanism`), read with `Services.all`; a contribution to
+     an optional dependency is installed through `Module.ifPresent`. Services take what they need
+     through their constructor; `Bound` is for what the app did not build.
 
 ---
 

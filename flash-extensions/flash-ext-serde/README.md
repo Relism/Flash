@@ -1,15 +1,18 @@
 # flash-ext-serde
 
 Handlers that name a codec and a type for each end. No serialization library of its own: a format
-module brings one — [`flash-ext-jackson-json`](../flash-ext-jackson-json),
-[`flash-ext-jackson-xml`](../flash-ext-jackson-xml) — and this is the shape they plug into.
+module brings one — [`flash-ext-avaje-jsonb`](../flash-ext-avaje-jsonb),
+[`flash-ext-jackson-json`](../flash-ext-jackson-json), [`flash-ext-jackson-xml`](../flash-ext-jackson-xml)
+— and this is the shape they plug into.
 
 ## The two ends are independent
 
 ```java
 @POST("/orders")
 public final class PlaceOrder extends CodecHandler<Xml, Order, Json, Receipt> {
-    @Inject private OrderService orders;
+    private final OrderService orders;
+
+    public PlaceOrder(OrderService orders) { this.orders = orders; }
 
     @Override protected Receipt handle(Request req, Response res, Order order) {
         return orders.place(order);
@@ -36,8 +39,9 @@ too, rather than guessing.
 
 ## Codec
 
-One format, both directions. Three methods, and what an implementation does inside — which
-library, what it checks on the way in — is its own business.
+One format, both directions. Three methods to implement, one to override when it matters, and
+what an implementation does inside — which library, what it checks on the way in — is its own
+business.
 
 | | |
 |---|---|
@@ -45,6 +49,7 @@ library, what it checks on the way in — is its own business.
 | `read(Request, Class<T>)` | The same, where the compiler can check what comes back |
 | `write(Response, Object)` | Serialized, with this codec's content type set on the response |
 | `contentType()` | What it writes, which is also what the document says it writes |
+| `prepare(Type)` | Called at boot with each type a handler carries; a codec that must know its types ahead fails the boot here |
 
 An answer that is already a body — `null`, a `Response`, a `byte[]` or a `CharSequence` — is
 passed through untouched, so a handler that writes its own bytes still works.
@@ -64,12 +69,11 @@ nothing serializes behind a handler's back.
 
 `flash-ext-openapi`, when it is on the classpath, is told each operation's media types by this
 module: the codecs in the signature are asked what they write. Nothing is declared twice, and the
-document cannot disagree with what runs. A format extension wires that up with one call after
-providing its codec:
+document cannot disagree with what runs. A format module wires that up with one call beside
+its codec:
 
 ```java
-@Override public void configure(FlashRegistrar<?> app, FlashContext ctx) {
-    ctx.provide(Yaml.class, new Yaml(mapper));
-    CodecDocs.register(ctx);
+@Override public void install(App app) {
+    app.add(Yaml.class, new Yaml(mapper)).install(CodecDocs.module());
 }
 ```

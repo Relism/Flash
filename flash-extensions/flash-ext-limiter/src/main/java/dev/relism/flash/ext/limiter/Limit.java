@@ -1,8 +1,5 @@
 package dev.relism.flash.ext.limiter;
 
-import dev.relism.flash.exceptions.InitializationException;
-import dev.relism.flash.models.RequestHandler;
-
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -10,28 +7,25 @@ import java.lang.annotation.Target;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Applies a rate limit to a class-based {@link RequestHandler}.
- *
- * <p>The annotation is processed at boot time by the {@link LimiterExtension} annotation
- * processor. If {@link #key()} names a resolver that was never registered,
- * startup fails immediately with {@link InitializationException}.
+ * Rate-limits a handler class, read once at boot by {@link LimiterModule}. A {@link #key()} no
+ * resolver answers to fails the boot.
  *
  * <pre>{@code
  * // 100 req/s per client IP — fixed window
  * @Limit(requests = 100, window = 1)
- * public class SearchHandler extends RequestHandler { ... }
+ * public class SearchHandler implements Handler { ... }
  *
  * // 20 req/min per authenticated user — token bucket
  * @Limit(key = "auth_user", requests = 20, window = 1, windowUnit = TimeUnit.MINUTES,
  *        strategy = LimitStrategy.TOKEN_BUCKET)
- * public class ExpensiveHandler extends RequestHandler { ... }
+ * public class ExpensiveHandler implements Handler { ... }
  * }</pre>
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Limit {
 
-    /** Name of the resolver registered via {@link LimiterConfig#registerResolver}. Default: {@code "ip"}. */
+    /** Name of the resolver registered via {@link LimiterModule#resolver}. Default: {@code "ip"}. */
     String key() default "ip";
 
     /** Maximum number of requests allowed per {@link #window()}. */

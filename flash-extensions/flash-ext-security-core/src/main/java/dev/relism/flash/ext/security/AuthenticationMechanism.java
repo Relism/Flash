@@ -1,6 +1,6 @@
 package dev.relism.flash.ext.security;
 
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 
 import java.util.List;
 

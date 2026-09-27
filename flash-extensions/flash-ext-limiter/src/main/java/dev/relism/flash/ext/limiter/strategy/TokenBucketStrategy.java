@@ -26,7 +26,7 @@ public final class TokenBucketStrategy implements RateLimitStrategy {
     static final long SCALE = 1_000L;
 
     @Override
-    public boolean check(Bucket bucket, LimitConfig cfg, long[] out) {
+    public long check(Bucket bucket, LimitConfig cfg) {
         long now       = System.currentTimeMillis();
         long maxScaled = (long) cfg.limit() * SCALE;
         // Refill rate: limit tokens per windowMs → (limit * SCALE) / windowMs scaled-tokens per ms.
@@ -46,21 +46,17 @@ public final class TokenBucketStrategy implements RateLimitStrategy {
                 // Not enough for one token — compute when the next token arrives.
                 long needed   = SCALE - currentTokens;
                 long msToNext = (needed + rfPerMs - 1) / rfPerMs; // ceiling division
-                out[0] = 0L;
-                out[1] = (now + msToNext) / 1000L;
                 // Best-effort: advance the refill baseline so the next call gets a fresh elapsed.
                 bucket.slot0.compareAndSet(rawTokens, currentTokens);
                 bucket.slot1.compareAndSet(lastMs, now);
-                return false;
+                return RateLimitStrategy.verdict(false, 0L, (now + msToNext) / 1000L);
             }
 
             long newTokens = currentTokens - SCALE;
             if (bucket.slot0.compareAndSet(rawTokens, newTokens)) {
                 // Advance refill baseline: CAS ensures we never regress to an older timestamp.
                 if (lastMs < now) bucket.slot1.compareAndSet(lastMs, now);
-                out[0] = newTokens / SCALE;
-                out[1] = now / 1000L;
-                return true;
+                return RateLimitStrategy.verdict(true, newTokens / SCALE, now / 1000L);
             }
             // CAS lost — another thread consumed a token concurrently; re-read and retry.
         }

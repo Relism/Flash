@@ -1,7 +1,7 @@
 package dev.relism.flash.ext.vite.maven;
 
 import dev.relism.flash.ext.vite.PackageManager;
-import dev.relism.flash.ext.vite.ViteExtension;
+import dev.relism.flash.ext.vite.ViteModule;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -21,7 +21,7 @@ import java.util.zip.Deflater;
 import java.util.zip.GZIPOutputStream;
 
 /**
- * Builds the Vite project and packages the result where {@code ViteExtension} serves it from in
+ * Builds the Vite project and packages the result where {@code ViteModule} serves it from in
  * production, with a maximally gzipped {@code .gz} beside each text file, so the server compresses
  * nothing. Bound to {@code prepare-package}: tests never need Node, a packaged jar always has its
  * frontend.
@@ -60,7 +60,7 @@ public final class BuildMojo extends AbstractMojo {
         if (!Files.isRegularFile(dist.resolve("index.html"))) {
             throw new MojoExecutionException("The build left no dist/index.html in " + project + ".");
         }
-        Path target = classes.toPath().resolve(ViteExtension.CLASSPATH);
+        Path target = classes.toPath().resolve(ViteModule.CLASSPATH);
         try {
             if (Files.exists(target)) {
                 try (Stream<Path> old = Files.walk(target)) {
@@ -78,7 +78,7 @@ public final class BuildMojo extends AbstractMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Cannot copy " + dist + " to " + target, e);
         }
-        getLog().info("Packaged " + dist + " as " + ViteExtension.CLASSPATH + "/");
+        getLog().info("Packaged " + dist + " as " + ViteModule.CLASSPATH + "/");
     }
 
     /** Only worth it from 1 KB, and only kept when it is smaller. */

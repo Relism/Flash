@@ -43,6 +43,7 @@
         <hibernate.validator.version>9.1.0.Final</hibernate.validator.version>
         <expressly.version>6.0.0</expressly.version>
         <avaje.validator.version>2.12</avaje.validator.version>
+        <avaje.jsonb.version>3.16</avaje.jsonb.version>
         <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
         <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
     </properties>
@@ -170,6 +171,17 @@
             </dependency>
             <dependency>
                 <groupId>io.avaje</groupId>
+                <artifactId>avaje-jsonb</artifactId>
+                <version>${avaje.jsonb.version}</version>
+            </dependency>
+            <!-- Declared here so an application can name it in annotationProcessorPaths without a version. -->
+            <dependency>
+                <groupId>io.avaje</groupId>
+                <artifactId>avaje-jsonb-generator</artifactId>
+                <version>${avaje.jsonb.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.avaje</groupId>
                 <artifactId>avaje-validator</artifactId>
                 <version>${avaje.validator.version}</version>
             </dependency>
@@ -183,6 +195,11 @@
                 <groupId>io.avaje</groupId>
                 <artifactId>avaje-validator-generator</artifactId>
                 <version>${avaje.validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-avaje-jsonb</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>

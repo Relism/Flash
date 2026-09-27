@@ -18,6 +18,7 @@
         <module>flash-ext-validation-core</module>
         <module>flash-ext-validation-jakarta</module>
         <module>flash-ext-validation-avaje</module>
+        <module>flash-ext-avaje-jsonb</module>
         <module>flash-ext-jackson-core</module>
         <module>flash-ext-jackson-json</module>
         <module>flash-ext-jackson-xml</module>
@@ -82,6 +83,11 @@
                 <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-avaje-jsonb</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>

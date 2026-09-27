@@ -31,7 +31,7 @@ import dev.relism.flash.ext.limiter.RateLimitStrategy;
 public final class SlidingWindowStrategy implements RateLimitStrategy {
 
     @Override
-    public boolean check(Bucket bucket, LimitConfig cfg, long[] out) {
+    public long check(Bucket bucket, LimitConfig cfg) {
         long now      = System.currentTimeMillis();
         long windowMs = cfg.windowMs();
         long absEpoch = now / windowMs;
@@ -50,18 +50,14 @@ public final class SlidingWindowStrategy implements RateLimitStrategy {
                 long estimate  = (prevCount * (windowMs - elapsed)) / windowMs + count + 1;
 
                 if (estimate > cfg.limit()) {
-                    out[0] = 0L;
-                    out[1] = (absEpoch + 1) * windowMs / 1000L;
-                    return false;
+                    return RateLimitStrategy.verdict(false, 0L, (absEpoch + 1) * windowMs / 1000L);
                 }
 
                 int  newCount  = Math.min(count + 1, cfg.limit() + 1);
                 long newPacked = ((long) epoch << 32) | (newCount & 0xFFFFFFFFL);
                 if (!bucket.slot0.compareAndSet(packed, newPacked)) continue; // CAS lost, retry
 
-                out[0] = Math.max(0L, cfg.limit() - estimate);
-                out[1] = (absEpoch + 1) * windowMs / 1000L;
-                return true;
+                return RateLimitStrategy.verdict(true, Math.max(0L, cfg.limit() - estimate), (absEpoch + 1) * windowMs / 1000L);
 
             } else {
                 // ── Window transition ────────────────────────────────────────────
@@ -77,9 +73,8 @@ public final class SlidingWindowStrategy implements RateLimitStrategy {
                 bucket.slot1.set(oldCount);
 
                 long estimate = (oldCount * (windowMs - elapsed)) / windowMs + 1;
-                out[0] = Math.max(0L, cfg.limit() - estimate);
-                out[1] = (absEpoch + 1) * windowMs / 1000L;
-                return estimate <= cfg.limit();
+                return RateLimitStrategy.verdict(estimate <= cfg.limit(), Math.max(0L, cfg.limit() - estimate),
+                        (absEpoch + 1) * windowMs / 1000L);
             }
         }
     }

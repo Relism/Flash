@@ -11,8 +11,9 @@ import javax.sql.DataSource;
 import java.util.Objects;
 
 public class HibernateTxManager implements TxManager {
-    private static final TxResourceKey HIBERNATE_STATUS_KEY = TxResourceKey.of("hibernate.tx.status");
-    private static final TxResourceKey HIBERNATE_SUSPENDED_KEY = TxResourceKey.of("hibernate.tx.suspended");
+    // Per manager, not per class: two databases on one thread never join each other's transaction.
+    private final TxResourceKey HIBERNATE_STATUS_KEY = TxResourceKey.of("hibernate.tx.status");
+    private final TxResourceKey HIBERNATE_SUSPENDED_KEY = TxResourceKey.of("hibernate.tx.suspended");
 
     private final SessionFactory sf;
 
@@ -103,15 +104,16 @@ public class HibernateTxManager implements TxManager {
 
     private TxStatus joinExisting(TxDefinition definition) {
         HibernateTxStatus existing = ResourceRegistry.get(HIBERNATE_STATUS_KEY, HibernateTxStatus.class);
-        if (definition.readOnly() && !existing.isReadOnly()) {
-            throw new TxException("Cannot join read-write tx as read-only");
+        // A read joins whatever it finds; a write cannot run inside a transaction opened read-only.
+        if (!definition.readOnly() && existing.isReadOnly()) {
+            throw new TxException("Cannot write inside a read-only transaction");
         }
         // Baseline 0 is never read: a joined status isn't a new transaction, so commit()/rollback()
         // hand it straight back to the transaction it joined without firing anything.
         return new HibernateTxStatus(
                 existing.session(),
                 false,
-                definition.readOnly(),
+                existing.isReadOnly(),
                 null,
                 existing.rollbackMarker(),
                 0

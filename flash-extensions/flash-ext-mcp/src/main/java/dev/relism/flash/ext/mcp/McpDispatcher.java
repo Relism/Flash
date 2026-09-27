@@ -5,14 +5,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.ext.security.SecurityIdentity;
 import dev.relism.flash.ext.security.SecurityPolicy;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.Response;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 
 import java.io.IOException;
 
 /**
  * JSON-RPC 2.0 dispatcher for the MCP Streamable HTTP endpoint — one instance per
- * {@link McpExtension}, built once at boot from a resolved {@link McpRegistry}.
+ * {@link McpModule}, built once at boot from a resolved {@link McpRegistry}.
  *
  * <p>Per the MCP specification, a {@code tools/call} failure is a normal JSON-RPC
  * <em>result</em> with {@code isError: true} (see {@link ToolResponse#error}), not a JSON-RPC

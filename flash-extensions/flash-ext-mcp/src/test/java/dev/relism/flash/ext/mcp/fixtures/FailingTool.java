@@ -6,7 +6,7 @@ import dev.relism.flash.ext.mcp.ToolArguments;
 import dev.relism.flash.ext.mcp.ToolResponse;
 
 @Tool(name = "boom", description = "Always fails")
-public class FailingTool extends McpTool {
+public class FailingTool implements McpTool {
 
     @Override
     public ToolResponse call(ToolArguments args) {

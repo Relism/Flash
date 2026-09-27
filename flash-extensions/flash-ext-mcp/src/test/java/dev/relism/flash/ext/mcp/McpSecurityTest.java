@@ -2,13 +2,14 @@ package dev.relism.flash.ext.mcp;
 
 import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.ext.security.Principal;
-import dev.relism.flash.ext.security.SecurityExtension;
+import dev.relism.flash.App;
+import dev.relism.flash.ext.security.SecurityModule;
 import dev.relism.flash.ext.security.SecurityScheme;
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.ext.security.apikey.ApiKey;
-import dev.relism.flash.ext.security.apikey.ApiKeyExtension;
+import dev.relism.flash.ext.security.apikey.ApiKeys;
 import dev.relism.flash.ext.security.apikey.GeneratedApiKey;
-import dev.relism.flash.ext.security.oidc.OidcExtension;
+import dev.relism.flash.ext.security.oidc.OidcModule;
 import dev.relism.flash.ext.security.oidc.OidcProvider;
 import dev.relism.flash.ext.security.test.FakeOidcProvider;
 import dev.relism.flash.testing.FlashRequest;
@@ -26,18 +27,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class McpSecurityTest {
 
     static final FakeOidcProvider provider = start();
-    static final GeneratedApiKey KEY = new ApiKeyExtension<String>("mk", id -> null).generate();
-    static final ApiKeyExtension<String> apiKeys = new ApiKeyExtension<>("mk", id -> id.equals(KEY.id()) ? new ApiKey<>(KEY.id(), KEY.secretHash(), "agent", null, null) : null);
+    static final GeneratedApiKey KEY = new ApiKeys<String>("mk", id -> null).generate();
+    static final ApiKeys<String> apiKeys = new ApiKeys<>("mk", id -> id.equals(KEY.id()) ? new ApiKey<>(KEY.id(), KEY.secretHash(), "agent", null, null) : null);
 
     @RegisterExtension
-    static final FlashTest app = FlashTest.of(flash -> flash
-            .install(new SecurityExtension().roles((identity, role, on) -> identity.principal().name().equals(role + "@" + on.get("project"))))
-            .install(new OidcExtension(OidcProvider.of("fake", provider.issuer(), "app", "secret")))
-            .install(apiKeys)
-            .install(new McpExtension(McpConfig.builder("secure").toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured")
-                    .scopesSupported("openid", "email").build())));
+    static final FlashTest app = FlashTest.of(() -> App.create()
+            .install(new SecurityModule().roles((identity, role, on) -> identity.principal().name().equals(role + "@" + on.get("project"))),
+                    new OidcModule(OidcProvider.of("fake", provider.issuer(), "app", "secret")),
+                    apiKeys,
+                    new McpModule(McpConfig.builder("secure").toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured")
+                            .scopesSupported("openid", "email").build())));
 
-    static final OidcExtension oidc = new OidcExtension(OidcProvider.of("fake", provider.issuer(), "app", "secret"));
+    static final OidcModule oidc = new OidcModule(OidcProvider.of("fake", provider.issuer(), "app", "secret"));
 
     /** Another issuer the application trusts, which the restricted endpoint below must neither accept nor advertise. */
     static final AuthenticationMechanism elsewhere = new AuthenticationMechanism() {
@@ -51,20 +52,19 @@ class McpSecurityTest {
 
     /** Only the OIDC provider authenticates this endpoint, however many mechanisms the application has. */
     @RegisterExtension
-    static final FlashTest restricted = FlashTest.of(flash -> flash
-            .install(new SecurityExtension().mechanism(elsewhere))
-            .install(oidc)
-            .install(apiKeys)
-            .install(new McpExtension(McpConfig.builder("restricted").toolsPackage("dev.relism.flash.ext.mcp.fixtures")
-                    .mechanisms(oidc).requireTokenAudience(false).build())));
+    static final FlashTest restricted = FlashTest.of(() -> App.create()
+            .install(new SecurityModule(), oidc, apiKeys,
+                    new McpModule(McpConfig.builder("restricted").toolsPackage("dev.relism.flash.ext.mcp.fixtures")
+                            .mechanisms(oidc.oidc()).requireTokenAudience(false).build()))
+            .add(AuthenticationMechanism.class, elsewhere));
 
     /** The same chain with the RFC 8707 check turned off, for an authorization server that cannot mint a resource audience. */
     @RegisterExtension
-    static final FlashTest relaxed = FlashTest.of(flash -> flash
-            .install(new SecurityExtension().roles((identity, role, on) -> false))
-            .install(new OidcExtension(OidcProvider.of("fake", provider.issuer(), "app", "secret")))
-            .install(new McpExtension(McpConfig.builder("relaxed").toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured")
-                    .requireTokenAudience(false).build())));
+    static final FlashTest relaxed = FlashTest.of(() -> App.create()
+            .install(new SecurityModule().roles((identity, role, on) -> false),
+                    new OidcModule(OidcProvider.of("fake", provider.issuer(), "app", "secret")),
+                    new McpModule(McpConfig.builder("relaxed").toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured")
+                            .requireTokenAudience(false).build())));
 
     static FakeOidcProvider start() {
         try {
@@ -148,9 +148,9 @@ class McpSecurityTest {
 
     @Test
     void securityIsRequiredUnlessDeclaredOff() {
-        FlashTest unsecured = FlashTest.of(flash -> flash.install(new McpExtension(McpConfig.builder("x").toolsPackage("dev.relism.flash.ext.mcp.fixtures").build())));
+        FlashTest unsecured = FlashTest.of(() -> App.create().install(new McpModule(McpConfig.builder("x").toolsPackage("dev.relism.flash.ext.mcp.fixtures").build())));
         assertThrows(Exception.class, () -> unsecured.get("/mcp"));
-        FlashTest contradictory = FlashTest.of(flash -> flash.install(new McpExtension(McpConfig.builder("x")
+        FlashTest contradictory = FlashTest.of(() -> App.create().install(new McpModule(McpConfig.builder("x")
                 .toolsPackage("dev.relism.flash.ext.mcp.authfixtures.secured").security(McpSecurity.NONE).build())));
         assertThrows(Exception.class, () -> contradictory.get("/mcp"));
     }

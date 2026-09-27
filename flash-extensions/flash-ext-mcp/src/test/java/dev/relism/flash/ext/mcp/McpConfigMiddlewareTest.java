@@ -1,6 +1,7 @@
 package dev.relism.flash.ext.mcp;
 
-import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.App;
+import dev.relism.flash.http.HttpException;
 import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -19,7 +20,7 @@ class McpConfigMiddlewareTest {
     private static final AtomicInteger CALLS = new AtomicInteger();
 
     @RegisterExtension
-    static FlashTest mcp = FlashTest.of(app -> app.install(new McpExtension(
+    static FlashTest mcp = FlashTest.of(() -> App.create().install(new McpModule(
             McpConfig.builder("middleware-server")
                     .version("1.0.0")
                     .toolsPackage("dev.relism.flash.ext.mcp.fixtures")

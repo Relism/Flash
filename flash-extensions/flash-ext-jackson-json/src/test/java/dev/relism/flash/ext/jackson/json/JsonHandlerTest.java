@@ -1,15 +1,17 @@
 package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.App;
+import dev.relism.flash.testing.FlashTest;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.bytes.FastPathViews;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.charset.StandardCharsets;
 
@@ -18,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JsonHandlerTest {
+
+    @RegisterExtension
+    static FlashTest app = FlashTest.of(() -> App.create().add(Json.class, new Json(new ObjectMapper())));
 
     public record NewUser(String name) {}
 
@@ -42,8 +47,7 @@ class JsonHandlerTest {
 
     @Test
     void theBodyArrivesParsedAsTheTypeTheHandlerDeclares() throws Exception {
-        Create handler = new Create();
-        handler.bind(context());
+        Create handler = app.services().create(Create.class);
 
         Object answer = handler.handle(request("{\"name\":\"alice\"}"), new Response(200, ContentType.JSON));
 
@@ -52,21 +56,19 @@ class JsonHandlerTest {
 
     @Test
     void aGenericBodyIsParsedAsWhatItSays() throws Exception {
-        Rename handler = new Rename();
-        handler.bind(context());
+        Rename handler = app.services().create(Rename.class);
 
         Object answer = handler.handle(request("[{\"name\":\"alice\"},{\"name\":\"bob\"}]"),
                 new Response(200, ContentType.JSON));
 
-        assertEquals("2", answer, "two users, counted after Jackson built the list");
+        assertEquals("2", new String((byte[]) answer, StandardCharsets.UTF_8), "two users, counted after Jackson built the list");
     }
 
     @Test
     void aMalformedBodyIsTheUsualBadRequest() throws Exception {
-        Create handler = new Create();
-        handler.bind(context());
+        Create handler = app.services().create(Create.class);
 
-        dev.relism.flash.exceptions.HttpException refused = assertThrows(dev.relism.flash.exceptions.HttpException.class,
+        dev.relism.flash.http.HttpException refused = assertThrows(dev.relism.flash.http.HttpException.class,
                 () -> handler.handle(request("not json"), new Response(200, ContentType.JSON)));
 
         assertEquals(400, refused.status());
@@ -74,19 +76,11 @@ class JsonHandlerTest {
 
     @Test
     void aHandlerThatNeverNamedItsTypesIsRefusedAtBoot() {
-        FlashContext ctx = context();
-
-        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> new Untyped().bind(ctx));
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> app.services().create(Untyped.class));
 
         assertTrue(refused.getMessage().contains("YourRequest, YourAnswer"), refused.getMessage());
     }
 
-    private static FlashContext context() {
-        FlashContext ctx = new FlashContext();
-        ctx.provide(Json.class, new Json(new ObjectMapper()));
-        ctx.complete();
-        return ctx;
-    }
 
     private static Request request(String body) {
         return new Request(new RequestLine(HttpMethod.POST,

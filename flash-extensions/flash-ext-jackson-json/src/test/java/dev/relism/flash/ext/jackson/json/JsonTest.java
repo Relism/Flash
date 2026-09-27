@@ -1,14 +1,14 @@
 package dev.relism.flash.ext.jackson.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.exceptions.HttpException;
+import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
-import dev.relism.flash.models.Http1HeaderMap;
-import dev.relism.flash.models.Request;
-import dev.relism.flash.models.RequestLine;
-import dev.relism.flash.models.Response;
-import dev.relism.flash.routing.routers.fastpathrouter.FastPathViews;
+import dev.relism.flash.http.Http1HeaderMap;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestLine;
+import dev.relism.flash.http.Response;
+import dev.relism.flash.bytes.FastPathViews;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -49,10 +49,10 @@ class JsonTest {
         Json json = new Json(new ObjectMapper());
         Response res = new Response(200, ContentType.TEXT_PLAIN);
 
-        Object payload = json.write(res, new UserDto("u3", "carol"));
+        byte[] payload = json.write(res, new UserDto("u3", "carol"));
 
         assertEquals("application/json", new String(res.getContentType(), StandardCharsets.UTF_8));
-        assertEquals("{\"id\":\"u3\",\"name\":\"carol\"}", payload);
+        assertEquals("{\"id\":\"u3\",\"name\":\"carol\"}", new String(payload, StandardCharsets.UTF_8));
     }
 
     @Test

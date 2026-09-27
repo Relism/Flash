@@ -1,8 +1,9 @@
 package dev.relism.flash.bytes;
 
 /**
+ * A reusable view over a slice of an array, replacing the
  * per-call {@code new ByteView() { ... }} anonymous-class allocation that used to live in
- * {@code Http1HeaderMap.view}, {@code QueryParams.view}, and {@code PathParams.view}: instead of
+ * {@code Http1HeaderMap.view}: instead of
  * allocating a fresh view object (plus its capturing instance) on every call, a small
  * {@link SlicePool} of these hands out an existing instance, repositioned in place.
  *

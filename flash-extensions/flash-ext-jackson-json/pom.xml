@@ -12,7 +12,7 @@
 
     <artifactId>flash-ext-jackson-json</artifactId>
     <name>flash-ext-jackson-json</name>
-    <description>JSON bodies and responses: the Json codec, JsonHandler and the marshalling middleware.</description>
+    <description>JSON bodies and responses: the Json codec and JsonHandler.</description>
 
     <dependencies>
         <dependency>
@@ -25,15 +25,15 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>dev.relism</groupId>
-            <artifactId>flash-testing</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- The constraints a body declares are described by the published document too. -->
+        <!-- The names a field has on the wire are what the published document says. -->
         <dependency>
             <groupId>dev.relism</groupId>
             <artifactId>flash-ext-openapi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-testing</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

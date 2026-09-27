@@ -1,8 +1,9 @@
 package dev.relism.flash;
 
-import dev.relism.flash.exceptions.MalformedRequestException;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.http.MalformedRequestException;
 import dev.relism.flash.http.Http1Limits;
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.transport.BufferedByteSource;
 import org.junit.jupiter.api.Test;
 
@@ -104,7 +105,7 @@ class RequestParserSecurityTest {
 
     @Test
     void contentLength_aboveConfiguredMax_rejected413() {
-        long tooLarge = Http1Limits.MAX_CONTENT_LENGTH + 1;
+        long tooLarge = ServerConfig.builder().build().getMaxBodySize() + 1;
         assertEquals(413, expect("POST / HTTP/1.1\nHost: h\nContent-Length: " + tooLarge + "\n\n").status());
     }
 

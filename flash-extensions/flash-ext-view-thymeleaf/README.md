@@ -1,79 +1,54 @@
 # flash-ext-view-thymeleaf
 
-Opinionated Thymeleaf SSR extension for Flash.
-
-This module keeps Thymeleaf semantics front and center:
-
-- `ThymeleafExtension`
-- `ThymeleafHandler`
-- `@Template` and `@Fragment`
-- `ViewModel` from `flash-ext-view-core`
-- `global.*` reserved namespace
-
-The extension uses Thymeleaf-native patterns (`template` names resolved by prefix/suffix,
-fragment selection via `template :: fragment`) while keeping Flash boot-time fail-fast checks.
-
-## Quick Start
+Thymeleaf templates for Flash, read from the classpath.
 
 ```java
-import thymeleaf.view.ext.dev.relism.flash.ThymeleafExtension;
-
-FlashApp.create(8080)
-    .
-
-install(new ThymeleafExtension()
-        .
-
-addGlobal("appName",req ->"Flash")
-        .
-
-addGlobal("requestPath",req ->req.
-
-path()))
-        .
-
-scan("com.example.web")
-    .
-
-startAndBlock();
+App.create()
+    .install(new ThymeleafModule().global("appName", req -> "Flash").global("path", Request::path))
+    .scan("com.example.web");
 ```
 
 ```java
-import thymeleaf.view.ext.dev.relism.flash.Template;
-import thymeleaf.view.ext.dev.relism.flash.ThymeleafHandler;
-import core.view.ext.dev.relism.flash.ViewModel;
-import models.dev.relism.flash.Request;
-import routing.dev.relism.flash.GET;
-
 @GET("/")
 @Template("pages/home")
-public final class HomePage extends ThymeleafHandler {
-    @Override
-    public ViewModel render(Request req) {
+public final class HomePage extends ViewHandler {
+    @Override public ViewModel render(Request req, Response res) {
         return ViewModel.of("title", "Home");
     }
 }
-```
-
-## Fragment Example
-
-```java
-import models.dev.relism.flash.Request;
 
 @GET("/users/rows")
 @Fragment(template = "fragments/users", value = "rows")
-public final class UserRows extends ThymeleafHandler {
-    @Override
-    public ViewModel render(Request req) {
-        return ViewModel.of("users", List.of());
+public final class UserRows extends ViewHandler {
+    private final Users users;
+
+    public UserRows(Users users) { this.users = users; }
+
+    @Override public ViewModel render(Request req, Response res) {
+        return ViewModel.of("users", users.all());
     }
 }
 ```
 
-## Docs
+A handler names either a `@Template` or a `@Fragment`, never both. A `@Fragment` without a
+value renders the module's default fragment, `content`. Both annotations are inherited.
 
-- `docs/architecture.md`
-- `docs/handlers.md`
-- `docs/model-and-globals.md`
-- `docs/fragments.md`
-- `docs/performance.md`
+## Globals
+
+Globals are under `global`: `<span th:text="${global.appName}">`. A handler's model cannot use
+that key. Every global is computed on every render, so keep them cheap.
+
+## Links
+
+`@{/users/{id}(id=${id},page=${page})}` fills path variables and writes the other parameters as
+the query, both URL-encoded: `/users/42?page=2`.
+
+## Settings
+
+| Method | Default |
+|---|---|
+| `prefix(String)` | `/templates/` |
+| `suffix(String)` | `.html` |
+| `mode(TemplateMode)` | `HTML` |
+| `cache(boolean)` | outside dev (`ServerConfig.dev`) |
+| `defaultFragment(String)` | `content` |

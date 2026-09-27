@@ -4,8 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.extension.FlashApp;
-import dev.relism.flash.extension.FlashConfiguration;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http2.frame.FrameFlags;
 import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.hpack.HpackDecoder;
@@ -19,25 +20,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class H2cPriorKnowledgeTest {
-  private FlashApp app;
+  private App app;
+  private Server server;
 
   @AfterEach
   void stop() {
-    if (app != null) app.stop().join();
+    if (server != null) server.stop().join();
   }
 
   @Test
   void priorKnowledgeRequiresItsIndependentOptIn() throws Exception {
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config1 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2Enabled(true)
-                .build());
-    int disabledPort = app.port();
+                .build();
+    app = App.create();
     app.get("/", (request, response) -> "wrong protocol");
-    app.start();
+    server = Server.start(app, config1);
+    int disabledPort = server.port();
 
     try (Socket socket = new Socket("127.0.0.1", disabledPort)) {
       socket.setSoTimeout(2_000);
@@ -45,18 +46,17 @@ class H2cPriorKnowledgeTest {
       byte[] prefix = socket.getInputStream().readNBytes(5);
       assertArrayEquals("HTTP/".getBytes(StandardCharsets.US_ASCII), prefix);
     }
-    app.stop().join();
+    server.stop().join();
 
-    app =
-        FlashApp.create(
-            FlashConfiguration.builder()
+    ServerConfig config2 = ServerConfig.builder()
                 .host("127.0.0.1")
                 .port(0)
                 .http2CleartextEnabled(true)
-                .build());
-    int enabledPort = app.port();
+                .build();
+    app = App.create();
     app.get("/", (request, response) -> "h2c");
-    app.start();
+    server = Server.start(app, config2);
+    int enabledPort = server.port();
 
     try (Socket socket = new Socket("127.0.0.1", enabledPort)) {
       socket.setSoTimeout(5_000);

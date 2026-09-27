@@ -21,7 +21,7 @@ does not read its body, the normal post-handler drain performs the same bounded 
 
 The connection window and pool both cover exactly 1 MiB, so the peer can never hold more credit
 than the server can store before backpressure takes effect. Per-stream accepted body bytes remain
-bounded by `MAX_REQUEST_BODY_SIZE`. Declared content length is parsed without a String and checked
+bounded by `ServerConfig.maxBodySize`. Declared content length is parsed without a String and checked
 against the unpadded DATA total at END_STREAM.
 
 ## Responses

@@ -8,7 +8,7 @@ import dev.relism.flash.ext.mcp.ToolResponse;
 
 /** No role/scope annotation — any authenticated caller, confirms unrelated tools are unaffected. */
 @Tool(name = "open", description = "Callable by anyone already authenticated")
-public class OpenTool extends McpTool {
+public class OpenTool implements McpTool {
 
     @Override
     public ToolResponse call(ToolArguments args) {

@@ -2,7 +2,6 @@ package dev.relism.flash.ext.openapi;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.relism.flash.exceptions.InitializationException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -15,7 +14,7 @@ import java.util.Map;
  * escape hatch for an option this class does not name — lives here.
  *
  * <pre>{@code
- * new OpenApiExtension("/openapi", "My API", "1.0.0")
+ * new OpenApiModule("/openapi", "My API", "1.0.0")
  *     .ui(Ui.scalar().theme(Ui.Scalar.Theme.PURPLE).layout(Ui.Scalar.Layout.CLASSIC).darkMode(true));
  * }</pre>
  *
@@ -86,7 +85,7 @@ public abstract class Ui<S extends Ui<S>> {
         try {
             return json.writeValueAsString(config);
         } catch (JsonProcessingException e) {
-            throw new InitializationException("Cannot write the " + getClass().getSimpleName() + " options as JSON", e);
+            throw new IllegalStateException("Cannot write the " + getClass().getSimpleName() + " options as JSON", e);
         }
     }
 

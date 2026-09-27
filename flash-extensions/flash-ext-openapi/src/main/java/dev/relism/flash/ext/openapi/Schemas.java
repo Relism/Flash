@@ -1,9 +1,5 @@
 package dev.relism.flash.ext.openapi;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonProperty.Access;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
@@ -30,13 +26,14 @@ import java.util.UUID;
  *
  * <p>A type is described once and referenced by {@code $ref} everywhere it appears, so a document
  * over a hundred routes carries one copy of each model. What a field means comes from the type
- * itself: Jackson's annotations decide what is exposed, a validation engine's rules become the
- * schema's own bounds through a contributor, and {@link Schema}/{@link SchemaProperty} say the rest.
+ * itself: the format module that writes it says what each field is called and whether it is
+ * exposed, a validation engine's rules become the schema's own bounds, both through contributors,
+ * and {@link Schema}/{@link SchemaProperty} say the rest.
  */
 final class Schemas {
 
-    /** Whoever knows what a rule means, set when the document is assembled. */
-    private OpenApiContributorRegistry contributors;
+    /** Whoever knows a field's wire name or what a rule means, set when the document is assembled. */
+    private List<OpenApiContributor> contributors = List.of();
 
     private static final Set<Class<?>> SIMPLE = Set.of(
             String.class, CharSequence.class,
@@ -110,10 +107,6 @@ final class Schemas {
 
     private Map<String, Object> buildPojoSchema(Class<?> cls) {
         Schema typeSchema = cls.getAnnotation(Schema.class);
-        JsonIgnoreProperties ignoredType = cls.getAnnotation(JsonIgnoreProperties.class);
-        Set<String> ignored = ignoredType == null
-                ? Set.of()
-                : new HashSet<>(Arrays.asList(ignoredType.value()));
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "object");
@@ -125,12 +118,9 @@ final class Schemas {
         for (Field f : cls.getDeclaredFields()) {
             int mod = f.getModifiers();
             if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) continue;
-            if (f.isAnnotationPresent(JsonIgnore.class)) continue;
-            if (ignored.contains(f.getName())) continue;
+            if (ignored(f)) continue;
 
-            String name = f.getName();
-            JsonProperty jp = f.getAnnotation(JsonProperty.class);
-            if (jp != null && !jp.value().isEmpty()) name = jp.value();
+            String name = wireName(f);
 
             Schema ps = f.getAnnotation(Schema.class);
             SchemaProperty sp = f.getAnnotation(SchemaProperty.class);
@@ -143,18 +133,13 @@ final class Schemas {
             if (ps != null) applySchemaHints(property, ps);
             if (sp != null) applySchemaHints(property, sp);
             if (array != null) applyArrayHints(property, array);
-            if (jp != null) {
-                if (jp.access() == Access.READ_ONLY) property.put("readOnly", true);
-                if (jp.access() == Access.WRITE_ONLY) property.put("writeOnly", true);
-            }
-
-            // The rules a body is checked against also describe it, so whoever enforces them says
-            // what they mean here rather than making callers restate every one as @Schema.
+            // Whoever writes the field or checks it says what that means here — the format its
+            // access, the validation engine its rules — rather than callers restating it as @Schema.
             boolean constrainedRequired = contributed(f, property);
 
             properties.put(name, property);
             if (constrainedRequired
-                    || (ps != null && ps.required()) || (sp != null && sp.required()) || (jp != null && jp.required()))
+                    || (ps != null && ps.required()) || (sp != null && sp.required()))
                 required.add(name);
         }
 
@@ -163,15 +148,28 @@ final class Schemas {
         return out;
     }
 
-    void setContributorRegistry(OpenApiContributorRegistry registry) {
-        this.contributors = registry;
+    void contributors(List<OpenApiContributor> contributors) {
+        this.contributors = contributors;
+    }
+
+    private boolean ignored(Field field) {
+        for (OpenApiContributor contributor : contributors) if (contributor.ignored(field)) return true;
+        return false;
+    }
+
+    /** The first name a contributor gives the field, or its own. */
+    private String wireName(Field field) {
+        for (OpenApiContributor contributor : contributors) {
+            String name = contributor.name(field);
+            if (name != null) return name;
+        }
+        return field.getName();
     }
 
     /** True when a contributor says the property is required. */
     private boolean contributed(Field field, Map<String, Object> property) {
-        if (contributors == null) return false;
         boolean required = false;
-        for (OpenApiContributor contributor : contributors.contributors()) {
+        for (OpenApiContributor contributor : contributors) {
             required |= contributor.property(field, property);
         }
         return required;

@@ -2,20 +2,19 @@
 
 A Vite frontend for a Flash app, in two artifacts:
 
-- **`flash-ext-vite`**, the extension. In DEV it runs Vite's dev server beside the app. Anywhere
+- **`flash-ext-vite`**, the module. In dev it runs Vite's dev server beside the app. Anywhere
   else it serves the built frontend from the classpath as a single-page app.
 - **`flash-ext-vite-maven-plugin`**, the build. It builds the frontend during `mvn package` and puts
-  the result where the extension reads it, so the jar runs on its own.
+  the result where the module reads it, so the jar runs on its own.
 
 ## Quick start
 
 A Vite project in `web/` with the template's `dev` and `build` scripts, and:
 
 ```java
-FlashApp.create(8080)
-        .install(new ViteExtension())
-        .get("/api/hello", (req, res) -> "hi")
-        .start();
+Server.start(App.create()
+        .install(new ViteModule())
+        .get("/api/hello", (req, res) -> "hi"), ServerConfig.builder().port(8080).build());
 ```
 
 ```xml
@@ -43,17 +42,17 @@ in agreement.
 |---|---|
 | Project | a Vite project whose `package.json` has a `dev` and a `build` script |
 | Build output | `dist/` inside the project (Vite's `build.outDir` default) |
-| Inside the jar | `flash-vite/` (`ViteExtension.CLASSPATH`) |
+| Inside the jar | `flash-vite/` (`ViteModule.CLASSPATH`) |
 | Content-hashed files | everything under `assets/` (Vite's `build.assetsDir` default) |
 | Package manager | the one whose lockfile is nearest at or above the project: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `package-lock.json`. With none, npm. A project inside a workspace therefore uses the workspace's lockfile. |
 | Node | on the `PATH`, with the package manager. Nothing is downloaded. |
 
 ## What you can override
 
-| Extension | Default | |
+| Module | Default | |
 |---|---|---|
-| `root(Path)` | `web` | The Vite project, relative to the working directory. DEV only. |
-| `devPort(int)` | `5173` | Vite's port in DEV. |
+| `root(Path)` | `web` | The Vite project, relative to the working directory. Dev only. |
+| `devPort(int)` | `5173` | Vite's port in dev. |
 | `basePath(String)` | `/` | Where the frontend is served. Vite's `base` must match it. |
 | `navigationOnly(boolean)` | `true` | Only browser navigations fall back to `index.html` (see below). `false` gives every `GET` that matches no file the page, as nginx's `try_files` does, which also turns API 404s into the page. Rarely wanted. |
 
@@ -65,21 +64,22 @@ in agreement.
 There is nothing else to set. If a convention above does not fit, that is a change to this module,
 not a configuration option.
 
-## DEV
+## Dev
 
-`Flash.DEV` (`FLASH_ENV=dev` or `-Dflash.env=dev`) decides the mode:
+`ServerConfig.dev` (by default `FLASH_ENV=dev` or `-Dflash.env=dev`) decides the mode, when the
+server starts:
 
 1. The dependencies are installed with the lockfile pinned (`pnpm install --frozen-lockfile`,
    `npm ci`, and so on). This is skipped when `node_modules` was already installed from that same
    lockfile: its hash is kept in `node_modules/.flash-vite`, so deleting `node_modules` resets it.
-2. The extension runs `<pm> run dev --host 127.0.0.1 --port <devPort> --strictPort` and waits up to
+2. The module runs `<pm> run dev --host 127.0.0.1 --port <devPort> --strictPort` and waits up to
    30 s for the port to answer. A port already in use, a script that exits, or a timeout fails the
    boot with the reason. Vite's output is logged at INFO, prefixed `[vite]`.
 3. While the app runs, a change to the lockfile (`pnpm add …`) reinstalls and restarts Vite. Vite
    handles changes to its own config itself.
-4. When the app stops (`ctx.onClose`), Vite and its whole process tree stop with it.
+4. When the app stops, Vite and its whole process tree stop with it.
 
-The extension registers no routes in DEV. The browser opens Vite's port, and Vite forwards the
+In dev, `basePath/**` answers 404: the browser opens Vite's port, and Vite forwards the
 backend's paths to Flash, so `vite.config` needs a `server.proxy` for them:
 
 ```ts
@@ -90,11 +90,11 @@ server: {
 
 ## Production
 
-Anywhere `Flash.DEV` is false, the build is read once at boot from `flash-vite/` on the classpath,
+Outside dev, the build is read once at boot from `flash-vite/` on the classpath,
 whether that is a directory (`target/classes`) or a jar. A missing build fails the boot and names
 the plugin. Compression already happened in the build, so boot only reads files and hashes the few
 that revalidate: about 50 ms for a 500-file app. Everything a response carries is prepared at
-boot, headers included, so serving allocates nothing.
+boot, headers included, so serving allocates nothing: core's `StaticFiles` does the serving.
 
 `GET` and `HEAD` on `basePath/**` answer as follows. Backend routes still win, because Flash
 prefers specific routes over the wildcard.

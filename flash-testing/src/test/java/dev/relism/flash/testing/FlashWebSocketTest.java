@@ -1,5 +1,6 @@
 package dev.relism.flash.testing;
 
+import dev.relism.flash.App;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
@@ -17,8 +18,8 @@ class FlashWebSocketTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(configured -> {
-        configured.ws("/echo", new WebSocketHandler() {
+    static FlashTest app = FlashTest.of(() -> App.create()
+        .ws("/echo", new WebSocketHandler() {
             @Override public void onOpen(WebSocketSession session) { }
             @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {
                 if (frame.opcode() != WebSocketFrame.OP_TEXT) return;
@@ -30,12 +31,11 @@ class FlashWebSocketTest {
                     throw new IllegalStateException(failure);
                 }
             }
-        });
-        configured.ws("/silent", new WebSocketHandler() {
+        })
+        .ws("/silent", new WebSocketHandler() {
             @Override public void onOpen(WebSocketSession session) { }
             @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) { }
-        });
-    });
+        }));
 
     @Test
     void roundTripsTextThroughARealHandshake() {

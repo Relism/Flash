@@ -1,6 +1,6 @@
 package dev.relism.flash.websocket;
 
-import dev.relism.flash.models.Request;
+import dev.relism.flash.http.Request;
 
 import javax.net.ssl.SSLSession;
 

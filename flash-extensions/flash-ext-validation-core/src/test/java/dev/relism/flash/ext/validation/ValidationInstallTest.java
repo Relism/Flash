@@ -1,9 +1,11 @@
 package dev.relism.flash.ext.validation;
 
-import dev.relism.flash.extension.FlashContext;
+import dev.relism.flash.App;
+import dev.relism.flash.testing.FlashTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,25 +19,21 @@ class ValidationInstallTest {
         @Override public void verify(Object value) {}
     }
 
+    @RegisterExtension
+    static FlashTest one = FlashTest.of(() -> App.create().add(Validation.class, new First()));
+
+    @RegisterExtension
+    static FlashTest two = FlashTest.of(() -> App.create().add(Validation.class, new First()).add(Validation.class, new Second()));
+
     @Test
-    void oneEngineInstallsAndIsTheOneThatAnswers() {
-        FlashContext ctx = new FlashContext();
-        First engine = new First();
-
-        assertDoesNotThrow(() -> Validation.install(ctx, engine));
-        ctx.complete();
-
-        assertTrue(ctx.require(Validation.class) == engine);
+    void oneEngineIsTheOneThatAnswers() {
+        assertInstanceOf(First.class, one.services().get(Validation.class));
     }
 
     @Test
-    void aSecondEngineFailsTheBootAndSaysWhichOne() {
-        FlashContext ctx = new FlashContext();
-        Validation.install(ctx, new First());
+    void aSecondEngineFailsTheLookupNamingBoth() {
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> two.services().get(Validation.class));
 
-        IllegalStateException refused = assertThrows(IllegalStateException.class,
-                () -> Validation.install(ctx, new Second()));
-
-        assertTrue(refused.getMessage().contains("Second"), refused.getMessage());
+        assertTrue(refused.getMessage().contains("First") && refused.getMessage().contains("Second"), refused.getMessage());
     }
 }

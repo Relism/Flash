@@ -4,10 +4,9 @@ OpenID Connect for [`flash-ext-security-core`](../../flash-ext-security-core/doc
 access tokens, and browser sign-in through the authorization code flow with PKCE.
 
 ```java
-app.install(new SecurityExtension())
-   .install(new OidcExtension(
-           OidcProvider.of("sso", "https://id.example.com/realms/acme", "app", secret).name("Acme SSO"),
-           OidcProvider.of("partner", "https://login.partner.example/", "app", partnerSecret)));
+app.install(new SecurityModule(), new OidcModule(
+        OidcProvider.of("sso", "https://id.example.com/realms/acme", "app", secret).name("Acme SSO"),
+        OidcProvider.of("partner", "https://login.partner.example/", "app", partnerSecret)));
 ```
 
 Discovery runs at boot, so an unreachable provider fails the start rather than the first sign-in.
@@ -35,7 +34,7 @@ so sign-in needs no server-side state and works across instances. The session's 
 with the refresh token when its access token expires; `POST /auth/logout` ends it and continues to the
 provider's `end_session_endpoint`. The client authenticates with `client_secret_basic`. Register
 `{origin}/auth/oidc/{id}/callback` as a redirect URI and `{origin}/` as a post-logout redirect URI,
-where `{origin}` is `SecurityExtension.origin(...)`.
+where `{origin}` is `SecurityModule.origin(...)`.
 
 Each provider is listed at `/auth/methods` (`"kind":"redirect"`) and published to OpenAPI as an
 `openIdConnect` scheme.
@@ -43,7 +42,8 @@ Each provider is listed at `/auth/methods` (`"kind":"redirect"`) and published t
 ## Providers added at runtime
 
 ```java
-OidcExtension oidc = new OidcExtension(central);
+OidcModule module = new OidcModule(central);
+Oidc oidc = module.oidc();             // the same instance the app runs, available before start
 oidc.register(OidcProvider.of("acme", "https://login.acme.example/", clientId, secret));   // an organization's own IdP
 oidc.unregister("acme");
 ```
@@ -65,7 +65,7 @@ reads `aud`.
 Roles are the application's decision. To take them from the token instead:
 
 ```java
-new SecurityExtension().roles(ClaimRoles.at("realm_access.roles"))   // Keycloak; "groups" for most others
+new SecurityModule().roles(ClaimRoles.at("realm_access.roles"))   // Keycloak; "groups" for most others
 ```
 
 ## Testing

@@ -1,8 +1,10 @@
 package dev.relism.flash.ext.data.jdbc;
 
 import com.zaxxer.hikari.HikariDataSource;
-import dev.relism.flash.ext.data.DataExtension;
-import dev.relism.flash.extension.FlashApp;
+import dev.relism.flash.App;
+import dev.relism.flash.Server;
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.ext.data.DataModule;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,7 +16,7 @@ class JdbcTxManagerCloseTest {
     void stoppingTheAppClosesThePool() {
         HikariDataSource pool = new HikariDataSource();
         pool.setJdbcUrl(TestDataSource.URL);
-        FlashApp.create(0).install(new DataExtension(new JdbcTxManager(pool))).start().stop().join();
+        Server.start(App.create().install(new DataModule(new JdbcTxManager(pool))), ServerConfig.builder().port(0).build()).stop().join();
         assertTrue(pool.isClosed());
     }
 }

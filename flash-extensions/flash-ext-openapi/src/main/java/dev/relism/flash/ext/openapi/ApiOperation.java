@@ -6,8 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Declares OpenAPI operation metadata for a class-based handler.
- * Picked up by {@link OpenApiExtension} via {@link FlashApp#register}.
+ * OpenAPI operation metadata for a handler class, read by {@link OpenApiModule}.
  *
  * <pre>{@code
  * @GET("/api/blogs")
