@@ -8,3 +8,4 @@ internals (frames, HPACK, stream state) live in [`../http2/`](../http2/README.md
 - [Message model](MESSAGE-MODEL.md) — shared request/response objects and their lifetime contract.
 - [Trailers and streaming](TRAILERS-AND-STREAMING.md) — the public cross-protocol APIs.
 - [Byte primitives](BYTES.md) — reusable views, scanning and bounded slice lifetimes.
+- [Exchange interceptors](EXCHANGE-INTERCEPTORS.md) — infrastructure around completed application exchanges.
