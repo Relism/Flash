@@ -19,6 +19,12 @@ import java.lang.reflect.Type;
  */
 public interface Codec {
 
+    /** A request reader resolved once when its handler is bound. */
+    @FunctionalInterface
+    interface Reader {
+        Object read(Request request) throws Exception;
+    }
+
     /**
      * Reads the request body as {@code type}, which may be generic, and verifies what it read: a
      * body that cannot be parsed is a 400, one that breaks a rule a 422.
@@ -31,6 +37,16 @@ public interface Codec {
     /** The same, for a plain class, where the compiler can check what comes back. */
     default <T> T read(Request request, Class<T> type) throws Exception {
         return read(request, (Type) type);
+    }
+
+    /**
+     * Resolves everything this codec needs for {@code type} at boot. The default preserves the
+     * ordinary codec contract; generated formats may capture their parser here and leave no type
+     * lookup on the request path.
+     */
+    default Reader reader(Type type) {
+        prepare(type);
+        return request -> read(request, type);
     }
 
     /** Writes {@code value} and sets this codec's content type on the response. */

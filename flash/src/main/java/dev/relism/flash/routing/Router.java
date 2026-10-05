@@ -1,7 +1,6 @@
 package dev.relism.flash.routing;
 
 import dev.relism.flash.http.Handler;
-import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.PathParams;
 import dev.relism.flash.http.Request;
@@ -13,7 +12,6 @@ import dev.relism.fpr.core.FastPathRouter;
 import dev.relism.fpr.core.MatchResult;
 import dev.relism.fpr.core.RouterBuilder;
 import dev.relism.fpr.core.dsl.StringRouteParser;
-import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -28,12 +26,9 @@ import java.util.EnumSet;
  * middleware runs before the handshake like any other route's. Built by the app when the server
  * starts; nothing is added afterwards.
  */
-@Slf4j
 public final class Router {
 
     private static final byte[] WS = "WS".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] BROKEN = "{\"error\":\"Internal Server Error\",\"status\":500}".getBytes(StandardCharsets.US_ASCII);
-
     private final RouterBuilder<Handler> builder = new RouterBuilder<>();
     private final EnumSet<HttpMethod> methods = EnumSet.noneOf(HttpMethod.class);
     private FastPathRouter<ByteView, Handler> fsm;
@@ -83,13 +78,7 @@ public final class Router {
         try {
             result = handler.handle(request, response);
         } catch (Exception failure) {
-            try {
-                result = errors.handle(failure, request, response);
-            } catch (Exception broken) {
-                log.error("The error handler failed on {} {}", method, request.path(), broken);
-                response.status(500).type(ContentType.JSON);
-                result = BROKEN;
-            }
+            result = Errors.recover(errors, failure, request, response);
         }
         if (result instanceof Response || result instanceof Upgrade) return result;
         return result == null ? response : response.setBody(result);

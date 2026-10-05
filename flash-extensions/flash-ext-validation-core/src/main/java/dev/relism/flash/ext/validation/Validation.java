@@ -1,7 +1,10 @@
 package dev.relism.flash.ext.validation;
 
 import dev.relism.flash.Module;
+import dev.relism.flash.Services;
 import dev.relism.flash.ext.openapi.OpenApiContributor;
+
+import java.util.Optional;
 
 /**
  * Verifies that a value satisfies the rules its own type declares.
@@ -32,6 +35,22 @@ public interface Validation {
      * knows any of them. An engine that declares nothing still enforces; it just says nothing.
      */
     default void describe(Constraints constraints) {}
+
+    /**
+     * The engine of a codec family, empty when none is installed. A family is a sub-interface of
+     * {@code Validation} that its codec's module defines, for values the generic engines cannot
+     * check; the codec asks for it here when it binds.
+     *
+     * @throws IllegalStateException when an engine of the family was added as plain
+     *         {@code Validation}, where its codec would never ask it, or when two were added
+     */
+    static <F extends Validation> Optional<F> family(Services services, Class<F> family) {
+        for (Validation engine : services.all(Validation.class)) {
+            if (family.isInstance(engine)) throw new IllegalStateException(engine.getClass().getName() + " is a "
+                    + family.getSimpleName() + ": add it as " + family.getSimpleName() + ", not as Validation");
+        }
+        return services.find(family);
+    }
 
     /**
      * What an engine's module installs beside it: the engine's rules in the published document,

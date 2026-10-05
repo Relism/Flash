@@ -211,4 +211,53 @@ class WebSocketFragmentationAndValidationTest {
         // 200-byte payload: 4 total, independent of the payload size.
         assertTrue(counting.reads <= 4, "expected at most 4 underlying reads, was " + counting.reads);
     }
+
+    /** RFC 6455 §5.2: no extension is negotiated here, so a reserved bit carries no meaning at all. */
+    @Test
+    void reservedBitSet_rejected1002() throws IOException {
+        byte[] raw = frame(WebSocketFrame.OP_TEXT, true, true, "hi".getBytes(StandardCharsets.UTF_8));
+        raw[0] |= 0x40; // RSV2
+        WebSocketSession session = serverSession(raw, 64);
+        WebSocketProtocolException e = assertThrows(WebSocketProtocolException.class,
+                () -> session.readFrame(new WebSocketFrame()));
+        assertEquals(1002, e.closeCode());
+    }
+
+    /** A message is in progress by its opcode, not by how much of it has arrived: empty fragments carry nothing. */
+    @Test
+    void fragmentsOfLengthZero_reassembleIntoAnEmptyMessage() throws IOException {
+        byte[] raw = concat(
+                frame(WebSocketFrame.OP_TEXT, false, true, new byte[0]),
+                frame(WebSocketFrame.OP_CONTINUATION, false, true, new byte[0]),
+                frame(WebSocketFrame.OP_CONTINUATION, true, true, new byte[0]));
+        WebSocketSession session = serverSession(raw, 64);
+        WebSocketFrame frame = new WebSocketFrame();
+
+        assertTrue(session.readFrame(frame));
+        assertEquals(WebSocketFrame.OP_TEXT, frame.opcode());
+        assertEquals(0, frame.payloadLength());
+    }
+
+    /** RFC 6455 §8.1: U+110000 is past the last code point, so these four bytes are not UTF-8. */
+    @Test
+    void textPayloadThatIsNotUtf8_rejected1007() throws IOException {
+        byte[] raw = frame(WebSocketFrame.OP_TEXT, true, true,
+                new byte[] {(byte) 0xF4, (byte) 0x90, (byte) 0x80, (byte) 0x80});
+        WebSocketSession session = serverSession(raw, 64);
+        WebSocketProtocolException e = assertThrows(WebSocketProtocolException.class,
+                () -> session.readFrame(new WebSocketFrame()));
+        assertEquals(1007, e.closeCode());
+    }
+
+    /** Half a sequence is not an error while more fragments may follow; it is one once none can. */
+    @Test
+    void textMessageEndingMidSequence_rejected1007() throws IOException {
+        byte[] raw = concat(
+                frame(WebSocketFrame.OP_TEXT, false, true, new byte[] {(byte) 0xCE}),
+                frame(WebSocketFrame.OP_CONTINUATION, true, true, new byte[0]));
+        WebSocketSession session = serverSession(raw, 64);
+        WebSocketProtocolException e = assertThrows(WebSocketProtocolException.class,
+                () -> session.readFrame(new WebSocketFrame()));
+        assertEquals(1007, e.closeCode());
+    }
 }

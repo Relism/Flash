@@ -61,6 +61,12 @@ final class Schemas {
     }
 
     private Map<String, Object> schemaFor(Type type) {
+        for (OpenApiContributor contributor : contributors) contributor.used(type);
+        for (OpenApiContributor contributor : contributors) {
+            Map<String, Object> schema = contributor.schema(type);
+            if (schema != null) return schema;
+        }
+
         if (type instanceof ParameterizedType p) {
             Class<?> raw = rawType(p);
             if (raw != null && Collection.class.isAssignableFrom(raw)) {

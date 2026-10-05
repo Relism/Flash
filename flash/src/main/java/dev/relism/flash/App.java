@@ -5,6 +5,7 @@ import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.routing.ErrorHandler;
 import dev.relism.flash.routing.Errors;
+import dev.relism.flash.routing.ExchangeInterceptor;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.MiddlewareGraph;
 import dev.relism.flash.routing.MiddlewareKey;
@@ -191,6 +192,8 @@ public final class App {
         services.add(ServerConfig.class, config);
         services.start();
         List<RouteHook> hooks = services.all(RouteHook.class);
+        List<ExchangeInterceptor> interceptors = services.all(ExchangeInterceptor.class);
+        ErrorHandler errors = shared.errors != null ? shared.errors : Errors.handler(dev);
         Router router = new Router();
 
         for (Declared route : shared.routes) {
@@ -213,9 +216,11 @@ public final class App {
             String label = (route.method == null ? "WS" : route.method.name()) + ' ' + route.path;
             Middleware[] chain = MiddlewareGraph.order(label, nodes);
 
-            router.add(route.method, route.path, MiddlewareGraph.compose(handler, chain));
             Route compiled = new Route(route.method == null ? HttpMethod.GET : route.method, route.path,
                     route.method == null, type, classesOf(chain));
+            handler = MiddlewareGraph.compose(handler, chain);
+            if (!interceptors.isEmpty()) handler = intercept(compiled, Errors.boundary(handler, errors), interceptors);
+            router.add(route.method, route.path, handler);
             for (RouteHook hook : hooks) hook.routed(compiled);
         }
 
@@ -227,8 +232,9 @@ public final class App {
         };
         List<MiddlewareNode> nodes = new ArrayList<>();
         collect(nodes);
-        router.compile(MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes)),
-                shared.errors != null ? shared.errors : Errors.handler(dev));
+        Handler fallback = MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes));
+        if (!interceptors.isEmpty()) fallback = interceptFallback(Errors.boundary(fallback, errors), interceptors);
+        router.compile(fallback, errors);
         return router;
     }
 
@@ -252,6 +258,16 @@ public final class App {
 
     private static MiddlewareNode inline(int position, Middleware middleware) {
         return MiddlewareNode.of(MiddlewareKey.of("flash.inline." + position), middleware);
+    }
+
+    private static Handler intercept(Route route, Handler exchange, List<ExchangeInterceptor> interceptors) {
+        for (int i = interceptors.size() - 1; i >= 0; i--) exchange = interceptors.get(i).wrap(route, exchange);
+        return exchange;
+    }
+
+    private static Handler interceptFallback(Handler exchange, List<ExchangeInterceptor> interceptors) {
+        for (int i = interceptors.size() - 1; i >= 0; i--) exchange = interceptors.get(i).wrapFallback(exchange);
+        return exchange;
     }
 
     @SuppressWarnings("unchecked")

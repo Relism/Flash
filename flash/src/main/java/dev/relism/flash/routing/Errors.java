@@ -4,6 +4,7 @@ import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.PreEncodedHeader;
+import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.template.ErrorPages;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,31 @@ public final class Errors {
                     response.status(404).type(ContentType.JSON);
                     return NOT_FOUND;
                 };
+    }
+
+    /**
+     * Places the application's error handler inside infrastructure that must observe its final
+     * response. The router keeps the same recovery as a last resort for failures outside this
+     * boundary.
+     */
+    public static Handler boundary(Handler next, ErrorHandler errors) {
+        return (request, response) -> {
+            try {
+                return next.handle(request, response);
+            } catch (Exception failure) {
+                return recover(errors, failure, request, response);
+            }
+        };
+    }
+
+    static Object recover(ErrorHandler errors, Exception failure, Request request, Response response) {
+        try {
+            return errors.handle(failure, request, response);
+        } catch (Exception broken) {
+            log.error("The error handler failed on {} {}", request.method(), request.path(), broken);
+            response.status(500).type(ContentType.JSON);
+            return INTERNAL;
+        }
     }
 
     /** The status, the headers and {@code {"error", "status"}} of {@code refused}. */

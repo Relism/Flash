@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -111,8 +112,9 @@ class WebSocketSessionTest {
     }
 
     @Test
-    void closeFromPeer_extractsCloseCode() {
-        WebSocketSession session = new WebSocketSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), 64);
+    void closeFromPeer_answersWithTheCodeItReceived() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        WebSocketSession session = new WebSocketSession(new ByteArrayInputStream(new byte[0]), out, 64);
         WebSocketFrame frame = new WebSocketFrame();
         frame.reset(new byte[] {(byte) 0x03, (byte) 0xE8}, 0, 2, WebSocketFrame.OP_CLOSE, true);
 
@@ -120,5 +122,18 @@ class WebSocketSessionTest {
 
         assertFalse(session.isOpen());
         assertEquals(1000, session.closeCode());
+        // RFC 6455 §5.5.1: a CLOSE is answered by a CLOSE, carrying the status that arrived.
+        assertArrayEquals(new byte[] {(byte) 0x88, 2, (byte) 0x03, (byte) 0xE8}, out.toByteArray());
+    }
+
+    @Test
+    void closeFromPeer_refusesAStatusItWouldNeverSend() {
+        WebSocketSession session = new WebSocketSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), 64);
+        WebSocketFrame frame = new WebSocketFrame();
+        // 1006 means "abnormal closure": it describes a connection, it never travels on one.
+        frame.reset(new byte[] {(byte) 0x03, (byte) 0xEE}, 0, 2, WebSocketFrame.OP_CLOSE, true);
+
+        WebSocketProtocolException e = assertThrows(WebSocketProtocolException.class, () -> session.closeFromPeer(frame));
+        assertEquals(1002, e.closeCode());
     }
 }

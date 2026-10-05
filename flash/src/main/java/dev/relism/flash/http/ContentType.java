@@ -35,6 +35,7 @@ public enum ContentType {
   MULTIPART_FORM("multipart/form-data"),
   GRAPHQL("application/graphql"),
   NDJSON("application/x-ndjson"),
+  PROTOBUF("application/protobuf"),
   MSGPACK("application/msgpack"),
   CBOR("application/cbor"),
   LD_JSON("application/ld+json"),

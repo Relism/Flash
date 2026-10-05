@@ -207,6 +207,63 @@ class OpenApiBuilderTest {
     }
 
     @Test
+    void a_contributor_may_replace_a_generated_type_schema() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.contributors(List.of(new OpenApiContributor() {
+            @Override public Map<String, Object> schema(java.lang.reflect.Type type) {
+                return type == UserDto.class ? Map.of("type", "string", "format", "generated") : null;
+            }
+        }));
+        b.addOperation(routeOf(BareHandler.class), null, BareHandler.class);
+
+        Map<String, Object> responses = cast(getOperation(b.build(), "/bare", "get").get("responses"));
+        Map<String, Object> response = cast(responses.get("200"));
+        Map<String, Object> content = cast(response.get("content"));
+        Map<String, Object> json = cast(content.get("application/json"));
+        Map<String, Object> schema = cast(json.get("schema"));
+
+        assertEquals(Map.of("type", "string", "format", "generated"), schema);
+    }
+
+    @Test
+    void every_contributor_is_told_of_a_type_even_when_another_describes_it() {
+        java.util.List<java.lang.reflect.Type> told = new java.util.ArrayList<>();
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.contributors(List.of(
+                new OpenApiContributor() {
+                    @Override public Map<String, Object> schema(java.lang.reflect.Type type) {
+                        return type == UserDto.class ? Map.of("type", "string") : null;
+                    }
+                },
+                new OpenApiContributor() {
+                    @Override public void used(java.lang.reflect.Type type) { told.add(type); }
+                }));
+        b.addOperation(routeOf(BareHandler.class), null, BareHandler.class);
+
+        assertTrue(told.contains(UserDto.class));
+    }
+
+    @Test
+    void contributors_that_describe_one_schema_add_their_lists_together() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.contributors(List.of(contributing("a"), contributing("b"), contributing("a")));
+
+        Map<String, Object> components = cast(b.build().get("components"));
+        Map<String, Object> schemas = cast(components.get("schemas"));
+        Map<String, Object> shared = cast(schemas.get("Shared"));
+
+        assertEquals(List.of("a", "b"), shared.get("required"));
+    }
+
+    private static OpenApiContributor contributing(String field) {
+        return new OpenApiContributor() {
+            @Override public Map<String, Object> componentContributions() {
+                return Map.of("schemas", Map.of("Shared", Map.of("required", List.of(field))));
+            }
+        };
+    }
+
+    @Test
     void a_declared_body_wins_and_carries_its_own_shape() {
         OpenApiBuilder b = new OpenApiBuilder();
         b.addOperation(routeOf(DeclaredBodyHandler.class), DeclaredBodyHandler.class.getAnnotation(ApiOperation.class), DeclaredBodyHandler.class);

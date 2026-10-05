@@ -14,6 +14,7 @@ class ContentTypeTest {
     void getBytes_validType() {
         assertArrayEquals("text/plain".getBytes(StandardCharsets.UTF_8), ContentType.TEXT_PLAIN.getBytes());
         assertArrayEquals("application/json".getBytes(StandardCharsets.UTF_8), ContentType.JSON.getBytes());
+        assertArrayEquals("application/protobuf".getBytes(StandardCharsets.UTF_8), ContentType.PROTOBUF.getBytes());
         assertArrayEquals("image/png".getBytes(StandardCharsets.UTF_8), ContentType.IMAGE_PNG.getBytes());
     }
     
