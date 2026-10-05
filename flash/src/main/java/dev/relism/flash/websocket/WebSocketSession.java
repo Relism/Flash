@@ -25,13 +25,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *       free, and immediate delivery where it matters.
  *
  *       <p>The only place an explicit flush is still needed is after the WS
- *       handshake (one-time, not on the hot path) and after the CLOSE frame
- *       (end of session). Both are handled in {@link #close} and in
- *       {@code WebSocketUpgrade#performHandshake}.</li>
+ *       handshake, which alone writes through a buffered stream;
+ *       {@code WebSocketUpgrade#performHandshake} does it there.</li>
  *
- *   <li><b>Flush on CLOSE frame</b>: {@link #close} still flushes explicitly
- *       because the CLOSE frame is the last thing written before the stream is
- *       abandoned — without a flush, the 4 bytes could sit in the buffer forever.</li>
+ *   <li><b>CLOSE frame</b>: the last thing written before the stream is abandoned,
+ *       and it needs no flush either — {@code out} is the raw socket stream the
+ *       connection handed over, so the bytes are already in the kernel buffer.</li>
  * </ul>
  *
  * <h3>Thread safety</h3>
@@ -77,9 +76,13 @@ public final class WebSocketSession {
      *  permits this) never disturbs the data message being reassembled there. */
     private final byte[] controlBuf = new byte[125];
 
-    // Fragmentation state (RFC 6455 §5.4). fragmentLength == 0 means "no message in progress".
+    // Fragmentation state (RFC 6455 §5.4). fragmentOpcode == 0 means "no message in progress":
+    // the length cannot say it, because a message may be assembled out of empty fragments.
     private byte fragmentOpcode;
     private int  fragmentLength;
+
+    /** UTF-8 state carried across the fragments of the text message being assembled (§8.1). */
+    private int utf8State = Utf8.ACCEPT;
 
     public WebSocketSession(InputStream in, OutputStream out, int bufferSize) {
         this(in, out, bufferSize, null, false);
@@ -176,6 +179,10 @@ public final class WebSocketSession {
             boolean masked  = (b1 & 0x80) != 0;
             int     lenBits = b1 & 0x7F;
 
+            // RFC 6455 §5.2: RSV1/2/3 mean something only to a negotiated extension, and this
+            // endpoint negotiates none, so any of them set is a protocol error.
+            if ((b0 & 0x70) != 0) throw new WebSocketProtocolException(1002, "RSV bits must be zero");
+
             validateOpcode(opcode);
 
             if (masked != requireMaskedIncoming) {
@@ -213,9 +220,9 @@ public final class WebSocketSession {
                 if (!fin) throw new WebSocketProtocolException(1002, "control frame must not be fragmented");
                 if (payLen > controlBuf.length) throw new WebSocketProtocolException(1002, "control frame payload exceeds 125 bytes");
             } else if (opcode == WebSocketFrame.OP_CONTINUATION) {
-                if (fragmentLength == 0) throw new WebSocketProtocolException(1002, "continuation frame without an initiated message");
+                if (fragmentOpcode == 0) throw new WebSocketProtocolException(1002, "continuation frame without an initiated message");
             } else { // TEXT or BINARY
-                if (fragmentLength != 0) throw new WebSocketProtocolException(1002, "new data frame while a fragmented message is in progress");
+                if (fragmentOpcode != 0) throw new WebSocketProtocolException(1002, "new data frame while a fragmented message is in progress");
             }
 
             byte m0 = 0, m1 = 0, m2 = 0, m3 = 0;
@@ -242,12 +249,22 @@ public final class WebSocketSession {
             if (masked) unmaskInPlace(readBuf, fragmentLength, len, m0, m1, m2, m3);
 
             byte messageOpcode = opcode == WebSocketFrame.OP_CONTINUATION ? fragmentOpcode : opcode;
+            if (messageOpcode == WebSocketFrame.OP_TEXT) {
+                // RFC 6455 §8.1: judged on the bytes as they land, so a broken fragment fails the
+                // connection without waiting for the ones behind it.
+                utf8State = Utf8.validate(utf8State, readBuf, fragmentLength, len);
+                if (utf8State == Utf8.REJECT) throw new WebSocketProtocolException(1007, "text message is not valid UTF-8");
+            }
             if (opcode != WebSocketFrame.OP_CONTINUATION) fragmentOpcode = opcode;
             fragmentLength += len;
 
             if (fin) {
+                // A message may not end half way through a sequence; a binary one never left ACCEPT.
+                if (utf8State != Utf8.ACCEPT) throw new WebSocketProtocolException(1007, "text message ends mid UTF-8 sequence");
                 frame.reset(readBuf, 0, fragmentLength, messageOpcode, true);
                 fragmentLength = 0;
+                fragmentOpcode = 0;
+                utf8State      = Utf8.ACCEPT;
                 return true;
             }
             // Not FIN: loop to read the next continuation frame (or an interleaved control frame).
@@ -273,13 +290,42 @@ public final class WebSocketSession {
             send(frame.buffer(), frame.payloadOffset(), frame.payloadLength());
     }
 
-    public void closeFromPeer(WebSocketFrame frame) {
-        if (frame.payloadLength() >= 2) {
-            byte[] b = frame.copyPayload();
-            int    o = frame.payloadOffset();
-            closeCode = ((b[o] & 0xFF) << 8) | (b[o + 1] & 0xFF);
+    /**
+     * Answers the peer's CLOSE with one of ours and ends the session. RFC 6455 §5.5.1 requires the
+     * reply and asks for the same status code back, so a status this endpoint refuses to receive is
+     * never one it sends: the code is checked against §7.4.1 and the reason against the UTF-8 rule,
+     * and a malformed frame throws for {@code WebSocketLoop} to close with the code the failure
+     * carries. An empty payload has no code to echo and is answered with a normal closure.
+     *
+     * <p>The code is read straight out of the frame's own buffer — the payload is never copied.
+     */
+    public void closeFromPeer(WebSocketFrame frame) throws IOException {
+        int len = frame.payloadLength();
+        if (len == 0) {
+            close(closeCode = 1000);
+            return;
         }
-        open.set(false);
+        if (len == 1) throw new WebSocketProtocolException(1002, "close payload of one byte carries no status code");
+
+        byte[] payload = frame.buffer();
+        int    off     = frame.payloadOffset();
+        int    code    = ((payload[off] & 0xFF) << 8) | (payload[off + 1] & 0xFF);
+
+        if (!isSendableCloseCode(code)) throw new WebSocketProtocolException(1002, "reserved or undefined close code " + code);
+        if (Utf8.validate(Utf8.ACCEPT, payload, off + 2, len - 2) != Utf8.ACCEPT)
+            throw new WebSocketProtocolException(1007, "close reason is not valid UTF-8");
+
+        close(closeCode = code);
+    }
+
+    /**
+     * RFC 6455 §7.4.1: the registered codes, plus the private range. 1004 was never assigned, and
+     * 1005/1006 stand for "no code" and "abnormal" — they describe a connection, they are not codes
+     * that may travel on one, in either direction.
+     */
+    private static boolean isSendableCloseCode(int code) {
+        if (code >= 3000 && code <= 4999) return true;
+        return code >= 1000 && code <= 1014 && code != 1004 && code != 1005 && code != 1006;
     }
 
     public void forceClose() {

@@ -6,8 +6,8 @@ package dev.relism.flash.websocket;
  * constructor, like a handler.
  *
  * <p>A {@link WebSocketFrame} is valid only inside the {@code onMessage} call that received it:
- * copy what must outlive it with {@link WebSocketFrame#copyPayload()}. Continuation frames arrive
- * as they are; reassembling fragments is the endpoint's business.
+ * copy what must outlive it with {@link WebSocketFrame#copyPayload()}. A fragmented message is
+ * reassembled by the session, so {@code onMessage} is handed a whole one and never a fragment.
  */
 public interface WebSocketHandler {
 
