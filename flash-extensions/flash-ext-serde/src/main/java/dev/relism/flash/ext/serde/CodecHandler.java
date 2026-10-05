@@ -43,16 +43,14 @@ import java.util.Map;
  */
 public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> implements Handler, Bound {
 
-    private Codec in;
+    private Codec.Reader in;
     private Codec out;
-    private Type inType;
 
     @Override
     public final void bind(Services services) {
-        inType = argument(1);
-        in = inType == Void.class ? null : services.get(codec(0));
+        Type inType = argument(1);
+        in = inType == Void.class ? null : services.get(codec(0)).reader(inType);
         out = services.get(codec(2));
-        if (in != null) in.prepare(inType);
         Type outType = typeArgument(getClass(), 3);
         if (!(outType instanceof TypeVariable<?>) && !passedThrough(outType)) out.prepare(outType);
     }
@@ -66,7 +64,9 @@ public abstract class CodecHandler<CI extends Codec, I, CO extends Codec, O> imp
     }
 
     private I read(Request request) throws Exception {
-        return in == null ? null : in.read(request, inType);
+        @SuppressWarnings("unchecked")
+        I value = in == null ? null : (I) in.read(request);
+        return value;
     }
 
     /** Pass-through for what is already a body: {@code null}, a {@link Response}, bytes or text. */

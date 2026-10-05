@@ -83,10 +83,25 @@ class CodecHandlerTest {
         @Override public ContentType contentType() { return ContentType.JSON; }
     }
 
+    static final class Prepared implements Codec {
+        @Override public Reader reader(Type type) {
+            assertEquals(Word.class, type);
+            return request -> new Word("prepared");
+        }
+        @Override public <T> T read(Request request, Type type) { throw new AssertionError("unprepared read"); }
+        @Override public Object write(Response response, Object value) { throw new UnsupportedOperationException(); }
+        @Override public ContentType contentType() { return ContentType.XML; }
+    }
+
+    static final class PreparedHandler extends CodecHandler<Prepared, Word, Out, Said> {
+        @Override protected Said handle(Request request, Response response, Word word) { return new Said(word.text()); }
+    }
+
     private static final Out OUT = new Out();
 
     @RegisterExtension
-    static FlashTest app = FlashTest.of(() -> App.create().add(In.class, new In()).add(Out.class, OUT));
+    static FlashTest app = FlashTest.of(() -> App.create()
+            .add(In.class, new In()).add(Prepared.class, new Prepared()).add(Out.class, OUT));
 
     @RegisterExtension
     static FlashTest writeOnly = FlashTest.of(() -> App.create().add(Out.class, new Out()));
@@ -115,6 +130,14 @@ class CodecHandlerTest {
 
         assertEquals("said:hello", body);
         assertEquals("application/json", new String(response.getContentType(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void aCodecMayResolveItsReaderOnceAtBind() throws Exception {
+        Object body = services().create(PreparedHandler.class)
+                .handle(request("ignored"), new Response(200, ContentType.NONE));
+
+        assertEquals("said:prepared", body);
     }
 
     @Test
