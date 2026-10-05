@@ -23,6 +23,36 @@ Two engines in one application is a boot failure naming the second. Which engine
 is not a thing to leave to install order, and an application that installs none gets one line at
 boot saying that bodies are parsed and not checked.
 
+## Families
+
+JSON and XML bodies are plain objects, so one `Validation` serves them. A codec for values of its own kind,
+protobuf messages for one, asks for its own engine type, a sub-interface of `Validation` that its module
+defines: `flash-ext-protobuf-java` defines `ProtobufValidation`, and `flash-ext-validation-protovalidate`
+implements it. Engines of different families live in one application, each checking only the bodies its
+codec reads, so nothing is chosen at request time and nothing is looked up there: the codec holds its engine
+in a field from boot.
+
+```java
+app.install(new JsonModule(), new JakartaValidation(),               // JSON and XML: Validation
+            new ProtobufModule(), new ProtovalidateValidation());    // protobuf: ProtobufValidation
+```
+
+A mistake fails the boot, naming what is wrong:
+
+| Mistake | Failure |
+|---|---|
+| Two engines for one family, Jakarta and Avaje, or two `ProtobufValidation`s | the type "was added 2 times", naming both |
+| An engine of a family added as plain `Validation`, so its codec would never ask it | the codec refuses, naming the engine |
+| `ProtovalidateValidation` without `ProtobufModule`, so nothing would read it | refused: no `ProtobufModule` is installed |
+
+What does not fail is a family with no engine: its bodies are parsed and not checked, and the codec says so
+once at boot. An application with only Jakarta and protobuf bodies is in that case.
+
+**Adding a family.** In the codec's module, define `interface XValidation extends Validation {}`, have the
+codec ask `Validation.family(services, XValidation.class)` when it binds. That is the whole of the codec's
+side: it finds the engine, and refuses to boot when an `XValidation` was added as plain `Validation` or when
+two were added. An engine adds itself as `XValidation`, and refuses to boot without the codec that reads it.
+
 ## The contract
 
 ```java
