@@ -14,9 +14,11 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-jackson-core` | What every Jackson format shares: one mapper as a codec |
 | `flash-extensions/flash-ext-jackson-json` | JSON bodies and responses |
 | `flash-extensions/flash-ext-jackson-xml` | XML bodies and responses |
+| `flash-extensions/flash-ext-protobuf-java` | Binary Protocol Buffers through Google's generated Java messages |
 | `flash-extensions/flash-ext-validation-core` | One contract for checking a body, and one way for the engine to describe its rules |
 | `flash-extensions/flash-ext-validation-jakarta` | Jakarta Validation through Hibernate Validator |
 | `flash-extensions/flash-ext-validation-avaje` | Avaje Validator: the same rules without reflection, generated at build time |
+| `flash-extensions/flash-ext-validation-protovalidate` | Protovalidate rules declared in protobuf descriptors |
 | `flash-extensions/flash-ext-openapi` | OpenAPI 3.0 spec, read by Swagger UI, Redoc or Scalar |
 | `flash-extensions/flash-ext-security-core` | Security: authentication chain, annotations, sessions, OpenAPI |
 | `flash-extensions/flash-ext-security-oidc` | OpenID Connect: bearer tokens, code flow + PKCE |
@@ -28,13 +30,14 @@ a zero-allocation FSM router, bounded protocol state, and one shared request/res
 | `flash-extensions/flash-ext-view-core` | What every template engine module shares: `ViewHandler`, `ViewModel` |
 | `flash-extensions/flash-ext-view-jte` | jte templates, rendered to bytes |
 | `flash-extensions/flash-ext-view-thymeleaf` | Thymeleaf templates |
-| `flash-extensions/flash-ext-routeviewer` | Every route as a graph, in dev |
 | `flash-extensions/flash-ext-limiter` | Rate limits: `@Limit` or middleware, lock-free counters |
 | `flash-extensions/flash-ext-vite` | Vite frontend: dev server in dev, the built SPA from the jar otherwise |
 | `flash-extensions/flash-ext-vite-maven-plugin` | Builds the Vite frontend into the jar during `mvn package` |
 | `flash-extensions/flash-ext-scheduler` | Interval and cron background jobs on virtual threads |
 | `flash-extensions/flash-ext-cache-core` | Caching contract — `Cache`, `CacheManager`, `CacheSpec` |
 | `flash-extensions/flash-ext-cache-caffeine` | In-process cache backed by Caffeine |
+| `flash-extensions/flash-ext-micrometer` | HTTP server metrics for any Micrometer registry |
+| `flash-extensions/flash-ext-micrometer-prometheus` | Micrometer metrics with a streaming Prometheus endpoint |
 | `flash-extensions/flash-ext-data-core` | Transactions: `Tx`, `@Transactional`, repositories |
 | `flash-extensions/flash-ext-data-jdbc` | `TxManager` and repositories over a `DataSource` |
 | `flash-extensions/flash-ext-data-hibernate` | `TxManager` and repositories over a Hibernate `SessionFactory` |
@@ -148,7 +151,8 @@ Services are added by type, `add(type)`, `add(type, implementation)` or `add(typ
 and built when the server starts, each through its only constructor. A parameter is `T`,
 `Optional<T>`, `List<T>` (every one added under `T`, in order) or `Services`. What a module
 contributes to others is a service too: `RouteHook` (middleware from a handler's annotations,
-and every route as it is built), `OpenApiContributor`, `AuthenticationMechanism`. Every
+and every route as it is built), `ExchangeInterceptor` (infrastructure around a completed exchange),
+`OpenApiContributor`, `AuthenticationMechanism`. Every
 `AutoCloseable` service is closed when the server stops. The `ServerConfig` the server starts
 with is itself a service, so a module's handler reads `isDev()` from it.
 
@@ -158,6 +162,8 @@ See each module's README for details:
 - [`flash-ext-jackson-core`](flash-extensions/flash-ext-jackson-core/README.md)
 - [`flash-ext-jackson-json`](flash-extensions/flash-ext-jackson-json/README.md)
 - [`flash-ext-jackson-xml`](flash-extensions/flash-ext-jackson-xml/README.md)
+- [`flash-ext-protobuf-java`](flash-extensions/flash-ext-protobuf-java/README.md)
+- [`flash-ext-validation-protovalidate`](flash-extensions/flash-ext-validation-protovalidate/README.md)
 - [`flash-ext-openapi`](flash-extensions/flash-ext-openapi/README.md)
 - [`flash-ext-security-core`](flash-extensions/flash-ext-security-core/docs/README.md)
 - [`flash-ext-security-oidc`](flash-extensions/flash-ext-security-oidc/docs/README.md)
@@ -169,6 +175,8 @@ See each module's README for details:
 - [`flash-ext-view-thymeleaf`](flash-extensions/flash-ext-view-thymeleaf/README.md)
 - [`flash-ext-scheduler`](flash-extensions/flash-ext-scheduler/docs/README.md)
 - [`flash-ext-cache-caffeine`](flash-extensions/flash-ext-cache-caffeine/docs/README.md)
+- [`flash-ext-micrometer`](flash-extensions/flash-ext-micrometer/docs/README.md)
+- [`flash-ext-micrometer-prometheus`](flash-extensions/flash-ext-micrometer-prometheus/docs/README.md)
 - [`flash-ext-limiter`](flash-extensions/flash-ext-limiter/README.md)
 - [`flash-ext-vite`](flash-extensions/flash-ext-vite/docs/README.md)
 - [`flash-ext-data-core`](flash-extensions/flash-ext-data-core/docs/README.md)

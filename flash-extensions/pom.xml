@@ -18,6 +18,8 @@
         <module>flash-ext-validation-core</module>
         <module>flash-ext-validation-jakarta</module>
         <module>flash-ext-validation-avaje</module>
+        <module>flash-ext-protobuf-java</module>
+        <module>flash-ext-validation-protovalidate</module>
         <module>flash-ext-avaje-jsonb</module>
         <module>flash-ext-jackson-core</module>
         <module>flash-ext-jackson-json</module>
@@ -29,7 +31,6 @@
         <module>flash-ext-security-form</module>
         <module>flash-ext-security-oauth-server</module>
         <module>flash-ext-security-test</module>
-        <module>flash-ext-routeviewer</module>
         <module>flash-ext-view-core</module>
         <module>flash-ext-view-jte</module>
         <module>flash-ext-view-thymeleaf</module>
@@ -43,6 +44,8 @@
         <module>flash-ext-data-hibernate</module>
         <module>flash-ext-cache-core</module>
         <module>flash-ext-cache-caffeine</module>
+        <module>flash-ext-micrometer</module>
+        <module>flash-ext-micrometer-prometheus</module>
     </modules>
 
     <dependencyManagement>
@@ -74,6 +77,26 @@
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-micrometer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-micrometer-prometheus</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-core</artifactId>
+                <version>${micrometer.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-registry-prometheus</artifactId>
+                <version>${micrometer.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-security-test</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
@@ -88,6 +111,26 @@
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-avaje-jsonb</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-protobuf-java</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-validation-protovalidate</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>build.buf</groupId>
+                <artifactId>protovalidate</artifactId>
+                <version>${protovalidate.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
