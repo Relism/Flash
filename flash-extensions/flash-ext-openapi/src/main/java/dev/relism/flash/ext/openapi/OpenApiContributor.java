@@ -1,9 +1,26 @@
 package dev.relism.flash.ext.openapi;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Type;
 import java.util.Map;
 
 public interface OpenApiContributor {
+
+    /**
+     * Describes {@code type} completely, or returns {@code null} to leave it to the next
+     * contributor and the default Java model. Generated formats use this instead of exposing
+     * implementation fields that never appear on their wire.
+     */
+    default Map<String, Object> schema(Type type) {
+        return null;
+    }
+
+    /**
+     * Told of every type a schema is asked for, whichever contributor describes it. Lets a
+     * contributor that only adds to another's schemas, through {@link #componentContributions()},
+     * know which types are in the document.
+     */
+    default void used(Type type) {}
 
     default Map<String, Object> componentContributions() {
         return Map.of();

@@ -410,6 +410,8 @@ public final class OpenApiBuilder {
                 Map<String, Object> merged = new LinkedHashMap<>((Map<String, Object>) from);
                 deepMergeLastWins(merged, (Map<String, Object>) to);
                 target.put(key, merged);
+            } else if (existing instanceof List<?> from && value instanceof List<?> to) {
+                target.put(key, java.util.stream.Stream.concat(from.stream(), to.stream()).distinct().toList());
             } else {
                 target.put(key, value);
             }
