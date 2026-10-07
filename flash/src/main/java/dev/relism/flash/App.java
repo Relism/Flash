@@ -1,8 +1,11 @@
 package dev.relism.flash;
 
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.HttpMethod;
+import dev.relism.flash.http.RequestAction;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.routing.ErrorHandler;
 import dev.relism.flash.routing.Errors;
 import dev.relism.flash.routing.ExchangeInterceptor;
@@ -10,13 +13,15 @@ import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.MiddlewareGraph;
 import dev.relism.flash.routing.MiddlewareKey;
 import dev.relism.flash.routing.MiddlewareNode;
+import dev.relism.flash.routing.Next;
 import dev.relism.flash.routing.PathUtils;
 import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.RouteHook;
 import dev.relism.flash.routing.Router;
+import dev.relism.flash.routing.Sse;
 import dev.relism.flash.routing.Verb;
 import dev.relism.flash.routing.Ws;
-import dev.relism.flash.websocket.Upgrade;
+import dev.relism.flash.sse.SseHandler;
 import dev.relism.flash.websocket.WebSocketHandler;
 
 import java.lang.annotation.Annotation;
@@ -64,16 +69,30 @@ public final class App {
 
     // -- Routes ---------------------------------------------------------------
 
+    public App get(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.GET, path, handler, middleware); }
     public App get(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.GET, path, handler, middleware); }
+    public App post(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.POST, path, handler, middleware); }
     public App post(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.POST, path, handler, middleware); }
+    public App put(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.PUT, path, handler, middleware); }
     public App put(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.PUT, path, handler, middleware); }
+    public App patch(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.PATCH, path, handler, middleware); }
     public App patch(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.PATCH, path, handler, middleware); }
+    public App delete(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.DELETE, path, handler, middleware); }
     public App delete(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.DELETE, path, handler, middleware); }
 
     /** {@code handler} under every method: for handlers indifferent to it, a proxy above all. */
+    public App any(String path, RequestAction handler, Middleware... middleware) {
+        for (HttpMethod method : HttpMethod.values()) route(method, path, handler, middleware);
+        return this;
+    }
+
     public App any(String path, Handler handler, Middleware... middleware) {
         for (HttpMethod method : HttpMethod.values()) route(method, path, handler, middleware);
         return this;
+    }
+
+    public App route(HttpMethod method, String path, RequestAction handler, Middleware... middleware) {
+        return route(method, path, RequestHandler.of(Objects.requireNonNull(handler, "handler")), middleware);
     }
 
     public App route(HttpMethod method, String path, Handler handler, Middleware... middleware) {
@@ -94,22 +113,30 @@ public final class App {
     }
 
     /**
-     * Every concrete {@link Handler} in {@code packageName} (and below) carrying a routing annotation
-     * ({@code @GET}, {@code @POST}, …), and every {@link WebSocketHandler} carrying {@code @Ws}. A
-     * package with none of them fails the boot.
+     * Every concrete handler in {@code packageName} (and below) carrying a routing annotation
+     * ({@code @GET}, {@code @POST}, {@code @Ws}, …). A package with none of them fails the boot.
      */
     public App scan(String packageName) {
         int before = shared.routes.size();
         for (Class<?> type : Scanner.classes(packageName)) {
             if (Modifier.isAbstract(type.getModifiers())) continue;
             Ws ws = type.getAnnotation(Ws.class);
-            if (ws != null && WebSocketHandler.class.isAssignableFrom(type)) {
+            Annotation annotation = verbOf(type);
+            if (ws != null) {
+                if (annotation != null)
+                    throw new IllegalStateException(type.getName() + " carries two routing annotations: it answers one route");
+                if (!WebSocketHandler.class.isAssignableFrom(type))
+                    throw new IllegalStateException(type.getName() + " carries @Ws but is not a WebSocketHandler");
                 declare(null, ws.value(), type, new Middleware[0]);
                 continue;
             }
-            Annotation verb = verbOf(type);
-            if (verb != null && Handler.class.isAssignableFrom(type))
-                declare(verb.annotationType().getAnnotation(Verb.class).value(), pathOf(verb), type, new Middleware[0]);
+            if (annotation == null) continue;
+            if (!Handler.class.isAssignableFrom(type))
+                throw new IllegalStateException(type.getName() + " carries a route annotation but is not a Handler");
+            if (annotation.annotationType() == Sse.class && !SseHandler.class.isAssignableFrom(type))
+                throw new IllegalStateException(type.getName() + " carries @Sse but is not an SseHandler");
+            Verb verb = annotation.annotationType().getAnnotation(Verb.class);
+            declare(verb.value(), pathOf(annotation), type, new Middleware[0]);
         }
         if (shared.routes.size() == before)
             throw new IllegalStateException("scan(\"" + packageName + "\") found no handler with a routing annotation");
@@ -175,8 +202,8 @@ public final class App {
         return this;
     }
 
-    public App onNotFound(Handler handler) {
-        shared.notFound = handler;
+    public App onNotFound(RequestAction handler) {
+        shared.notFound = RequestHandler.of(handler);
         return this;
     }
 
@@ -197,44 +224,43 @@ public final class App {
         Router router = new Router();
 
         for (Declared route : shared.routes) {
-            Class<?> type = route.handler instanceof Class<?> c ? c : null;
-            Object built = type != null ? services.create(type) : route.handler;
-            Handler handler;
-            if (built instanceof WebSocketHandler socket) {
-                socket.onInit();
-                Upgrade upgrade = new Upgrade(socket);
-                handler = (request, response) -> upgrade;
-            } else {
-                handler = (Handler) built;
-                handler.onInit();
-            }
+            boolean construct = route.handler instanceof Class<?>;
+            Class<?> type = construct ? (Class<?>) route.handler : route.handler.getClass();
+            Object built = construct ? services.create(type) : route.handler;
+            String label = (route.method == null ? "WS" : route.method.name()) + ' ' + route.path;
 
             List<MiddlewareNode> nodes = new ArrayList<>();
             route.scope.collect(nodes);
-            if (type != null) for (RouteHook hook : hooks) nodes.addAll(hook.middleware(type));
+            for (RouteHook hook : hooks) nodes.addAll(hook.middleware(type));
             for (Middleware explicit : route.middleware) nodes.add(inline(nodes.size(), explicit));
-            String label = (route.method == null ? "WS" : route.method.name()) + ' ' + route.path;
             Middleware[] chain = MiddlewareGraph.order(label, nodes);
+            @SuppressWarnings("unchecked")
+            Class<? extends Handler> handlerType = (Class<? extends Handler>) type;
+            Route compiled = new Route(route.method == null ? HttpMethod.GET : route.method,
+                    route.path, handlerType, classesOf(chain));
 
-            Route compiled = new Route(route.method == null ? HttpMethod.GET : route.method, route.path,
-                    route.method == null, type, classesOf(chain));
-            handler = MiddlewareGraph.compose(handler, chain);
-            if (!interceptors.isEmpty()) handler = intercept(compiled, Errors.boundary(handler, errors), interceptors);
-            router.add(route.method, route.path, handler);
+            if (!(built instanceof Handler handler))
+                throw new IllegalStateException(label + ": " + built.getClass().getSimpleName() + " is not a Handler");
+            handler.initialize(services);
+            Next prepared = MiddlewareGraph.compose(handler::prepare, chain);
+            Next exchange = boundary(prepared, errors);
+            if (!interceptors.isEmpty()) exchange = intercept(compiled, exchange, interceptors);
+            router.add(route.method, route.path, exchange);
             for (RouteHook hook : hooks) hook.routed(compiled);
         }
 
         Handler notFound = shared.notFound != null ? shared.notFound : Errors.notFound(dev);
-        Handler miss = (request, response) -> {
-            String allow = router.allowed(request);
+        notFound.initialize(services);
+        Next miss = exchange -> {
+            String allow = router.allowed(exchange.request());
             if (allow != null) throw HttpException.methodNotAllowed(allow);
-            return notFound.handle(request, response);
+            notFound.prepare(exchange);
         };
         List<MiddlewareNode> nodes = new ArrayList<>();
         collect(nodes);
-        Handler fallback = MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes));
-        if (!interceptors.isEmpty()) fallback = interceptFallback(Errors.boundary(fallback, errors), interceptors);
-        router.compile(fallback, errors);
+        Next fallback = boundary(MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes)), errors);
+        if (!interceptors.isEmpty()) fallback = interceptFallback(fallback, interceptors);
+        router.compile(fallback);
         return router;
     }
 
@@ -246,7 +272,14 @@ public final class App {
 
     private App declare(HttpMethod method, String path, Object handler, Middleware[] middleware) {
         if (shared.compiled) throw new IllegalStateException("Routes are declared before the server starts");
-        shared.routes.add(new Declared(this, method, PathUtils.join(prefix, PathUtils.sanitize(path)), handler, middleware.clone()));
+        Class<?> type = handler instanceof Class<?> declared ? declared : handler.getClass();
+        boolean websocket = WebSocketHandler.class.isAssignableFrom(type);
+        if (websocket != (method == null))
+            throw new IllegalArgumentException(websocket
+                    ? "WebSocketHandler routes use ws(path, handler)"
+                    : "only a WebSocketHandler can use the WebSocket route key");
+        shared.routes.add(new Declared(this, method, PathUtils.join(prefix, PathUtils.sanitize(path)), handler,
+                middleware.clone()));
         return this;
     }
 
@@ -260,12 +293,25 @@ public final class App {
         return MiddlewareNode.of(MiddlewareKey.of("flash.inline." + position), middleware);
     }
 
-    private static Handler intercept(Route route, Handler exchange, List<ExchangeInterceptor> interceptors) {
+    private static Next boundary(Next prepared, ErrorHandler errors) {
+        return exchange -> {
+            try {
+                prepared.handle(exchange);
+                exchange.execute();
+            } catch (Exception failure) {
+                if (exchange.response().isCommitted()) throw failure;
+                exchange.recover(Errors.recover(errors, failure, exchange.request(), exchange.response()));
+                exchange.execute();
+            }
+        };
+    }
+
+    private static Next intercept(Route route, Next exchange, List<ExchangeInterceptor> interceptors) {
         for (int i = interceptors.size() - 1; i >= 0; i--) exchange = interceptors.get(i).wrap(route, exchange);
         return exchange;
     }
 
-    private static Handler interceptFallback(Handler exchange, List<ExchangeInterceptor> interceptors) {
+    private static Next interceptFallback(Next exchange, List<ExchangeInterceptor> interceptors) {
         for (int i = interceptors.size() - 1; i >= 0; i--) exchange = interceptors.get(i).wrapFallback(exchange);
         return exchange;
     }
@@ -296,7 +342,8 @@ public final class App {
         }
     }
 
-    private record Declared(App scope, HttpMethod method, String path, Object handler, Middleware[] middleware) {}
+    private record Declared(App scope, HttpMethod method, String path, Object handler,
+                            Middleware[] middleware) {}
 
     /** What the root app and its mounts share. */
     private static final class Shared {

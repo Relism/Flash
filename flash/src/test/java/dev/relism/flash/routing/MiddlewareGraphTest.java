@@ -7,14 +7,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MiddlewareGraphTest {
-    private static final Middleware NOOP = next -> next::handle;
+    private static final Middleware NOOP = (exchange, next) -> next.handle(exchange);
 
     @Test
     void ordersNodesFromConstraintsNotRegistrationOrder() {
         MiddlewareKey auth = MiddlewareKey.of("auth");
         MiddlewareKey audit = MiddlewareKey.of("audit");
-        Middleware authMiddleware = next -> next::handle;
-        Middleware auditMiddleware = next -> next::handle;
+        Middleware authMiddleware = (exchange, next) -> next.handle(exchange);
+        Middleware auditMiddleware = (exchange, next) -> next.handle(exchange);
         MiddlewareNode auditNode = MiddlewareNode.of(audit, auditMiddleware).after(auth);
         MiddlewareNode authNode = MiddlewareNode.of(auth, authMiddleware);
 

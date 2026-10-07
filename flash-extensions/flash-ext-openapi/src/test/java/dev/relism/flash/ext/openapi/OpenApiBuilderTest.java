@@ -1,7 +1,7 @@
 package dev.relism.flash.ext.openapi;
 
 import dev.relism.flash.http.Request;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.routing.GET;
@@ -23,7 +23,7 @@ class OpenApiBuilderTest {
     @ApiOperation(summary = "Get user")
     @Parameter(name = "expand", in = ParameterIn.QUERY, required = false, type = SchemaType.STRING, examples = {"roles", "permissions"})
     @APIResponse(responseCode = "200", description = "User found", content = @Content(schema = UserDto.class))
-    static class GetUserHandler implements Handler {
+    static class GetUserHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -33,7 +33,7 @@ class OpenApiBuilderTest {
     @GET("/users")
     @ApiOperation(summary = "List users")
     @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, array = true))
-    static class ListUsersHandler implements Handler {
+    static class ListUsersHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -43,7 +43,7 @@ class OpenApiBuilderTest {
     @GET("/ping")
     @ApiOperation(summary = "Ping")
     @APIResponse(responseCode = "204", description = "No content")
-    static class PingHandler implements Handler {
+    static class PingHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -53,7 +53,7 @@ class OpenApiBuilderTest {
     @GET("/secure")
     @ApiOperation(summary = "Secure")
     @APIResponse(responseCode = "403", description = "Custom forbidden")
-    static class SecureHandler implements Handler {
+    static class SecureHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -63,7 +63,7 @@ class OpenApiBuilderTest {
     @GET("/typed")
     @ApiOperation(summary = "Typed")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedHandler implements Handler {
+    static class TypedHandler extends RequestHandler {
         @Override
         public UserDto handle(Request request, Response response) {
             return new UserDto();
@@ -73,7 +73,7 @@ class OpenApiBuilderTest {
     @GET("/typed-list")
     @ApiOperation(summary = "Typed list")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedListHandler implements Handler {
+    static class TypedListHandler extends RequestHandler {
         @Override
         public List<UserDto> handle(Request request, Response response) {
             return List.of();
@@ -83,7 +83,7 @@ class OpenApiBuilderTest {
     @GET("/typed-map")
     @ApiOperation(summary = "Typed map")
     @APIResponse(responseCode = "200", content = @Content)
-    static class TypedMapHandler implements Handler {
+    static class TypedMapHandler extends RequestHandler {
         @Override
         public Map<String, UserDto> handle(Request request, Response response) {
             return Map.of();
@@ -93,7 +93,7 @@ class OpenApiBuilderTest {
     @GET("/merge")
     @ApiOperation(summary = "Merge")
     @APIResponse(responseCode = "200", description = "Manual 200")
-    static class MergeHandler implements Handler {
+    static class MergeHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -102,7 +102,7 @@ class OpenApiBuilderTest {
 
     @GET("/plain")
     @ApiOperation(summary = "Plain")
-    static class PlainHandler implements Handler {
+    static class PlainHandler extends RequestHandler {
         @Override
         public Object handle(Request request, Response response) {
             return null;
@@ -126,9 +126,9 @@ class OpenApiBuilderTest {
         @Override protected UserDto handle(Request request, Response response, UserDto body) { return body; }
     }
 
-    /** An app's own typed family, owing the framework nothing but {@link Handler}. */
+    /** An app's own typed request-handler family. */
     @Consumes(ContentType.JSON)
-    static abstract class JsonLikeHandler<I, O> implements Handler {
+    static abstract class JsonLikeHandler<I, O> extends RequestHandler {
         @Override public final Object handle(Request request, Response response) throws Exception {
             return handle(request, response, null);
         }
@@ -138,32 +138,32 @@ class OpenApiBuilderTest {
     @dev.relism.flash.routing.PUT("/declared-body")
     @ApiOperation(summary = "Declared body")
     @RequestBody(value = UserDto.class, array = true, required = false, description = "Users to store")
-    static class DeclaredBodyHandler implements Handler {
+    static class DeclaredBodyHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/bare")
-    static class BareHandler implements Handler {
+    static class BareHandler extends RequestHandler {
         @Override public UserDto handle(Request request, Response response) { return null; }
     }
 
     @GET("/example")
     @ApiOperation(summary = "Example")
     @APIResponse(responseCode = "200", content = @Content(schema = UserDto.class, example = "{\"id\":\"usr-1\"}"))
-    static class ExampleHandler implements Handler {
+    static class ExampleHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/secure-too")
     @ApiOperation(summary = "Secure too")
-    static class SecondSecureHandler implements Handler {
+    static class SecondSecureHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
     @GET("/xml")
     @Produces(ContentType.XML)
     @ApiOperation(summary = "Answers XML")
-    static class XmlAnswerHandler implements Handler {
+    static class XmlAnswerHandler extends RequestHandler {
         @Override public UserDto handle(Request request, Response response) { return null; }
     }
 
@@ -281,7 +281,7 @@ class OpenApiBuilderTest {
 
     @GET("/internal")
     @Undocumented
-    static class InternalHandler implements Handler {
+    static class InternalHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
@@ -296,7 +296,7 @@ class OpenApiBuilderTest {
     @GET("/keyed")
     @ApiOperation(summary = "Keyed")
     @APIResponse(responseCode = "200", content = @Content(schema = KeyedDto.class))
-    static class KeyedHandler implements Handler {
+    static class KeyedHandler extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return null; }
     }
 
@@ -673,13 +673,13 @@ class OpenApiBuilderTest {
     }
 
     /** The route a handler class declares through its routing annotation. */
-    private static Route routeOf(Class<?> handler) {
+    private static Route routeOf(Class<? extends dev.relism.flash.http.Handler> handler) {
         for (java.lang.annotation.Annotation annotation : handler.getAnnotations()) {
             Verb verb = annotation.annotationType().getAnnotation(Verb.class);
             if (verb == null) continue;
             try {
                 String path = (String) annotation.annotationType().getMethod("value").invoke(annotation);
-                return new Route(verb.value(), path, false, handler, List.of());
+                return new Route(verb.value(), path, handler, List.of());
             } catch (ReflectiveOperationException broken) {
                 throw new IllegalStateException(broken);
             }

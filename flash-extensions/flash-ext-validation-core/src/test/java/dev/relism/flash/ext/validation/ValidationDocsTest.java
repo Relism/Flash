@@ -5,7 +5,7 @@ import dev.relism.flash.Module;
 import dev.relism.flash.ext.openapi.OpenApiModule;
 import dev.relism.flash.ext.openapi.SchemaProperty;
 import dev.relism.flash.http.Request;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.GET;
 import dev.relism.flash.testing.FlashTest;
@@ -34,8 +34,8 @@ class ValidationDocsTest {
                           @SchemaProperty(description = "Already said.") @Rule(max = 8) String code) {}
 
     @GET("/accounts")
-    public static final class Accounts implements Handler {
-        @Override public Account handle(Request req, Response res) { return null; }
+    public static final class Accounts extends RequestHandler {
+        @Override protected Account handle(Request req, Response res) { return null; }
     }
 
     /** Verifies nothing, describes one rule: enough to prove the seam. */

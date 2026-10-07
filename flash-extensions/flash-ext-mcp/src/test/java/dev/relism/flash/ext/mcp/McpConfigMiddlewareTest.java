@@ -26,13 +26,13 @@ class McpConfigMiddlewareTest {
                     .toolsPackage("dev.relism.flash.ext.mcp.fixtures")
                     .security(McpSecurity.NONE)
                     .middleware(
-                            next -> (req, res) -> {
+                            (exchange, next) -> {
                                 CALLS.incrementAndGet();
-                                return next.handle(req, res);
+                                next.handle(exchange);
                             },
-                            next -> (req, res) -> {
-                                if ("deny".equals(req.header("X-Test-Gate"))) throw HttpException.forbidden();
-                                return next.handle(req, res);
+                            (exchange, next) -> {
+                                if ("deny".equals(exchange.request().header("X-Test-Gate"))) throw HttpException.forbidden();
+                                next.handle(exchange);
                             })
                     .build())));
 

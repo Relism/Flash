@@ -107,7 +107,7 @@ public final class ConnectionRunner {
         socket.setSoTimeout(0); // BufferedByteSource's own deadline takes over below
       }
 
-      // rawOut is the unbuffered socket stream — passed to WebSocketSession directly.
+      // rawOut is the unbuffered socket stream — a switched protocol writes to it directly.
       // WS writes are already bulk; HTTP responses use the buffered `out` because
       // Http1ResponseWriter does several small writes that benefit from coalescing.
       OutputStream rawOut = socket.getOutputStream();
@@ -136,8 +136,9 @@ public final class ConnectionRunner {
         else log.error("I/O error handling request", e);
       }
     } catch (Exception e) {
-      // Anything not an IOException here means a collaborator misbehaved on the TLS
-      // handshake path — most likely a custom TlsConfig#ofContext KeyManager/TrustManager
+      // Anything not an IOException here is an HTTP/1.1 exchange that failed after its response
+      // started, which closing the connection breaks off, or a collaborator that misbehaved on
+      // the TLS handshake path — most likely a custom TlsConfig#ofContext KeyManager/TrustManager
       // throwing. That failure is isolated to this one virtual thread/connection.
       if (!stopped.getAsBoolean()) log.error("Unexpected error handling connection", e);
     } finally {

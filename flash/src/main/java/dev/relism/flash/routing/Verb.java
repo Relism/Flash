@@ -8,8 +8,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a routing annotation ({@code @GET}, {@code @POST}, …) with the method it stands for. Every
- * routing annotation has a {@code String value()}: the path.
+ * Marks a routing annotation with the HTTP method it stands for. Every such annotation has a
+ * {@code String value()} path.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.ANNOTATION_TYPE)

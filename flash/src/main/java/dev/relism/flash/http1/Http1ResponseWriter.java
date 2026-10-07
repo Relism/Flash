@@ -36,13 +36,13 @@ public final class Http1ResponseWriter {
     }
 
     private static final byte[] HTTP_1_1              = "HTTP/1.1 ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CRLF                  = "\r\n".getBytes(StandardCharsets.UTF_8);
+    static final byte[] CRLF                          = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONTENT_TYPE          = "Content-Type: ".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONTENT_LENGTH        = "Content-Length: ".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONNECTION_CLOSE      = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CONNECTION_KEEPALIVE  = "Connection: keep-alive\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] TRANSFER_CHUNKED      = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] FINAL_CHUNK           = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+    static final byte[] CONNECTION_CLOSE              = "Connection: close\r\n".getBytes(StandardCharsets.UTF_8);
+    static final byte[] CONNECTION_KEEPALIVE          = "Connection: keep-alive\r\n".getBytes(StandardCharsets.UTF_8);
+    static final byte[] TRANSFER_CHUNKED              = "Transfer-Encoding: chunked\r\n".getBytes(StandardCharsets.UTF_8);
+    static final byte[] FINAL_CHUNK                   = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] UNKNOWN_STATUS_SUFFIX = " Unknown".getBytes(StandardCharsets.UTF_8);
 
     /**
@@ -61,26 +61,7 @@ public final class Http1ResponseWriter {
         boolean noContentAllowed = statusCode == 204 || statusCode == 304 || (statusCode >= 100 && statusCode < 200);
         boolean suppressBody     = noContentAllowed || method == HttpMethod.HEAD;
 
-        ByteWriter head = scratch.responseHead;
-        head.reset();
-        head.writeBytes(HTTP_1_1);
-        byte[] statusBytes = response.getStatusBytes();
-        if (statusBytes != null) head.writeBytes(statusBytes);
-        else writeStatusPhrase(head, statusCode);
-        head.writeBytes(CRLF);
-
-        // "Content-Type: \r\n" — a header with no value. Skip the line entirely instead.
-        byte[] contentType = response.getContentType();
-        if (contentType != null && contentType.length > 0) {
-            head.writeBytes(CONTENT_TYPE);
-            head.writeBytes(contentType);
-            head.writeBytes(CRLF);
-        }
-
-        // one write into the scratch, never a per-response format call.
-        if (sendDate) head.writeBytes(DateHeader.bytes());
-
-        response.writeHeadersInto(head);
+        ByteWriter head = head(response, sendDate, scratch);
 
         if (response.hasTrailers()) {
             writeTrailerBody(out, head, response, keepAlive, suppressBody, scratch);
@@ -109,6 +90,31 @@ public final class Http1ResponseWriter {
             }
         }
         out.flush();
+    }
+
+    /** The status line, {@code Content-Type}, {@code Date} and every custom header, without the closing blank line. */
+    static ByteWriter head(Response response, boolean sendDate, ConnectionScratch scratch) {
+        ByteWriter head = scratch.responseHead;
+        head.reset();
+        head.writeBytes(HTTP_1_1);
+        byte[] statusBytes = response.getStatusBytes();
+        if (statusBytes != null) head.writeBytes(statusBytes);
+        else writeStatusPhrase(head, response.getStatusCode());
+        head.writeBytes(CRLF);
+
+        // "Content-Type: \r\n" — a header with no value. Skip the line entirely instead.
+        byte[] contentType = response.getContentType();
+        if (contentType != null && contentType.length > 0) {
+            head.writeBytes(CONTENT_TYPE);
+            head.writeBytes(contentType);
+            head.writeBytes(CRLF);
+        }
+
+        // one write into the scratch, never a per-response format call.
+        if (sendDate) head.writeBytes(DateHeader.bytes());
+
+        response.writeHeadersInto(head);
+        return head;
     }
 
     private static void writeTrailerBody(OutputStream out, ByteWriter head, Response response,
@@ -215,14 +221,14 @@ public final class Http1ResponseWriter {
         else out.write(FINAL_CHUNK);
     }
 
-    private static void writeFinalChunk(OutputStream out, Response response) throws IOException {
+    static void writeFinalChunk(OutputStream out, Response response) throws IOException {
         out.write('0');
         out.write(CRLF);
         response.writeTrailers(out);
         out.write(CRLF);
     }
 
-    private static void writeHex(OutputStream out, int value) throws IOException {
+    static void writeHex(OutputStream out, int value) throws IOException {
         int shift = 28;
         boolean leading = true;
         while (shift >= 0) {

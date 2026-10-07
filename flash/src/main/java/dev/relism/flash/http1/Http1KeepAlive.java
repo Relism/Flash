@@ -9,7 +9,7 @@ import dev.relism.fpr.core.ByteView;
  *
  * (e.g. {@code "Connection: keep-alive, Upgrade"}), not a single value — a whole-value compare
  * against {@code "close"} misses exactly that case. {@link #tokenListContains} is the one
- * scanner both this class's {@link #isKeepAlive} and {@code WebSocketUpgrade}'s
+ * scanner both this class's {@link #isKeepAlive} and {@code WebSocketFraming}'s
  * {@code Connection: Upgrade} check use, so the two can never drift apart again.
  */
 public final class Http1KeepAlive {

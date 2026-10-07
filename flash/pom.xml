@@ -38,7 +38,7 @@
     </dependencies>
 
     <!--
-      Phase 3 (flash/docs/http2/IMPLEMENTATION-PLAN.md): the JMH benchmark gate for the h2
+      The JMH benchmark gate for the h2
       serialized frame writer. Not bound to the default build — activate explicitly with
       `-Pjmh`. Benchmarks live in src/jmh/java, a source root distinct from src/test/java
       (a `jmh` profile on this module, per the plan's own suggestion, rather than a new

@@ -3,7 +3,6 @@ package dev.relism.flash.routing;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.bytes.FastPathViews;
-import dev.relism.flash.http.Handler;
 import dev.relism.fpr.core.internal.runtime.ByteCompare;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
@@ -49,13 +48,13 @@ public class RouterBenchmark {
   @Setup(Level.Trial)
   public void setupRouter() {
     router = new Router();
-    Handler h = (req, res) -> "ok";
+    Next h = exchange -> exchange.answer("ok");
     router.add(HttpMethod.GET, "/health", h);
     router.add(HttpMethod.GET, "/users/{id}", h);
     router.add(HttpMethod.GET, "/users/{id}/posts/{postId}", h);
     router.add(HttpMethod.POST, "/users", h);
     router.add(HttpMethod.GET, "/api/v1/products/{category}/{id}", h);
-    router.compile(Errors.notFound(false), Errors.handler(false));
+    router.compile(Errors.notFound(false)::prepare);
     scratch = router.newScratch();
 
     staticRequest = mockRequest(HttpMethod.GET, "/health");
@@ -63,12 +62,12 @@ public class RouterBenchmark {
   }
 
   @Benchmark
-  public Handler router_staticRoute() {
+  public Next router_staticRoute() {
     return router.route(staticRequest, scratch);
   }
 
   @Benchmark
-  public Handler router_parametricRoute() {
+  public Next router_parametricRoute() {
     return router.route(paramRequest, scratch);
   }
 

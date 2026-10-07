@@ -1,5 +1,6 @@
 package dev.relism.flash.bytes;
 
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -9,7 +10,8 @@ import java.nio.charset.StandardCharsets;
  * connection's high-water mark), no method here allocates.
  *
  * Callers build a complete message in a {@code ByteWriter}-backed scratch buffer and then issue
- * one bulk {@code write(buffer, 0, length())}. The same writer is shared by HTTP/1.1 and HTTP/2.
+ * one bulk {@code write(buffer, 0, length())}. It is an {@link OutputStream} too, so a serializer
+ * that writes to one writes straight into the buffer. The same writer is shared by HTTP/1.1 and HTTP/2.
  *
  * <h3>Lifetime and thread-safety contract</h3>
  * Not thread-safe — exactly one writer at a time, matching every other per-connection scratch
@@ -18,7 +20,7 @@ import java.nio.charset.StandardCharsets;
  * array itself is never shrunk back down, only grown — the same amortized-to-zero-allocation
  * growth policy {@code RequestParser}'s read buffer already uses.
  */
-public final class ByteWriter {
+public final class ByteWriter extends OutputStream {
     private byte[] buf;
     private final byte[] digits = new byte[20];
     private int len;
@@ -52,9 +54,27 @@ public final class ByteWriter {
         buf = next;
     }
 
+    /** Makes room for {@code n} bytes a caller writes into {@link #array()} itself, and returns where they start. */
+    public int reserve(int n) {
+        ensure(n);
+        int at = len;
+        len += n;
+        return at;
+    }
+
     public void writeByte(byte b) {
         ensure(1);
         buf[len++] = b;
+    }
+
+    @Override
+    public void write(int b) {
+        writeByte((byte) b);
+    }
+
+    @Override
+    public void write(byte[] src, int off, int srcLen) {
+        writeBytes(src, off, srcLen);
     }
 
     public void writeBytes(byte[] src) {

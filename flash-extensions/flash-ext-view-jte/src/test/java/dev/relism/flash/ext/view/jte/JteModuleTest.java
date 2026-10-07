@@ -7,6 +7,7 @@ import dev.relism.flash.ext.view.core.ViewHandler;
 import dev.relism.flash.ext.view.core.ViewModel;
 import dev.relism.flash.ext.view.jte.model.HomePage;
 import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -35,8 +36,8 @@ class JteModuleTest {
     }
 
     @Template("pages/home.jte")
-    public static final class Plain implements Handler {
-        @Override public Object handle(Request req, Response res) { return "plain"; }
+    public static final class Plain extends RequestHandler {
+        @Override protected Object handle(Request req, Response res) { return "plain"; }
     }
 
     public static final class Nameless extends ViewHandler {

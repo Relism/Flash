@@ -1,13 +1,11 @@
 package dev.relism.flash.ext.security.form;
 
 import dev.relism.flash.App;
-import dev.relism.flash.Bound;
 import dev.relism.flash.Module;
-import dev.relism.flash.Services;
 import dev.relism.flash.ext.security.LoginMethod;
 import dev.relism.flash.ext.security.Redirects;
 import dev.relism.flash.ext.security.Security;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.QueryParams;
 import dev.relism.flash.http.Request;
@@ -51,7 +49,7 @@ public final class FormLoginModule implements Module {
     }
 
     /** The login route, bound to the app's {@link Security} when it starts. */
-    private static final class Login implements Handler, Bound {
+    private static final class Login extends RequestHandler {
 
         private final PasswordStore store;
         private final PasswordEncoder encoder;
@@ -65,13 +63,13 @@ public final class FormLoginModule implements Module {
         }
 
         @Override
-        public void bind(Services services) {
-            security = services.get(Security.class);
+        protected void onInit() {
+            security = services().get(Security.class);
             unknownAccountHash = encoder.encode("unknown-account");
         }
 
         @Override
-        public Object handle(Request req, Response res) {
+        protected Object handle(Request req, Response res) {
             QueryParams form = req.form();
             String username = form.get("username");
             String password = form.get("password");

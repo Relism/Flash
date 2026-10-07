@@ -62,12 +62,14 @@ public final class LimiterModule implements Module {
         LimitConfig cfg = new LimitConfig(requests, unit.toMillis(window), strategy.create());
         BucketStore store = new BucketStore(maxKeys, cfg.windowMs());
         PreEncodedHeader limit = new PreEncodedHeader("X-RateLimit-Limit", Integer.toString(requests));
-        return next -> (req, res) -> {
+        return (exchange, next) -> {
+            var req = exchange.request();
+            var res = exchange.response();
             long now = System.currentTimeMillis();
             long verdict = cfg.strategy().check(store.get(resolver.resolve(req), now), cfg);
             res.header(limit).header("X-RateLimit-Remaining", remaining(verdict)).header("X-RateLimit-Reset", reset(verdict));
             if (!allowed(verdict)) throw HttpException.tooManyRequests(Math.max(1L, reset(verdict) - now / 1000L));
-            return next.handle(req, res);
+            next.handle(exchange);
         };
     }
 

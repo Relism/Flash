@@ -2,7 +2,7 @@ package dev.relism.flash.ext.cache.caffeine;
 
 import dev.relism.flash.App;
 import dev.relism.flash.Server;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -25,7 +25,7 @@ class CaffeineCacheTest {
     private static final AtomicInteger loads = new AtomicInteger();
 
     /** Builds its cache once, from the manager it is given. */
-    public static final class Users implements Handler {
+    public static final class Users extends RequestHandler {
         private final Cache<String, String> users;
 
         public Users(CacheManager caches) {
@@ -33,7 +33,7 @@ class CaffeineCacheTest {
         }
 
         @Override
-        public Object handle(Request req, Response res) {
+        protected Object handle(Request req, Response res) {
             return users.get(req.param("id"), id -> "loaded:" + id + ":" + loads.incrementAndGet());
         }
     }

@@ -13,12 +13,12 @@ import java.util.concurrent.TimeUnit;
  * <pre>{@code
  * // 100 req/s per client IP — fixed window
  * @Limit(requests = 100, window = 1)
- * public class SearchHandler implements Handler { ... }
+ * public class SearchHandler extends RequestHandler { ... }
  *
  * // 20 req/min per authenticated user — token bucket
  * @Limit(key = "auth_user", requests = 20, window = 1, windowUnit = TimeUnit.MINUTES,
  *        strategy = LimitStrategy.TOKEN_BUCKET)
- * public class ExpensiveHandler implements Handler { ... }
+ * public class ExpensiveHandler extends RequestHandler { ... }
  * }</pre>
  */
 @Target(ElementType.TYPE)

@@ -20,10 +20,10 @@ import javax.net.ssl.SSLSocket;
  * @param in the single buffered, deadline-aware source for this connection's inbound bytes
  * @param out the buffered output stream — for header/body writes that benefit from userspace
  *     coalescing before a single syscall
- * @param rawOut the unbuffered output stream — for WebSocket, whose writes are already bulk (see
- *     {@code WebSocketSession})
+ * @param rawOut the unbuffered output stream — for a connection that switched protocols, whose
+ *     writes are already whole frames (see {@code Http1Duplex})
  * @param remoteAddress the client's address, or {@code null} if unavailable
- * @param router the app's routes, HTTP and WebSocket
+ * @param router the app's routes
  * @param configuration the server configuration (timeouts, limits, feature flags)
  * @param stopped {@code true} once the server has begun shutting down — a protocol implementation's
  *     request loop must check this and exit promptly

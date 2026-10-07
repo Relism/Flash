@@ -1,10 +1,12 @@
 package dev.relism.flash;
 
-import dev.relism.flash.http.Handler;
-import dev.relism.flash.http.Request;
-import dev.relism.flash.http.Response;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.routing.ExchangeInterceptor;
+import dev.relism.flash.routing.Next;
 import dev.relism.flash.routing.Route;
+import dev.relism.flash.sse.SseHandler;
+import dev.relism.flash.sse.SseStream;
+import dev.relism.flash.http.Request;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +45,31 @@ class ExchangeInterceptorTest {
         assertEquals(List.of("GET /users/{id} 422", "fallback 404"), interceptor.seen);
     }
 
+    @Test
+    void surroundsTheCompleteDuplexLifecycle() throws Exception {
+        List<String> order = new ArrayList<>();
+        ExchangeInterceptor interceptor = new ExchangeInterceptor() {
+            @Override public Next wrap(Route route, Next exchange) {
+                return handled -> {
+                    order.add("before");
+                    exchange.handle(handled);
+                    order.add("after");
+                };
+            }
+        };
+        App app = App.create().add(ExchangeInterceptor.class, interceptor)
+                .get("/events", new SseHandler() {
+                    @Override protected void handle(Request request, SseStream stream) throws Exception {
+                        order.add("handler");
+                        stream.send("done");
+                    }
+                });
+        server = Server.start(app, ServerConfig.builder().host("127.0.0.1").port(0).build());
+
+        assertEquals("data: done\n\n", get("/events").body());
+        assertEquals(List.of("before", "handler", "after"), order);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + path)).build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -52,20 +79,18 @@ class ExchangeInterceptorTest {
         final List<String> seen = new ArrayList<>();
 
         @Override
-        public Handler wrap(Route route, Handler exchange) {
-            return (request, response) -> observe(route.method() + " " + route.path(), exchange, request, response);
+        public Next wrap(Route route, Next exchange) {
+            return handled -> observe(route.method() + " " + route.path(), exchange, handled);
         }
 
         @Override
-        public Handler wrapFallback(Handler exchange) {
-            return (request, response) -> observe("fallback", exchange, request, response);
+        public Next wrapFallback(Next exchange) {
+            return handled -> observe("fallback", exchange, handled);
         }
 
-        private Object observe(String route, Handler exchange, Request request, Response response) throws Exception {
-            Object answer = exchange.handle(request, response);
-            Response actual = answer instanceof Response returned ? returned : response;
-            seen.add(route + " " + actual.getStatusCode());
-            return answer;
+        private void observe(String route, Next next, Exchange exchange) throws Exception {
+            next.handle(exchange);
+            seen.add(route + " " + exchange.response().getStatusCode());
         }
     }
 }

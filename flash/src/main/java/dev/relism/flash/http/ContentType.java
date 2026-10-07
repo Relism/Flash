@@ -74,6 +74,12 @@ public enum ContentType {
     }
   }
 
+  /** Whether this is text a person could read: {@code text/*} and the structured text formats. */
+  public boolean isText() {
+    return name().startsWith("TEXT_") || this == JSON || this == XML || this == LD_JSON
+        || this == NDJSON || this == GRAPHQL || this == FORM_URLENCODED;
+  }
+
   /** Precompiled HPACK {@code content-type} field, or an empty array for {@link #NONE}. */
   public byte[] getHpackBytes() {
     return hpackBytes;

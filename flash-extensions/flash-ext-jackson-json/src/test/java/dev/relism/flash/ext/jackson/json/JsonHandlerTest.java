@@ -30,11 +30,19 @@ class JsonHandlerTest {
         @Override protected String handle(Request request, Response response, NewUser body) {
             return body.name();
         }
+
+        Object invoke(Request request, Response response) throws Exception {
+            return super.handle(request, response);
+        }
     }
 
     static final class Rename extends JsonHandler<java.util.List<NewUser>, Integer> {
         @Override protected Integer handle(Request request, Response response, java.util.List<NewUser> body) {
             return body.size();
+        }
+
+        Object invoke(Request request, Response response) throws Exception {
+            return super.handle(request, response);
         }
     }
 
@@ -49,7 +57,7 @@ class JsonHandlerTest {
     void theBodyArrivesParsedAsTheTypeTheHandlerDeclares() throws Exception {
         Create handler = app.services().create(Create.class);
 
-        Object answer = handler.handle(request("{\"name\":\"alice\"}"), new Response(200, ContentType.JSON));
+        Object answer = handler.invoke(request("{\"name\":\"alice\"}"), new Response(200, ContentType.JSON));
 
         assertEquals("alice", answer, "text is already a body, so the codec leaves it alone");
     }
@@ -58,7 +66,7 @@ class JsonHandlerTest {
     void aGenericBodyIsParsedAsWhatItSays() throws Exception {
         Rename handler = app.services().create(Rename.class);
 
-        Object answer = handler.handle(request("[{\"name\":\"alice\"},{\"name\":\"bob\"}]"),
+        Object answer = handler.invoke(request("[{\"name\":\"alice\"},{\"name\":\"bob\"}]"),
                 new Response(200, ContentType.JSON));
 
         assertEquals("2", new String((byte[]) answer, StandardCharsets.UTF_8), "two users, counted after Jackson built the list");
@@ -69,7 +77,7 @@ class JsonHandlerTest {
         Create handler = app.services().create(Create.class);
 
         dev.relism.flash.http.HttpException refused = assertThrows(dev.relism.flash.http.HttpException.class,
-                () -> handler.handle(request("not json"), new Response(200, ContentType.JSON)));
+                () -> handler.invoke(request("not json"), new Response(200, ContentType.JSON)));
 
         assertEquals(400, refused.status());
     }
@@ -78,7 +86,7 @@ class JsonHandlerTest {
     void aHandlerThatNeverNamedItsTypesIsRefusedAtBoot() {
         IllegalStateException refused = assertThrows(IllegalStateException.class, () -> app.services().create(Untyped.class));
 
-        assertTrue(refused.getMessage().contains("YourRequest, YourAnswer"), refused.getMessage());
+        assertTrue(refused.getMessage().contains("types open"), refused.getMessage());
     }
 
 

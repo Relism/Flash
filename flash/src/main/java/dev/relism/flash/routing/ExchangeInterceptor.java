@@ -1,7 +1,5 @@
 package dev.relism.flash.routing;
 
-import dev.relism.flash.http.Handler;
-
 /**
  * Infrastructure around a fully handled HTTP exchange. Unlike {@link Middleware}, an interceptor
  * sits outside the application's error boundary, so the value returned by {@code exchange}
@@ -14,11 +12,11 @@ import dev.relism.flash.http.Handler;
 @FunctionalInterface
 public interface ExchangeInterceptor {
 
-    /** Wraps one compiled route. {@code route} and the returned handler are retained for its lifetime. */
-    Handler wrap(Route route, Handler exchange);
+    /** Wraps preparation and execution of one compiled route at boot. */
+    Next wrap(Route route, Next exchange);
 
-    /** Wraps requests for which no route matched. */
-    default Handler wrapFallback(Handler exchange) {
+    /** Observes requests for which no route matched. */
+    default Next wrapFallback(Next exchange) {
         return exchange;
     }
 }

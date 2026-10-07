@@ -1,6 +1,6 @@
 package dev.relism.flash.ext.avaje.jsonb;
 
-import dev.relism.flash.ext.serde.CodecHandler;
+import dev.relism.flash.ext.serde.CodecRequestHandler;
 
 /**
  * A handler that reads JSON and answers JSON.
@@ -21,4 +21,4 @@ import dev.relism.flash.ext.serde.CodecHandler;
  * <p>Both types are resolved at boot, so one without a generated adapter fails there. {@link Void}
  * as the first type reads nothing.
  */
-public abstract class JsonHandler<I, O> extends CodecHandler<Json, I, Json, O> {}
+public abstract class JsonHandler<I, O> extends CodecRequestHandler<Json, I, Json, O> {}

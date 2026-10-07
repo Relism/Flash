@@ -30,7 +30,7 @@ class ConnectionRunnerTest {
     Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     ScratchPool scratchPool = new ScratchPool();
     Router router = new Router();
-    router.compile(Errors.notFound(false), Errors.handler(false));
+    router.compile(Errors.notFound(false)::prepare);
     ServerConfig configuration = ServerConfig.builder().port(0).build();
 
     ConnectionProtocol throwingProtocol =
@@ -85,7 +85,7 @@ class ConnectionRunnerTest {
     Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     ScratchPool scratchPool = new ScratchPool();
     Router router = new Router();
-    router.compile(Errors.notFound(false), Errors.handler(false));
+    router.compile(Errors.notFound(false)::prepare);
     ServerConfig configuration =
         ServerConfig.builder().port(0).maxConnections(1).build();
 

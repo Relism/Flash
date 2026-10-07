@@ -1,13 +1,26 @@
 # flash-ext-view-core
 
-What every template engine module shares; an application depends on an engine module
-(`flash-ext-view-jte`, `flash-ext-view-thymeleaf`), not on this one.
+The shared part of the template engine modules: `ViewHandler`, `ViewModel`, per-request globals and
+the `ViewEngine` contract. Install an engine module ([jte](../flash-ext-view-jte/README.md) or
+[Thymeleaf](../flash-ext-view-thymeleaf/README.md)), not this one.
 
-- `ViewHandler`: a handler that answers with a template. The engine's annotation names the
-  template, `render(Request, Response)` returns its `ViewModel`. Services come through the
-  constructor like any other handler.
-- `ViewModel`: the values one render sees.
-- `ViewModule`: the base of an engine module. `global(key, req -> value)` adds a value every
-  template sees, computed per request; at boot, a handler that names a template but is no
-  `ViewHandler`, or a `ViewHandler` that names none, fails the start.
-- `ViewEngine`: the seam an engine implements. One per app.
+```xml
+<dependency>
+    <groupId>dev.relism</groupId>
+    <artifactId>flash-ext-view-core</artifactId>
+</dependency>
+```
+
+```java
+@GET("/")
+@Template("home.jte")              // the annotation belongs to the engine module
+final class Home extends ViewHandler {
+    @Override public ViewModel render(Request req, Response res) {
+        return ViewModel.of("name", "Ada");
+    }
+}
+```
+
+| Page | Content |
+|---|---|
+| [docs/handlers.md](docs/handlers.md) | `ViewHandler`, `ViewModel`, globals, writing an engine |

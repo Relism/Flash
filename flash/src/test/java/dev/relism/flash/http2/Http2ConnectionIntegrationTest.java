@@ -163,17 +163,13 @@ class Http2ConnectionIntegrationTest {
             response.type(ContentType.BINARY).streaming(stream -> {
               byte[] block = new byte[8192];
               int written = 0;
-              try {
-                while (written < length) {
-                  int count = Math.min(block.length, length - written);
-                  for (int i = 0; i < count; i++) block[i] = (byte) ((written + i) * 31);
-                  stream.write(block, 0, count);
-                  written += count;
-                }
-                stream.trailer("grpc-status", "0");
-              } catch (IOException failure) {
-                throw new RuntimeException(failure);
+              while (written < length) {
+                int count = Math.min(block.length, length - written);
+                for (int i = 0; i < count; i++) block[i] = (byte) ((written + i) * 31);
+                stream.write(block, 0, count);
+                written += count;
               }
+              response.trailer("grpc-status", "0");
             }));
     server = Server.start(app, config3);
     int port = server.port();

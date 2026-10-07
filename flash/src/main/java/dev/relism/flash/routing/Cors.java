@@ -1,6 +1,6 @@
 package dev.relism.flash.routing;
 
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.PreEncodedHeader;
 import dev.relism.fpr.core.ByteView;
@@ -61,12 +61,13 @@ public final class Cors implements Middleware {
     }
 
     @Override
-    public Handler wrap(Handler next) {
-        return (request, response) -> {
+    public void handle(Exchange exchange, Next next) throws Exception {
+            var request = exchange.request();
+            var response = exchange.response();
             ByteView origin = request.headerView("Origin");
-            if (origin == null) return next.handle(request, response);
+            if (origin == null) { next.handle(exchange); return; }
             String allowed = allowed(origin);
-            if (allowed == null) return next.handle(request, response);
+            if (allowed == null) { next.handle(exchange); return; }
 
             if (origins.isEmpty()) response.header(ANY_ORIGIN);
             else response.header("Access-Control-Allow-Origin", allowed).header(VARY);
@@ -76,10 +77,9 @@ public final class Cors implements Middleware {
                 response.header(allowMethods).header(maxAge);
                 if (allowHeaders != null) response.header(allowHeaders);
                 response.status(204);
-                return null;
+                return;
             }
-            return next.handle(request, response);
-        };
+            next.handle(exchange);
     }
 
     /** The allowed origin that {@code origin} is, or null. */

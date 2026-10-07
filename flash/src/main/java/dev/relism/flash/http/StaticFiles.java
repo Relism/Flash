@@ -35,7 +35,7 @@ import static dev.relism.flash.bytes.ByteScan.indexOfIgnoreCase;
  * app.get("/static/**", files);
  * }</pre>
  */
-public final class StaticFiles implements Handler {
+public final class StaticFiles extends RequestHandler {
 
     /** A name with a hex content hash of 8 or more digits between dots: {@code app.3f2a91bc.js}. */
     public static final Predicate<String> HASHED = name -> name.matches(".*\\.[a-fA-F0-9]{8,}\\.[^/]*");
@@ -96,7 +96,7 @@ public final class StaticFiles implements Handler {
     }
 
     @Override
-    public Object handle(Request req, Response res) {
+    protected Object handle(Request req, Response res) {
         if (!serve(req.path(), req, res)) throw HttpException.notFound(req.path());
         return null;
     }

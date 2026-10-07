@@ -41,9 +41,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * holder has just found the queue empty and is about to unlock — the item would be stranded with
  * nobody left to drain it. This is closed by two cooperating checks, and the correctness argument
  * for why together they are sufficient is a happens-before chain through the queue's {@code
- * AtomicReference} and the lock's own acquire/release ordering (recorded in full in {@code
- * WRITER.md}, since it is exactly the kind of reasoning a future reader must be able to re-derive,
- * not just trust):
+ * AtomicReference} and the lock's own acquire/release ordering (see {@code
+ * flash/docs/http2/response-writer.md}):
  *
  * <pre>
  * write(intent):
@@ -96,7 +95,7 @@ public final class Http2FrameWriter {
   // Set only for the duration of an in-flight sink.write() call; see WriteTimeoutReaper. A
   // single volatile write to arm, one to disarm — no timestamp is recorded here (see the
   // reaper's own Javadoc for why: a per-write System.nanoTime() call measurably missed the
-  // N=1 gate's 50 ns overhead budget when this was first benchmarked, recorded in WRITER.md).
+  // N=1 gate's 50 ns overhead budget when this was first benchmarked).
   private volatile Thread writingThread;
 
   public Http2FrameWriter(Sink sink) {
@@ -124,7 +123,7 @@ public final class Http2FrameWriter {
    * {@code c} directly — landing on the wire before {@code a} and {@code b}, which are still
    * sitting in the queue. Checking {@code hasWork()} first means "bypass the queue" only happens
    * when the queue is observed genuinely empty, i.e. everything previously offered — by any
-   * producer — has already been written; see {@code WRITER.md} for the full argument.
+   * producer — has already been written; see {@code flash/docs/http2/response-writer.md} for the argument.
    */
   public void write(WriteIntent intent) throws IOException {
     if (!priorityQueue.hasWork() && !queue.hasWork() && lock.tryLock()) {
@@ -225,7 +224,7 @@ public final class Http2FrameWriter {
    *
    * <p>Deliberately does <em>not</em> ask each write to record a {@code System.nanoTime()} {@code
    * nanoTime()} call (plus the extra volatile field it required) costing enough to miss the N=1
-   * gate's 50 ns-over-baseline budget (recorded in {@code WRITER.md}). Instead, the reaper counts
+   * gate's 50 ns-over-baseline budget. Instead, the reaper counts
    * <em>consecutive scans</em> a given writer has been observed still blocked ({@link
    * #writingThread} non-null); a writer blocked for more than {@code WRITE_TIMEOUT_MS /
    * SCAN_INTERVAL_MS} consecutive scans is interrupted. This trades a little precision (up to one

@@ -1,45 +1,43 @@
 # Transport
 
-`flash-ext-mcp` implements the **Streamable HTTP** transport from the MCP specification
-(revision `2025-11-25`). `stdio` is out of scope — Flash5 is an HTTP framework, and a
-subprocess-stdio transport doesn't fit its model.
+The server implements the MCP Streamable HTTP transport in its stateless form: one endpoint,
+`POST <rootPath>` (default `/mcp`), carrying one JSON-RPC 2.0 message per request. There is no
+session, no `GET` event stream and no server-initiated message, so any instance can answer any
+request.
 
-## What this revision implements
+Protocol revision reported at `initialize`: `2025-11-25`.
 
-- A single `POST {rootPath}` endpoint (default `/mcp`) accepting one JSON-RPC 2.0 message per
-  request and responding with a plain JSON object — the "standard JSON object response" mode the
-  specification allows as an alternative to opening a Server-Sent Events stream per request.
-- `Origin` header validation (DNS-rebinding protection), configurable via
-  `McpConfig.allowedOrigins(...)`.
-- Full JSON-RPC lifecycle: `initialize`, `notifications/initialized` (and any other
-  `notifications/*`/id-less message — answered with a bare `202 Accepted`, no body, per
-  JSON-RPC's notification semantics), `ping`, `tools/list`, `tools/call`, `resources/list`,
-  `resources/read`, `prompts/list`, `prompts/get`.
+## Methods
 
-## What this revision deliberately does not implement
+| Method | Behavior |
+|---|---|
+| `initialize` | Returns the protocol version, `serverInfo` (name and version from the config), the capabilities, and the optional `instructions`. Capabilities `tools`, `resources` and `prompts` appear only when at least one of that kind exists, each with `listChanged: false` |
+| `ping` | Empty result |
+| `tools/list`, `resources/list`, `prompts/list` | The catalogs built at boot |
+| `tools/call` | Params `name` and optional `arguments` |
+| `resources/read` | Param `uri` |
+| `prompts/get` | Params `name` and optional `arguments` |
+| `notifications/initialized`, `notifications/cancelled` | Accepted, answered `202` with no body |
 
-- **No `Mcp-Session-Id` / session state.** The specification says a server "MAY assign a session
-  ID at initialization time" — it is optional, not mandatory. This server is stateless: every
-  `POST` is handled independently, with no server-side session store. `initialize` does not need
-  to precede other calls for the server to function (there's no session to be "not initialized"
-  yet), which is a looser contract than a session-aware server would enforce — acceptable for a
-  static, boot-time-defined tool/resource/prompt catalog.
-- **No Server-Sent Events stream.** `GET {rootPath}` (used by session-aware servers to open a
-  standing SSE stream for server-initiated pushes) is not registered — MCP clients that only
-  speak the request/response half of Streamable HTTP work unaffected; clients that require a
-  standing SSE connection are not supported by this revision.
+Any other notification (a message with no `id`) is answered `202`. Any other method with an `id` is
+the JSON-RPC error `-32601`.
 
-Both are real, intentional scope cuts for a first version — not just to keep the surface area
-small: a static, precompiled tool catalog (see `tools-resources-prompts.md`) has no
-`listChanged` events to push and no long-running server-initiated messages to stream, so the
-stateful half of the transport buys little for the common case this extension targets. Sessions
-and SSE are natural extension points if a future revision needs server push (e.g. dynamic tool
-registration, elicitation, or sampling requests initiated by the server).
+## Response codes
 
-## Why `POST`, not the new `QUERY` HTTP method
+| Situation | HTTP | Body |
+|---|---|---|
+| Result | 200 | `{"jsonrpc":"2.0","id":...,"result":...}` |
+| Body is not valid JSON | 400 | Error `-32700` |
+| Body is not a JSON object | 400 | Error `-32600` |
+| Request without `method` | 400 | Error `-32600` (a notification: `202`) |
+| Missing `name` or `uri`, or an unknown tool, resource or prompt | 200 | Error `-32602` |
+| Unknown method | 200 | Error `-32601` |
+| An exception while handling a method | 200 | Error `-32603`, `Internal error: <message>` |
+| A tool fails or throws | 200 | A result with `isError: true` |
+| A tool is denied by `@RolesAllowed` or `@ScopesAllowed` | 200 | A result with `isError: true`: `Tool "x" denied: missing role` or `missing scope` |
 
-Flash5's core recently gained `HttpMethod.QUERY` (safe, idempotent, carries a body — a good
-semantic fit for JSON-RPC-over-HTTP in general). It is **not** used here: the MCP Streamable
-HTTP specification mandates `POST` for the client-to-server message path. Real MCP clients send
-`POST`; using `QUERY` instead would break interoperability with every existing client for a
-semantic nicety this extension doesn't need standalone.
+JSON-RPC errors are returned with HTTP 200 because the HTTP request succeeded. Authentication
+failures happen before dispatch and are ordinary `401` and `403` responses. See
+[security.md](security.md).
+
+An `id` can be a string or a number and is echoed back.

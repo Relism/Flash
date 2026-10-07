@@ -1,9 +1,8 @@
 package dev.relism.flash.ext.validation.avaje;
 
-import dev.relism.flash.ext.jackson.json.Json;
+import dev.relism.flash.ext.jackson.json.JsonHandler;
 import dev.relism.flash.ext.jackson.json.JsonModule;
 import dev.relism.flash.App;
-import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -18,16 +17,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 class AvajeValidationTest {
 
     /** Reads the body through the codec, which has the engine check it. */
-    public static final class Create implements Handler {
-        private final Json json;
-
-        public Create(Json json) {
-            this.json = json;
-        }
-
+    public static final class Create extends JsonHandler<CreateUser, String> {
         @Override
-        public Object handle(Request req, Response res) throws Exception {
-            return res.status(201).body("created:" + json.read(req, CreateUser.class).name());
+        protected String handle(Request req, Response res, CreateUser user) {
+            res.status(201);
+            return "created:" + user.name();
         }
     }
 

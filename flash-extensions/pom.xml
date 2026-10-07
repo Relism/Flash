@@ -14,11 +14,12 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>flash-ext-serde</module>
         <module>flash-ext-validation-core</module>
         <module>flash-ext-validation-jakarta</module>
         <module>flash-ext-validation-avaje</module>
+        <module>flash-ext-serde</module>
         <module>flash-ext-protobuf-java</module>
+        <module>flash-ext-grpc</module>
         <module>flash-ext-validation-protovalidate</module>
         <module>flash-ext-avaje-jsonb</module>
         <module>flash-ext-jackson-core</module>
@@ -50,6 +51,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-serde</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
@@ -115,6 +121,11 @@
             <dependency>
                 <groupId>dev.relism</groupId>
                 <artifactId>flash-ext-protobuf-java</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.relism</groupId>
+                <artifactId>flash-ext-grpc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

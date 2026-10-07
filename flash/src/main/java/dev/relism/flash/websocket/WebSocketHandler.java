@@ -1,24 +1,54 @@
 package dev.relism.flash.websocket;
 
-/**
- * A WebSocket endpoint: {@code onOpen}, then {@code onMessage} for every frame, then
- * {@code onClose} or {@code onError}. A class the app builds takes its services through its
- * constructor, like a handler.
- *
- * <p>A {@link WebSocketFrame} is valid only inside the {@code onMessage} call that received it:
- * copy what must outlive it with {@link WebSocketFrame#copyPayload()}. A fragmented message is
- * reassembled by the session, so {@code onMessage} is handed a whole one and never a fragment.
- */
-public interface WebSocketHandler {
+import dev.relism.flash.ServerConfig;
+import dev.relism.flash.http.Duplex;
+import dev.relism.flash.http.DuplexHandler;
+import dev.relism.flash.http.Request;
+import dev.relism.flash.http.Response;
 
-    void onOpen(WebSocketSession session);
+/** A bare WebSocket endpoint with one reused frame view per connection. */
+public abstract class WebSocketHandler extends DuplexHandler {
+    private int maxMessage;
 
-    void onMessage(WebSocketSession session, WebSocketFrame frame);
+    @Override
+    protected final void onInit() {
+        maxMessage = services().get(ServerConfig.class).getWsFrameBufferSize();
+        onWebSocketInit();
+    }
 
-    default void onClose(WebSocketSession session, int code) {}
+    protected void onWebSocketInit() {}
+    protected void onOpen(WebSocketSession session) throws Exception {}
+    protected abstract void onMessage(WebSocketSession session, WebSocketFrame frame) throws Exception;
+    protected void onClose(WebSocketSession session, int code, String reason) {}
+    protected void onError(WebSocketSession session, Throwable failure) {}
 
-    default void onError(WebSocketSession session, Throwable t) {}
+    @Override
+    protected final void prepare(Request request, Response response) {
+        WebSocketFraming.prepare(request, response);
+    }
 
-    /** Runs once at boot, after construction and before the first connection. */
-    default void onInit() {}
+    @Override
+    protected final boolean switchesProtocol(Request request) {
+        return request.connectProtocol() == null;
+    }
+
+    @Override
+    protected final void handle(Request request, Response response, Duplex duplex) throws Exception {
+        WebSocketFraming.Session engine = WebSocketFraming.open(duplex, maxMessage);
+        WebSocketSession session = new WebSocketSession(request, engine);
+        WebSocketFrame frame = new WebSocketFrame();
+        try {
+            onOpen(session);
+            while (engine.next()) {
+                frame.reset(engine);
+                onMessage(session, frame);
+            }
+            onClose(session, engine.closeCode(), engine.closeReason());
+        } catch (Throwable failure) {
+            engine.close(failure);
+            onError(session, failure);
+        } finally {
+            engine.close(null);
+        }
+    }
 }

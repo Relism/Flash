@@ -57,8 +57,7 @@ import org.openjdk.jmh.annotations.Warmup;
  *
  * <p>Per-write latency percentiles are computed by hand from {@code System.nanoTime()} samples
  * collected during the burst (JMH's own {@code Mode.SampleTime} does not fit a custom-concurrency
- * benchmark method) and printed once per (design, threads) combination — see {@code WRITER.md} for
- * the recorded results and the gate decision.
+ * benchmark method) and printed once per (design, threads) combination.
  *
  * <p>Run: {@code mvn -Pjmh -pl flash test-compile} then {@code java -cp
  * flash/target/test-classes:flash/target/classes:$(mvn -Pjmh -pl flash dependency:build-classpath

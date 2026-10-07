@@ -1,12 +1,14 @@
 package dev.relism.flash.ext.micrometer;
 
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.DuplexHandler;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.ExchangeInterceptor;
 import dev.relism.flash.routing.PathUtils;
 import dev.relism.flash.routing.Route;
+import dev.relism.flash.routing.Next;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
@@ -35,37 +37,35 @@ final class HttpServerMetrics implements ExchangeInterceptor {
     }
 
     @Override
-    public Handler wrap(Route route, Handler exchange) {
-        if (route.websocket() || excluded(route.path())) return exchange;
+    public Next wrap(Route route, Next exchange) {
+        if (route.handler() != null && DuplexHandler.class.isAssignableFrom(route.handler()) || excluded(route.path()))
+            return exchange;
         Meters meters = new Meters(route.path(), route.method());
-        return (request, response) -> record(meters, exchange, request, response);
+        return current -> record(meters, exchange, current);
     }
 
     @Override
-    public Handler wrapFallback(Handler exchange) {
+    public Next wrapFallback(Next exchange) {
         Meters notFound = new Meters(NOT_FOUND, null);
         Meters methodNotAllowed = new Meters(METHOD_NOT_ALLOWED, null);
         Meters unknown = new Meters(UNKNOWN, null);
-        return (request, response) -> {
+        return current -> {
             long start = System.nanoTime();
-            Object answer = exchange.handle(request, response);
-            Response actual = answer instanceof Response returned ? returned : response;
-            Meters meters = switch (actual.getStatusCode()) {
+            exchange.handle(current);
+            Response response = current.response();
+            Meters meters = switch (response.getStatusCode()) {
                 case 404 -> notFound;
                 case 405 -> methodNotAllowed;
                 default -> unknown;
             };
-            meters.record(request.method(), actual.getStatusCode(), System.nanoTime() - start);
-            return answer;
+            meters.record(current.request().method(), response.getStatusCode(), System.nanoTime() - start);
         };
     }
 
-    private Object record(Meters meters, Handler exchange, Request request, Response response) throws Exception {
+    private void record(Meters meters, Next next, Exchange exchange) throws Exception {
         long start = System.nanoTime();
-        Object answer = exchange.handle(request, response);
-        Response actual = answer instanceof Response returned ? returned : response;
-        meters.record(request.method(), actual.getStatusCode(), System.nanoTime() - start);
-        return answer;
+        next.handle(exchange);
+        meters.record(exchange.request().method(), exchange.response().getStatusCode(), System.nanoTime() - start);
     }
 
     private boolean excluded(String path) {

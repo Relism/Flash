@@ -1,109 +1,30 @@
 # flash-ext-validation-core
 
-One contract for checking what a request carried, and one way for the engine behind it to describe
-its rules. No engine of its own: install
-[`flash-ext-validation-jakarta`](../flash-ext-validation-jakarta) or
-[`flash-ext-validation-avaje`](../flash-ext-validation-avaje).
+One contract for checking a value against the rules its type declares. Codecs call it on a body
+they have just read, so a request that breaks a rule is a `422` and never reaches the handler. The
+rules themselves come from an engine module.
 
-```java
-app.install(new JsonModule())
-   .install(new JakartaValidation());
+```xml
+<dependency>
+    <groupId>dev.relism</groupId>
+    <artifactId>flash-ext-validation-core</artifactId>
+</dependency>
 ```
 
-That is the whole of it. A JSON or XML body is checked as soon as it is read: a malformed body is a
-400, a body that breaks a rule is a 422 listing every failure, and neither reaches the handler.
+Applications install exactly one engine for JSON and XML bodies:
 
-```json
-{"error": "name must not be blank; address.street must not be blank", "status": 422}
-```
-
-## One engine, said out loud
-
-Two engines in one application is a boot failure naming the second. Which engine validated a request
-is not a thing to leave to install order, and an application that installs none gets one line at
-boot saying that bodies are parsed and not checked.
-
-## Families
-
-JSON and XML bodies are plain objects, so one `Validation` serves them. A codec for values of its own kind,
-protobuf messages for one, asks for its own engine type, a sub-interface of `Validation` that its module
-defines: `flash-ext-protobuf-java` defines `ProtobufValidation`, and `flash-ext-validation-protovalidate`
-implements it. Engines of different families live in one application, each checking only the bodies its
-codec reads, so nothing is chosen at request time and nothing is looked up there: the codec holds its engine
-in a field from boot.
-
-```java
-app.install(new JsonModule(), new JakartaValidation(),               // JSON and XML: Validation
-            new ProtobufModule(), new ProtovalidateValidation());    // protobuf: ProtobufValidation
-```
-
-A mistake fails the boot, naming what is wrong:
-
-| Mistake | Failure |
+| Engine | Module |
 |---|---|
-| Two engines for one family, Jakarta and Avaje, or two `ProtobufValidation`s | the type "was added 2 times", naming both |
-| An engine of a family added as plain `Validation`, so its codec would never ask it | the codec refuses, naming the engine |
-| `ProtovalidateValidation` without `ProtobufModule`, so nothing would read it | refused: no `ProtobufModule` is installed |
-
-What does not fail is a family with no engine: its bodies are parsed and not checked, and the codec says so
-once at boot. An application with only Jakarta and protobuf bodies is in that case.
-
-**Adding a family.** In the codec's module, define `interface XValidation extends Validation {}`, have the
-codec ask `Validation.family(services, XValidation.class)` when it binds. That is the whole of the codec's
-side: it finds the engine, and refuses to boot when an `XValidation` was added as plain `Validation` or when
-two were added. An engine adds itself as `XValidation`, and refuses to boot without the codec that reads it.
-
-## The contract
+| Jakarta Validation through Hibernate Validator | [flash-ext-validation-jakarta](../flash-ext-validation-jakarta/README.md) |
+| Avaje Validator, generated at build time | [flash-ext-validation-avaje](../flash-ext-validation-avaje/README.md) |
+| Protovalidate, for protobuf messages | [flash-ext-validation-protovalidate](../flash-ext-validation-protovalidate/README.md) |
 
 ```java
-public interface Validation {
-    void verify(Object value);                              // 422 on failure, nothing otherwise
-    default void describe(Constraints constraints) {}       // what its rules mean, for the document
-}
+app.install(new JsonModule(), new JakartaValidation());
 ```
 
-`verify` is the only thing on the request path, and it is the engine's own work: this module
-allocates nothing there.
-
-## The document
-
-An engine declares what its annotations mean, and the published OpenAPI document carries it — no
-annotation is known by name here:
-
-```java
-@Override public void describe(Constraints constraints) {
-    constraints.of(Size.class, (size, facts) -> {
-        if (size.max() != Integer.MAX_VALUE) facts.put("maxLength", size.max());
-    });
-    constraints.of(Pattern.class, (pattern, facts) -> {
-        facts.put("pattern", pattern.regexp());
-        facts.describe(pattern.message());      // a regex has no keyword a reader understands
-    });
-    constraints.of(NotNull.class, (notNull, facts) -> facts.required());
-}
-```
-
-Consequences worth knowing:
-
-- **The document says what is enforced.** Two engines that share an annotation may describe it
-  differently, because each documents what it does with it. An application with no engine installed
-  gets a document with no rules in it, which is the truth.
-- **A fact never overwrites what the code already said.** An explicit `@Schema` description or bound
-  wins; the engine fills what was left unsaid.
-- **It runs once per document revision**, never on a request, so nothing here is on a hot path.
-
-`flash-ext-openapi` knows nothing about validation: this module contributes through its contributor
-interface, and is silent when it is not on the classpath.
-
-## Which engine
-
-| | [jakarta](../flash-ext-validation-jakarta) | [avaje](../flash-ext-validation-avaje) |
-|---|---|---|
-| How | Hibernate Validator, reflection at runtime | generated adapters, no reflection |
-| Asks of the build | nothing | its annotation processor, and `@Valid` on each validated type |
-| Brings | hibernate-validator, expressly | avaje-validator |
-| Reach for it when | you want it to work with no build change | the request path is measured |
-
-Both read the jakarta constraint annotations, so a type is annotated once whichever one is
-installed. What is not portable is a *custom* constraint: it is written against one engine's SPI and
-ties the application to it.
+| Page | Content |
+|---|---|
+| [docs/contract.md](docs/contract.md) | `Validation`, `ValidationException`, how codecs use them |
+| [docs/engines.md](docs/engines.md) | Writing an engine, codec families |
+| [docs/openapi.md](docs/openapi.md) | How rules reach the OpenAPI document |

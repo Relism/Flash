@@ -3,6 +3,7 @@ package dev.relism.flash.http1;
 import dev.relism.flash.RequestParser;
 import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http.ContentType;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.MalformedRequestException;
 import dev.relism.flash.http.Request;
@@ -11,10 +12,6 @@ import dev.relism.flash.routing.Router;
 import dev.relism.flash.transport.BufferedByteSource;
 import dev.relism.flash.transport.ConnectionContext;
 import dev.relism.flash.transport.ConnectionProtocol;
-import dev.relism.flash.websocket.Upgrade;
-import dev.relism.flash.websocket.WebSocketLoop;
-import dev.relism.flash.websocket.WebSocketSession;
-import dev.relism.flash.websocket.WebSocketUpgrade;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -23,8 +20,8 @@ import java.net.SocketTimeoutException;
 /**
  * The HTTP/1.1 keep-alive loop: parse, dispatch through the {@link Router}, respond, until the
  * connection closes. Parsing lives in {@link RequestParser}, serialization in
- * {@link Http1ResponseWriter}; a request its WebSocket route accepted hands the connection to
- * {@link WebSocketLoop} for good.
+ * {@link Http1ResponseWriter}; a response written as it goes is a
+ * {@link Http1Duplex}, and one that switched protocols keeps the connection for good.
  */
 public final class Http1Connection implements ConnectionProtocol {
 
@@ -37,6 +34,8 @@ public final class Http1Connection implements ConnectionProtocol {
         byte[] idleProbe = new byte[1];
         Router.Scratch routeScratch = ctx.router().newScratch();
         Response pooledResponse = new Response(200, ContentType.TEXT_PLAIN);
+        Http1Duplex duplex = new Http1Duplex(ctx);
+        Exchange exchange = new Exchange();
 
         while (!ctx.stopped().getAsBoolean()) {
             // Idle between keep-alive requests is normal, so the looser bound applies until a byte
@@ -72,23 +71,25 @@ public final class Http1Connection implements ConnectionProtocol {
             boolean keepAlive = Http1KeepAlive.isKeepAlive(request);
             Response response = pooledResponse.reset(200, ContentType.TEXT_PLAIN);
 
-            Object answer = ctx.router().dispatch(request, response,
-                    request.method() == HttpMethod.GET && WebSocketUpgrade.isWebSocketUpgrade(request), routeScratch);
-            if (answer instanceof Upgrade upgrade) {
-                in.clearDeadline(); // the socket loop paces itself
-                WebSocketUpgrade.performHandshake(out, request, ctx.scratch());
-                out.flush(); // the 101 must leave before WebSocketSession takes over rawOut
-                request.drain();
-                WebSocketLoop.run(new WebSocketSession(in, ctx.rawOut(), config.getWsFrameBufferSize(), request, false),
-                        upgrade.handler());
-                return;
+            duplex.start(request, request.method() == HttpMethod.HEAD, keepAlive);
+            Response answer;
+            try {
+                answer = ctx.router().dispatch(exchange.reset(request, response, duplex), routeScratch);
+            } catch (IOException failure) {
+                throw failure;
+            } catch (Exception failure) {
+                throw new IOException("response failed after it started", failure);
             }
-            response = (Response) answer;
+            boolean streamed = response.isCommitted();
+            if (streamed && duplex.finish()) return;
+            if (!streamed) response = answer;
 
             // A server that started stopping while the handler ran closes this connection.
             boolean actuallyKeepAlive = keepAlive && !ctx.stopped().getAsBoolean();
-            Http1ResponseWriter.writeResponse(out, response, request.method(), actuallyKeepAlive,
-                    config.isSendDate(), ctx.scratch());
+            if (!streamed) {
+                Http1ResponseWriter.writeResponse(out, response, request.method(), actuallyKeepAlive,
+                        config.isSendDate(), ctx.scratch());
+            }
             request.drain();
             if (config.isDev()) {
                 // Poisoned in development, so a request or response a handler kept past its return

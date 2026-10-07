@@ -1,4 +1,4 @@
-# flash-ext-cache-redis — planned
+# flash-ext-cache-redis (planned)
 
 Not implemented. This directory holds the design so the decision is written down rather than
 rediscovered; there is deliberately **no module, no pom and no source**, because an empty module
@@ -8,7 +8,7 @@ Add it when there is a second replica that actually needs shared state.
 
 ## What it would implement
 
-`CacheManager` and `Cache` from [`flash-ext-cache-core`](../../flash-ext-cache-core/docs/README.md),
+`CacheManager` and `Cache` from [`flash-ext-cache-core`](../../flash-ext-cache-core/README.md),
 so switching backend is an install-line change:
 
 ```java
@@ -35,5 +35,5 @@ ways an adapter cannot hide:
 
 Nothing in the codebase has two replicas sharing cache state. Building it now would mean choosing
 a client library, a serialization format and a failure policy with no real usage to check them
-against — and the failure policy in particular is the kind of decision that is wrong until a
+against. The failure policy in particular is the kind of decision that is wrong until a
 production incident tells you otherwise.

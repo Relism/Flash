@@ -88,7 +88,7 @@ public final class BufferedByteSource extends InputStream {
     /**
      * Removes the deadline and restores the socket to blocking indefinitely
      * ({@code SO_TIMEOUT = 0}). Must be called before any read the caller wants to be
-     * unbounded (e.g. handing the connection off to a long-lived WebSocket session loop).
+     * unbounded (e.g. handing the connection to the protocol it switched to).
      *
      * A {@code null} socket (every
      * test in this codebase that constructs a {@code BufferedByteSource} directly over a
@@ -181,6 +181,40 @@ public final class BufferedByteSource extends InputStream {
     @Override
     public void close() throws IOException {
         in.close();
+    }
+
+    // ── In place ──────────────────────────────────────────────────────────────
+
+    /**
+     * Buffers bytes when none are, and returns how many are available from {@link #windowOffset()}
+     * in {@link #window()}; -1 at EOF. Bytes already buffered are returned without reading.
+     */
+    public int fill() throws IOException {
+        if (prefixLen > 0) return prefixLen;
+        if (pos < limit) return limit - pos;
+        int n = fillFromUnderlying(buf, 0, buf.length);
+        if (n <= 0) return -1;
+        pos = 0;
+        limit = n;
+        return n;
+    }
+
+    public byte[] window() {
+        return prefixLen > 0 ? prefixBuf : buf;
+    }
+
+    public int windowOffset() {
+        return prefixLen > 0 ? prefixPos : pos;
+    }
+
+    /** Consumes {@code n} of the bytes {@link #fill} made available. */
+    public void advance(int n) {
+        if (prefixLen > 0) {
+            prefixPos += n;
+            prefixLen -= n;
+        } else {
+            pos += n;
+        }
     }
 
     // ── Peek and prepend — the two operations beyond InputStream's contract ────

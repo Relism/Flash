@@ -33,6 +33,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
   private boolean inlineMode;
   private boolean finished;
   private boolean fullyRead;
+  private boolean viewing; // head's bytes are lent out in place by fill(), until advance() releases it
 
   public Http2RequestBody(DataBufferPool pool) {
     this.pool = pool;
@@ -49,6 +50,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     inlineFlowControlledBytes = 0;
     finished = false;
     fullyRead = false;
+    viewing = false;
     if (inlineMode && inline == null) inline = new byte[Http2Limits.INLINE_BODY_THRESHOLD];
   }
 
@@ -130,7 +132,19 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     lock.lock();
     try {
       finished = true;
+      // A buffer lent out in place stays until its reader advances over it or the next begin():
+      // back in the pool, another stream could overwrite it under the parser. Its credit goes now.
+      DataBuffer lent = viewing ? head : null;
+      if (lent != null) {
+        head = lent.next;
+        lent.next = null;
+      }
       discarded = inlineFlowControlledBytes + releaseQueuedLocked();
+      if (lent != null) {
+        discarded += lent.flowControlledBytes;
+        lent.flowControlledBytes = 0;
+        head = tail = lent;
+      }
       inlineFlowControlledBytes = 0;
       dataAvailable.signalAll();
     } finally {
@@ -208,6 +222,79 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
       notifyConsumed(flowControlled);
     }
     return copied;
+  }
+
+  /**
+   * Blocks until DATA is buffered and returns how many bytes are available in place from {@link
+   * #windowOffset()} in {@link #window()}; -1 once the body has ended.
+   */
+  public int fill() throws IOException {
+    if (inlineMode) {
+      if (!finished) throw new IOException("inline request body is not complete");
+      int left = (int) (received - inlinePosition);
+      if (left == 0) fullyRead = true;
+      return left == 0 ? -1 : left;
+    }
+    lock.lock();
+    try {
+      while (head == null && !finished) {
+        try {
+          dataAvailable.await();
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new IOException("interrupted while waiting for request DATA", interrupted);
+        }
+      }
+      if (head == null) {
+        fullyRead = true;
+        return -1;
+      }
+      viewing = true;
+      return head.length - head.position;
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  public byte[] window() {
+    return inlineMode ? inline : head.bytes;
+  }
+
+  public int windowOffset() {
+    return inlineMode ? inlinePosition : head.position;
+  }
+
+  /** Consumes {@code n} of the bytes {@link #fill} made available; a buffer read through goes back, with its credit. */
+  public void advance(int n) {
+    if (inlineMode) {
+      inlinePosition += n;
+      if (inlinePosition == received && inlineFlowControlledBytes != 0) {
+        int flowControlled = inlineFlowControlledBytes;
+        inlineFlowControlledBytes = 0;
+        notifyConsumed(flowControlled);
+      }
+      return;
+    }
+    DataBuffer consumed = null;
+    int flowControlled = 0;
+    lock.lock();
+    try {
+      DataBuffer buffer = head;
+      buffer.position += n;
+      if (buffer.position == buffer.length) {
+        head = buffer.next;
+        if (head == null) tail = null;
+        flowControlled = buffer.flowControlledBytes;
+        consumed = buffer;
+        viewing = false;
+      }
+    } finally {
+      lock.unlock();
+    }
+    if (consumed != null) {
+      pool.release(consumed);
+      notifyConsumed(flowControlled);
+    }
   }
 
   @Override
