@@ -514,7 +514,7 @@ class HttpServerTlsTest {
         }
     }
 
-    // ── WebSocketSession.isSecure() / sslSession() — same info, WSS path ──────
+    // ── Request.isSecure() / sslSession() — same info, WSS path ──────
 
     private static String wsHandshakeKey() {
         return Base64.getEncoder().encodeToString("flash-tls-test-key".getBytes(StandardCharsets.UTF_8));
@@ -542,17 +542,18 @@ class HttpServerTlsTest {
 
         AtomicReference<Boolean> observedSecure = new AtomicReference<>();
         AtomicReference<SSLSession> observedSession = new AtomicReference<>();
-        // onOpen runs on the server's virtual thread, asynchronously with respect to the client
+        // The handler runs on the server's virtual thread, asynchronously with respect to the client
         // reading the 101 response bytes below (both happen after the same flush, in either
-        // order) — the latch is what makes the assertions below wait for onOpen, not the socket read.
+        // order) — the latch is what makes the assertions below wait for the handler, not the socket read.
         java.util.concurrent.CountDownLatch opened = new java.util.concurrent.CountDownLatch(1);
         app.ws("/echo", new WebSocketHandler() {
-            @Override public void onOpen(WebSocketSession session) {
-                observedSecure.set(session.isSecure());
-                observedSession.set(session.sslSession());
-                opened.countDown();
-            }
-            @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {}
+          @Override protected void onOpen(WebSocketSession session) {
+            observedSecure.set(session.request().isSecure());
+            observedSession.set(session.request().sslSession());
+            opened.countDown();
+          }
+
+          @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) {}
         });
         server = Server.start(app, config11);
         int port = server.port();
@@ -573,7 +574,7 @@ class HttpServerTlsTest {
             String headers = readWsHandshakeResponse(socket.getInputStream());
             assertTrue(headers.startsWith("HTTP/1.1 101 Switching Protocols"), "handshake response: " + headers);
             assertTrue(opened.await(SOCKET_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS),
-                    "onOpen was not called within timeout");
+                    "the handler did not run within timeout");
         }
 
         assertEquals(Boolean.TRUE, observedSecure.get());

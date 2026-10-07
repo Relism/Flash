@@ -7,7 +7,6 @@ import dev.relism.flash.websocket.WebSocketSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,23 +18,16 @@ class FlashWebSocketTest {
 
     @RegisterExtension
     static FlashTest app = FlashTest.of(() -> App.create()
-        .ws("/echo", new WebSocketHandler() {
-            @Override public void onOpen(WebSocketSession session) { }
-            @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {
-                if (frame.opcode() != WebSocketFrame.OP_TEXT) return;
-                try {
-                    byte[] echo = ("echo:" + new String(frame.copyPayload(), frame.payloadOffset(),
-                            frame.payloadLength(), StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8);
-                    session.sendText(echo, 0, echo.length);
-                } catch (Exception failure) {
-                    throw new IllegalStateException(failure);
-                }
-            }
-        })
+        .ws("/echo", Echo.class)
         .ws("/silent", new WebSocketHandler() {
-            @Override public void onOpen(WebSocketSession session) { }
-            @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) { }
+            @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) {}
         }));
+
+    public static final class Echo extends WebSocketHandler {
+        @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) throws Exception {
+            session.sendText("echo:" + frame.text());
+        }
+    }
 
     @Test
     void roundTripsTextThroughARealHandshake() {

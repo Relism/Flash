@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.ext.jackson.json.Json;
-import dev.relism.flash.ext.serde.CodecHandler;
+import dev.relism.flash.ext.serde.CodecRequestHandler;
 import dev.relism.flash.App;
 import dev.relism.flash.testing.FlashTest;
 import dev.relism.flash.http.ContentType;
@@ -36,13 +36,15 @@ class XmlHandlerTest {
         @Override protected String handle(Request request, Response response, Order body) {
             return body.reference();
         }
+        Object invoke(Request request, Response response) throws Exception { return super.handle(request, response); }
     }
 
     /** The two ends are independent: this one reads XML and answers JSON. */
-    static final class Ship extends CodecHandler<Xml, Order, Json, Receipt> {
+    static final class Ship extends CodecRequestHandler<Xml, Order, Json, Receipt> {
         @Override protected Receipt handle(Request request, Response response, Order body) {
             return new Receipt(body.reference());
         }
+        Object invoke(Request request, Response response) throws Exception { return super.handle(request, response); }
     }
 
     /** Reads nothing and answers XML, which is how a route that only delivers is written. */
@@ -50,13 +52,14 @@ class XmlHandlerTest {
         @Override protected Receipt handle(Request request, Response response, Void nothing) {
             return new Receipt("catalog");
         }
+        Object invoke(Request request, Response response) throws Exception { return super.handle(request, response); }
     }
 
     @Test
     void theBodyArrivesParsedAsTheTypeTheHandlerDeclares() throws Exception {
         Place handler = app.services().create(Place.class);
 
-        Object answer = handler.handle(request("<Order><reference>A-1</reference></Order>"), response());
+        Object answer = handler.invoke(request("<Order><reference>A-1</reference></Order>"), response());
 
         assertEquals("A-1", answer);
     }
@@ -66,7 +69,7 @@ class XmlHandlerTest {
         Place handler = app.services().create(Place.class);
 
         HttpException refused = assertThrows(HttpException.class,
-                () -> handler.handle(request("<Order><reference>"), response()));
+                () -> handler.invoke(request("<Order><reference>"), response()));
 
         assertEquals(400, refused.status());
     }
@@ -76,7 +79,7 @@ class XmlHandlerTest {
         Ship handler = app.services().create(Ship.class);
         Response response = response();
 
-        Object body = handler.handle(request("<Order><reference>A-1</reference></Order>"), response);
+        Object body = handler.invoke(request("<Order><reference>A-1</reference></Order>"), response);
 
         assertEquals("{\"number\":\"A-1\"}", new String((byte[]) body, StandardCharsets.UTF_8));
         assertEquals("application/json", new String(response.getContentType(), StandardCharsets.UTF_8));
@@ -87,7 +90,7 @@ class XmlHandlerTest {
         Catalog handler = app.services().create(Catalog.class);
         Response response = new Response(200, ContentType.NONE);
 
-        Object body = handler.handle(request(""), response);
+        Object body = handler.invoke(request(""), response);
 
         assertEquals("<Receipt><number>catalog</number></Receipt>", new String((byte[]) body, StandardCharsets.UTF_8));
         assertEquals("application/xml", new String(response.getContentType(), StandardCharsets.UTF_8));

@@ -11,8 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
-import java.util.function.Consumer;
 
 /**
  * HTTP response. All mutating methods return {@code this} for fluent chaining.
@@ -44,7 +42,8 @@ public class Response {
   private InputStream stream;
   private long streamLength; // meaningful only when isStreaming() && !chunked
   private boolean chunked;
-  private boolean pushStreaming;
+  private Streaming streamingBody;
+  private boolean committed;
   private byte[] contentType;
   private final MutableHeaderMap trailers = new MutableHeaderMap();
 
@@ -98,7 +97,8 @@ public class Response {
     this.stream = null;
     this.streamLength = 0;
     this.chunked = false;
-    this.pushStreaming = false;
+    this.committed = false;
+    this.streamingBody = null;
     this.contentType = contentType.getBytes();
     this.headerQuadCount = 0;
     this.trailers.reset();
@@ -120,7 +120,7 @@ public class Response {
 
   /** Sets the status code. The phrase is looked up from {@link HttpStatus} on the write path. */
   public Response status(int code) {
-    checkActive();
+    checkHead();
     this.statusCode = code;
     this.statusBytes = null;
     return this;
@@ -139,27 +139,27 @@ public class Response {
    * the write path — zero lookup, zero allocation.
    */
   public Response status(HttpStatus status) {
-    checkActive();
+    checkHead();
     this.statusCode = status.code();
     this.statusBytes = status.bytes();
     return this;
   }
 
   public Response type(ContentType ct) {
-    checkActive();
+    checkHead();
     this.contentType = ct.getBytes();
     return this;
   }
 
   /** A content type encoded once, typically at boot: the array is kept, not copied, so it must not change. */
   public Response type(byte[] ct) {
-    checkActive();
+    checkHead();
     this.contentType = ct;
     return this;
   }
 
   public Response type(String ct) {
-    checkActive();
+    checkHead();
     this.contentType = ct.getBytes(StandardCharsets.UTF_8);
     return this;
   }
@@ -168,7 +168,7 @@ public class Response {
     checkActive();
     this.body = bytes;
     this.stream = null;
-    this.pushStreaming = false;
+    this.streamingBody = null;
     return this;
   }
 
@@ -183,7 +183,7 @@ public class Response {
     this.streamLength = length;
     this.chunked = false;
     this.body = null;
-    this.pushStreaming = false;
+    this.streamingBody = null;
     return this;
   }
 
@@ -193,19 +193,45 @@ public class Response {
     this.stream = is;
     this.chunked = true;
     this.body = null;
-    this.pushStreaming = false;
+    this.streamingBody = null;
     return this;
   }
 
-  /** Push-style streaming response with bounded blocking backpressure. */
-  public Response streaming(Consumer<ResponseStream> producer) {
+  /**
+   * Writes this response as it is produced: {@code body} runs once the handler and every
+   * middleware around it have returned, so all of them can still set the status and headers. These
+   * leave with the body's first write or flush, and the trailers when it returns. A body that never
+   * writes answers like a handler that set no body; one that fails before writing answers with the
+   * app's error handler.
+   */
+  public Response streaming(Streaming body) {
     checkActive();
-    this.stream = new ProducerInputStream(Objects.requireNonNull(producer), this);
-    this.streamLength = -1;
-    this.chunked = true;
-    this.pushStreaming = true;
+    this.streamingBody = java.util.Objects.requireNonNull(body, "body");
     this.body = null;
+    this.stream = null;
     return this;
+  }
+
+  @FunctionalInterface
+  public interface Streaming {
+    void write(OutputStream output) throws Exception;
+  }
+
+  Streaming streamingBody() { return streamingBody; }
+
+  /** Marks the status and headers as sent. {@code public} for the connection packages. */
+  public void commit() {
+    committed = true;
+  }
+
+  /** Whether the status and headers are already on the wire. */
+  public boolean isCommitted() {
+    return committed;
+  }
+
+  private void checkHead() {
+    checkActive();
+    if (committed) throw new IllegalStateException("the response has started: set the status and headers before writing");
   }
 
   /** Adds a trailer rendered after the response body on both HTTP versions. */
@@ -276,6 +302,7 @@ public class Response {
     this.statusBytes = status.bytes();
     this.body = null;
     this.stream = null;
+    this.streamingBody = null;
     return header("Location", url);
   }
 
@@ -310,7 +337,7 @@ public class Response {
   }
 
   private int beginField() {
-    checkActive();
+    checkHead();
     checkHeaderBudget();
     if (headerRegion == null) {
       headerRegion = new ByteWriter(128);
@@ -372,12 +399,6 @@ public class Response {
     return chunked;
   }
 
-  /** Internal distinction between producer-driven and InputStream-driven response bodies. */
-  public boolean isPushStreaming() {
-    checkActive();
-    return pushStreaming;
-  }
-
   public int getStatusCode() {
     checkActive();
     return statusCode;
@@ -433,6 +454,8 @@ public class Response {
    */
   public Response setBody(Object body) {
     checkActive();
+    this.stream = null;
+    this.streamingBody = null;
     if (body instanceof byte[] bytes) {
       this.body = bytes;
       return this;

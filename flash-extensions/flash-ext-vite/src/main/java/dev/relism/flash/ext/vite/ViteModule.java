@@ -1,11 +1,9 @@
 package dev.relism.flash.ext.vite;
 
 import dev.relism.flash.App;
-import dev.relism.flash.Bound;
 import dev.relism.flash.Module;
 import dev.relism.flash.ServerConfig;
-import dev.relism.flash.Services;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -68,7 +66,7 @@ public final class ViteModule implements Module {
     }
 
     /** The build from memory, or, in dev, Vite's dev server for as long as the app runs. */
-    private static final class Frontend implements Handler, Bound, AutoCloseable {
+    private static final class Frontend extends RequestHandler implements AutoCloseable {
 
         private static final byte[] HTML = "text/html".getBytes(StandardCharsets.US_ASCII);
         private static final byte[] NAVIGATE = "navigate".getBytes(StandardCharsets.US_ASCII);
@@ -88,8 +86,8 @@ public final class ViteModule implements Module {
         }
 
         @Override
-        public void bind(Services services) {
-            if (services.get(ServerConfig.class).isDev()) {
+        protected void onInit() {
+            if (services().get(ServerConfig.class).isDev()) {
                 devServer = new DevServer(root, devPort);
                 return;
             }
@@ -108,7 +106,7 @@ public final class ViteModule implements Module {
          * missing script, gets the app's own 404. In dev Vite answers the browser, so nothing is here.
          */
         @Override
-        public Object handle(Request req, Response res) {
+        protected Object handle(Request req, Response res) {
             if (files == null) throw HttpException.notFound(req.path());
             if (files.serve(req.path(), req, res)) return null;
             if (navigationOnly && !navigation(req)) throw HttpException.notFound(req.path());

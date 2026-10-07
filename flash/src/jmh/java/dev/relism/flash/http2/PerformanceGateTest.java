@@ -83,7 +83,7 @@ class PerformanceGateTest {
     return benchmark.substring(benchmark.lastIndexOf('.') + 1);
   }
 
-  // Filled from the controlled baseline run documented in BASELINES.md, with 35% CI headroom.
+  // Filled from a controlled baseline run, with 35% CI headroom.
   private static final Map<String, Double> MAXIMUM_P99_NANOS =
       Map.of(
           "parseAndRoute", 45_000.0,

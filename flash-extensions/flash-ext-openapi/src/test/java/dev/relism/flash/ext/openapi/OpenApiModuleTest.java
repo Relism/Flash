@@ -1,7 +1,7 @@
 package dev.relism.flash.ext.openapi;
 
 import dev.relism.flash.App;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -17,12 +17,12 @@ class OpenApiModuleTest {
 
     @ApiOperation(summary = "Health check")
     @APIResponse(responseCode = "200", description = "OK")
-    public static final class Health implements Handler {
+    public static final class Health extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return "ok"; }
     }
 
     @ApiOperation(summary = "Scoped users")
-    public static final class Users implements Handler {
+    public static final class Users extends RequestHandler {
         @Override public Object handle(Request request, Response response) { return List.of(); }
     }
 

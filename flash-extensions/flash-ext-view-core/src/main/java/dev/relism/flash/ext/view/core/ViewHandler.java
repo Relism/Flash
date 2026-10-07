@@ -1,8 +1,6 @@
 package dev.relism.flash.ext.view.core;
 
-import dev.relism.flash.Bound;
-import dev.relism.flash.Services;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 
@@ -16,7 +14,7 @@ import dev.relism.flash.http.Response;
  * }
  * }</pre>
  */
-public abstract class ViewHandler implements Handler, Bound {
+public abstract class ViewHandler extends RequestHandler {
 
     private ViewEngine engine;
     private Object target;
@@ -24,8 +22,8 @@ public abstract class ViewHandler implements Handler, Bound {
     public abstract ViewModel render(Request req, Response res) throws Exception;
 
     @Override
-    public final void bind(Services services) {
-        engine = services.get(ViewEngine.class);
+    protected final void onInit() {
+        engine = services().get(ViewEngine.class);
         target = engine.target(getClass());
         if (target == null) throw new IllegalStateException(getClass().getName() + " names no template");
     }

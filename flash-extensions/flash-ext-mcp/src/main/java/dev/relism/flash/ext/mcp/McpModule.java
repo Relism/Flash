@@ -1,9 +1,7 @@
 package dev.relism.flash.ext.mcp;
 
 import dev.relism.flash.App;
-import dev.relism.flash.Bound;
 import dev.relism.flash.Module;
-import dev.relism.flash.Services;
 import dev.relism.flash.ext.security.AuthenticationEntryPoint;
 import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.ext.security.Security;
@@ -15,6 +13,7 @@ import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.routing.Middleware;
 import lombok.extern.slf4j.Slf4j;
 
@@ -55,19 +54,23 @@ public class McpModule implements Module {
         List<Middleware> chain = new ArrayList<>(List.of(McpTransportGuards.originGuard(config.allowedOrigins())));
         boolean secured = config.security() != McpSecurity.NONE;
         // Composed when the routes compile: the app's Security is only known once it starts.
-        if (secured) chain.add(next -> endpoint.protect(next));
+        if (secured) {
+            chain.add((exchange, next) -> endpoint.authentication.handle(exchange, next));
+            if (config.requireTokenAudience()) chain.add(endpoint::checkAudience);
+        }
         chain.addAll(config.middleware());
         app.add(Endpoint.class, endpoint).post(config.rootPath(), endpoint, chain.toArray(Middleware[]::new));
         if (secured) app.get(endpoint.metadataPath, endpoint::metadata);
     }
 
     /** The JSON-RPC endpoint, built at start from the app's services. */
-    private static final class Endpoint implements Handler, Bound {
+    private static final class Endpoint extends RequestHandler {
 
         private final McpConfig config;
         private final String metadataPath;
         private Security security;
         private McpDispatcher dispatcher;
+        private Middleware authentication;
         private volatile List<SecurityScheme> schemes;
 
         Endpoint(McpConfig config) {
@@ -76,47 +79,40 @@ public class McpModule implements Module {
         }
 
         @Override
-        public void bind(Services services) {
-            security = config.security() == McpSecurity.NONE ? null : services.find(Security.class)
+        protected void onInit() {
+            security = config.security() == McpSecurity.NONE ? null : services().find(Security.class)
                     .orElseThrow(() -> new IllegalStateException("MCP server \"" + config.name()
                             + "\" requires flash-ext-security-core: install a SecurityModule, or set McpSecurity.NONE for a public server"));
-            dispatcher = new McpDispatcher(McpRegistry.scan(config.toolsPackage(), services, security),
+            dispatcher = new McpDispatcher(McpRegistry.scan(config.toolsPackage(), services(), security),
                     config.name(), config.version(), config.instructions());
+            if (security != null) {
+                List<AuthenticationMechanism> only = config.mechanisms();
+                AuthenticationEntryPoint anonymous = (req, res) -> {
+                    List<SecurityScheme> schemes = schemes();
+                    HttpException refused = HttpException.unauthorized();
+                    throw refused.header("WWW-Authenticate", issuers(schemes, null).isEmpty()
+                            ? String.join(", ", schemes.stream().map(SecurityScheme::challenge).toList())
+                            : "Bearer resource_metadata=\"" + security.origin(req) + metadataPath + "\"");
+                };
+                authentication = only.isEmpty() ? security.enforce(SecurityPolicy.AUTHENTICATED, anonymous)
+                        : security.enforce(SecurityPolicy.AUTHENTICATED, anonymous, only);
+            }
         }
 
         @Override
-        public Object handle(Request req, Response res) throws Exception {
+        protected Object handle(Request req, Response res) throws Exception {
             dispatcher.handle(req, res);
             return null;
         }
 
-        /** Authentication, and the audience check when it is on, around {@code next}. */
-        Handler protect(Handler next) {
-            List<AuthenticationMechanism> only = config.mechanisms();
-            AuthenticationEntryPoint anonymous = (req, res) -> {
-                List<SecurityScheme> schemes = schemes();
-                HttpException refused = HttpException.unauthorized();
-                throw refused.header("WWW-Authenticate", issuers(schemes, null).isEmpty()
-                        ? String.join(", ", schemes.stream().map(SecurityScheme::challenge).toList())
-                        : "Bearer resource_metadata=\"" + security.origin(req) + metadataPath + "\"");
-            };
-            Handler inner = next;
-            if (config.requireTokenAudience()) {
-                Handler checked = next;
-                inner = (req, res) -> {
-                    String resource = security.origin(req) + config.rootPath();
-                    if (!SecurityIdentity.current().principal().hasAudience(resource)) {
-                        log.warn("[flash-ext-mcp] Rejected a token not issued for {} (RFC 8707) — the authorization server must put it in aud", resource);
-                        throw HttpException.forbidden();
-                    }
-                    return checked.handle(req, res);
-                };
-            } else {
-                log.warn("[flash-ext-mcp] Token audience validation (RFC 8707) is DISABLED for {} — every token a registered issuer signs is accepted.", config.rootPath());
+        private void checkAudience(dev.relism.flash.http.Exchange exchange,
+                                   dev.relism.flash.routing.Next next) throws Exception {
+            String resource = security.origin(exchange.request()) + config.rootPath();
+            if (!SecurityIdentity.current().principal().hasAudience(resource)) {
+                log.warn("[flash-ext-mcp] Rejected a token not issued for {} (RFC 8707) — the authorization server must put it in aud", resource);
+                throw HttpException.forbidden();
             }
-            Middleware authenticated = only.isEmpty() ? security.enforce(SecurityPolicy.AUTHENTICATED, anonymous)
-                    : security.enforce(SecurityPolicy.AUTHENTICATED, anonymous, only);
-            return authenticated.wrap(inner);
+            next.handle(exchange);
         }
 
         Object metadata(Request req, Response res) {

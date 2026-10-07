@@ -9,6 +9,7 @@ import dev.relism.flash.Bound;
 import dev.relism.flash.Module;
 import dev.relism.flash.Services;
 import dev.relism.flash.http.ContentType;
+import dev.relism.flash.http.DuplexHandler;
 import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.RouteHook;
 
@@ -79,6 +80,7 @@ public class OpenApiModule implements Module {
 
         app.add(OpenApiBuilder.class, spec)
                 .add(RouteHook.class, new Collector(spec))
+                .add(OpenApiContributor.class, CodecDocs.class)
                 .get(jsonPath, (req, res) -> { res.type(ContentType.JSON).body(asJson.bytes()); return null; })
                 .get(basePath + ".yaml", (req, res) -> { res.type(YAML_CONTENT_TYPE).body(asYaml.bytes()); return null; });
         if (ui == null) return;
@@ -96,7 +98,7 @@ public class OpenApiModule implements Module {
 
         @Override
         public void routed(Route route) {
-            if (route.handler() == null || route.websocket()) return;
+            if (route.handler() == null || DuplexHandler.class.isAssignableFrom(route.handler())) return;
             spec.addOperation(route, route.handler().getAnnotation(ApiOperation.class), route.handler());
         }
     }

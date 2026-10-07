@@ -65,13 +65,14 @@ public final class DataModule implements Module {
             case NOT_SUPPORTED, NEVER -> TransactionPropagation.NOT_SUPPORTED;
         });
         Class<?>[] commitDespite = declared.dontRollbackOn();
-        Middleware middleware = next -> (req, res) -> {
+        Middleware middleware = (exchange, next) -> {
             if (type == Transactional.TxType.NEVER && tx.isActive())
                 throw new TxException("NEVER: " + handler.getName() + " runs inside a transaction");
             Exception[] kept = new Exception[1];
-            Object result = tx.call(definition, () -> {
+            tx.call(definition, () -> {
                 try {
-                    return next.handle(req, res);
+                    next.handle(exchange);
+                    return null;
                 } catch (Exception failure) {
                     // dontRollbackOn: the transaction commits, and the exception still reaches the caller.
                     for (Class<?> exempt : commitDespite) {
@@ -84,7 +85,6 @@ public final class DataModule implements Module {
                 }
             });
             if (kept[0] != null) throw kept[0];
-            return result;
         };
         return List.of(MiddlewareNode.of(TRANSACTION, middleware));
     }

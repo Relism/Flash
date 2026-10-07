@@ -1,7 +1,5 @@
 package dev.relism.flash.routing;
 
-import dev.relism.flash.http.Handler;
-
 import java.util.*;
 
 /** Boot-only DAG compiler for a route's middleware nodes. */
@@ -45,10 +43,14 @@ public final class MiddlewareGraph {
         return ordered;
     }
 
-    /** The chain around {@code handler}, composed once at boot: the first middleware runs first. */
-    public static Handler compose(Handler handler, Middleware[] ordered) {
-        Handler current = handler;
-        for (int i = ordered.length - 1; i >= 0; i--) current = ordered[i].wrap(current);
+    /** The chain around {@code target}, composed once at boot: the first middleware runs first. */
+    public static Next compose(Next target, Middleware[] ordered) {
+        Next current = target;
+        for (int i = ordered.length - 1; i >= 0; i--) {
+            Middleware middleware = ordered[i];
+            Next next = current;
+            current = exchange -> middleware.handle(exchange, next);
+        }
         return current;
     }
 }

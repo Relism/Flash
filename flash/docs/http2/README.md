@@ -1,43 +1,78 @@
-# HTTP/2 in Flash
+# HTTP/2
 
-Flash treats HTTP/1.1 and HTTP/2 as peer transports behind one connection boundary. TLS ALPN or
-the cleartext prior-knowledge preface selects a protocol once; both paths then feed the same
-router, `Request`, `Response`, handler, trailer, streaming and WebSocket APIs. HTTP/2 adds a
-bounded frame decoder, HPACK codec, stream state machine, two-level flow control and one serialized
-writer per connection. Application code does not branch on the wire protocol.
+Flash serves HTTP/2 (RFC 9113) and HTTP/1.1 to the same application. Handlers, middleware, requests,
+responses, trailers, streaming and WebSocket are the same types on both protocols. Application code
+does not branch on the wire version.
 
-The implementation is deliberately layered:
-
-```text
-listener / TLS
-    -> protocol negotiation
-        -> HTTP/1.1 parser ---------+
-        -> HTTP/2 frames + HPACK ----+-> shared request model -> router -> handler
-                                         shared response model
-        <- HTTP/1.1 serializer -----+
-        <- HTTP/2 stream writer ----+
+```mermaid
+flowchart LR
+    T[TLS ALPN or cleartext preface] --> N{negotiated}
+    N -->|h2| F[frame reader]
+    F --> H[HPACK decode]
+    H --> S[stream table and state]
+    S -->|virtual thread| R[Router.dispatch]
+    R --> W[response writer]
+    W --> Q[frame writer]
+    N -->|http/1.1| P[HTTP/1.1 parser]
+    P --> R
 ```
 
-This page covers the HTTP/2-specific layers only. The transport, message model, and byte
-primitives shared with HTTP/1.1 live in [`../core/`](../core/README.md).
+## Enabling
 
-## Protocol layers
+```java
+ServerConfig.builder()
+        .port(8443)
+        .tls(TlsConfig.keystore(Path.of("server.p12"), "changeit"))
+        .http2Enabled(true)
+        .build();
+```
 
-- [Connection](CONNECTION.md) and [streams](STREAMS.md) — HTTP/2 connection and stream state.
-- [Flow control](FLOW-CONTROL.md) — request backpressure and streamed responses.
-- [Cleartext](CLEARTEXT.md) — prior knowledge and the 421 misdirected-request rule.
-- [WebSockets](WEBSOCKET.md) — RFC 8441 extended CONNECT using the existing WebSocket API.
+| Mode | Option | Selection |
+|---|---|---|
+| TLS | `http2Enabled(true)` | ALPN offers `h2` and `http/1.1`. The client picks |
+| Cleartext | `http2CleartextEnabled(true)` | The first 24 bytes are `PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n` |
 
-## Wire internals
+Both are off by default and independent. See [config.md](../config.md#protocol).
 
-- [Serialized writer](WRITER.md) — the single-owner output path and contention model.
-- [Frames](FRAMES.md) — frame parsing, validation and error scope.
-- [HPACK](HPACK.md) — integer/Huffman coding and static/dynamic table ownership.
+## Cleartext
 
-## Operate and verify
+Cleartext HTTP/2 uses prior knowledge (RFC 9113 section 3.3): the client opens the connection with the
+HTTP/2 preface. One plaintext port serves both protocols: Flash peeks at the first bytes without
+consuming them, and anything other than the exact preface is HTTP/1.1. The `Upgrade: h2c` mechanism
+is not implemented.
 
-- [Security](SECURITY.md) — every HTTP/2 limit, default and abuse control.
-- [Troubleshooting](TROUBLESHOOTING.md) — GOAWAY/RST_STREAM diagnosis and protocol tracing.
-- [Compliance](COMPLIANCE.md) — h2spec, interoperability, fuzzing and deliberate omissions.
-- [Performance](PERFORMANCE.md) and [CI baselines](BASELINES.md) — measurements and regression
-  gates, including the comparison with nghttpd.
+## What is advertised
+
+At connection start Flash sends `SETTINGS` and raises the connection window:
+
+| Setting | Value |
+|---|---|
+| `SETTINGS_HEADER_TABLE_SIZE` | 4,096 |
+| `SETTINGS_ENABLE_PUSH` | 0 |
+| `SETTINGS_MAX_CONCURRENT_STREAMS` | 64 |
+| `SETTINGS_INITIAL_WINDOW_SIZE` | 1,048,576 |
+| `SETTINGS_MAX_HEADER_LIST_SIZE` | 32,768 |
+| `SETTINGS_ENABLE_CONNECT_PROTOCOL` | 1 |
+| `SETTINGS_MAX_FRAME_SIZE` | not sent: the protocol default 16,384 applies |
+
+A `WINDOW_UPDATE` on stream 0 raises the connection receive window from 65,535 to 1,048,576.
+
+## Not implemented
+
+- Server push. Flash advertises `ENABLE_PUSH = 0` and never sends `PUSH_PROMISE`. A `PUSH_PROMISE`
+  from a client is a connection error.
+- Priority scheduling (RFC 7540 trees, deprecated by RFC 9113). `PRIORITY` frames are validated and
+  ignored.
+- `Upgrade: h2c`, removed by RFC 9113.
+
+## Pages
+
+| Page | Content |
+|---|---|
+| [connection.md](connection.md) | Preface, SETTINGS, control frames, shutdown |
+| [streams.md](streams.md) | Stream table, state machine, request assembly, dispatch, WebSocket CONNECT |
+| [flow-control.md](flow-control.md) | Receive windows, request bodies, response backpressure |
+| [hpack.md](hpack.md) | Header compression |
+| [response-writer.md](response-writer.md) | Response frames and the serialized socket writer |
+| [limits.md](limits.md) | Every bound and what happens when it is exceeded |
+| [testing.md](testing.md) | Compliance, interoperability and fuzz tests |

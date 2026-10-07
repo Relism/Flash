@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.relism.flash.ext.jackson.JacksonDocs;
-import dev.relism.flash.ext.serde.CodecDocs;
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
 import dev.relism.flash.http.ContentType;
@@ -36,6 +35,6 @@ public class JsonModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Json.class, new Json(mapper)).install(CodecDocs.module(), JacksonDocs.module());
+        app.add(Json.class, new Json(mapper)).install(JacksonDocs.module());
     }
 }

@@ -1,107 +1,88 @@
-# Tools, Resources, Prompts
+# Tools, resources and prompts
 
-## One class per feature
+Classes under `McpConfig.toolsPackage(...)` (subpackages included) that carry `@Tool`, `@Resource`
+or `@Prompt` and implement the matching interface are registered. Each is built once at boot through
+its constructor, like a handler, so services come as constructor parameters. Each interface has a
+`default void onInit()` that runs once after construction.
 
-Every tool, resource, and prompt is its own class — the same shape as a Flash `Handler`, minus
-the HTTP-specific bits:
+A package with none of the three fails the boot. A duplicate tool name, resource URI or prompt name
+fails the boot. The `tools/list`, `resources/list` and `prompts/list` payloads are built once at boot.
 
-```java
-public interface McpTool {
-    ToolResponse call(ToolArguments args) throws Exception;  // hot path
-    default void onInit() {}                                 // boot-time work, once
-}
-```
-
-`McpResource` (`read()`) and `McpPrompt` (`render(PromptArguments)`) follow the exact same
-shape. The app builds each class through its constructor, so a tool takes its services there.
-There is deliberately no field injection and no method-per-tool bean class — Flash5 handlers are
-classes, and MCP features follow that convention.
-
-## Declaring metadata
-
-Metadata (name, description, input schema) lives entirely in the annotation, not in reflected
-method signatures — the whole JSON Schema is known at scan time and compiled once:
+## Tools
 
 ```java
-@Tool(
-    name = "get_weather",
-    description = "Get current weather for a city",
-    args = {
-        @ToolArg(name = "city", description = "City name", required = true),
-        @ToolArg(name = "days", type = ToolArgType.INTEGER, description = "Forecast horizon")
-    }
-)
-public final class GetWeatherTool implements McpTool {
-    @Override
-    public ToolResponse call(ToolArguments args) {
-        String city = args.getString("city");
-        int days = args.getInt("days", 1);
-        ...
+@Tool(name = "convert", title = "Convert", description = "Convert a unit",
+      args = {
+          @ToolArg(name = "value", type = ToolArgType.NUMBER, required = true),
+          @ToolArg(name = "to", description = "Target unit", required = true)
+      })
+final class Convert implements McpTool {
+    @Override public ToolResponse call(ToolArguments args) throws Exception {
+        return ToolResponse.success(new TextContent(String.valueOf(args.getDouble("value") * 2)));
     }
 }
 ```
 
-`ToolArgType` maps directly to JSON Schema primitive types: `STRING`, `INTEGER`, `NUMBER`,
-`BOOLEAN`, `OBJECT`, `ARRAY`. Nested object/array schemas beyond the primitive type keyword are
-not modeled in this revision — declare those tools with a looser `OBJECT`/`ARRAY` type and parse
-the raw shape via `ToolArguments.raw(name)`.
+`@Tool` has `name` (required), `title`, `description` and `args`. The arguments become the tool's
+JSON Schema `inputSchema`: an object with one property per `@ToolArg` (`name`, `type`, `description`)
+and a `required` list.
 
-`ToolArguments`/`PromptArguments` are thin typed accessors over the already-parsed JSON — no
-databinding, no reflection, no intermediate DTO:
+| `ToolArgType` | JSON Schema type |
+|---|---|
+| `STRING` (default), `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY` | the same, in lowercase |
+
+The schema is not used to validate calls: the server does not check argument types or required
+arguments. A tool reads what it needs from `ToolArguments`.
+
+### ToolArguments
+
+| Method | Returns |
+|---|---|
+| `has(name)` | Whether the argument is present |
+| `getString`, `getInt`, `getLong`, `getDouble`, `getBoolean` | The value. Without a default, a missing value is `null` for strings and zero or `false` otherwise. With a default, that default |
+| `raw(name)` | The Jackson `JsonNode`, for nested values and arrays |
+
+### ToolResponse
+
+| Factory | Meaning |
+|---|---|
+| `ToolResponse.success(content...)` | A result. Content blocks are `TextContent(text)` |
+| `ToolResponse.error(message)` | A tool failure with `isError: true`, shown to the model |
+
+An exception thrown from `call` becomes `ToolResponse.error("Tool \"name\" failed: <message>")`.
+
+## Resources
 
 ```java
-args.getString("city");
-args.getInt("days", 1);
-args.getBoolean("metric", true);
-args.raw("filters");   // escape hatch: JsonNode for nested/array arguments
-```
-
-## Discovery
-
-`McpConfig.toolsPackage("com.example.tools")` scans that package (and subpackages) for concrete
-`McpTool`/`McpResource`/`McpPrompt` subclasses carrying `@Tool`/`@Resource`/`@Prompt`. Same
-fail-fast contract as `App.scan()`: a missing package, a constructor the app cannot satisfy, or a
-class that fails to load aborts startup immediately with a clear message. Duplicate names/URIs also
-fail fast at boot.
-
-## Resources and Prompts
-
-```java
-@Resource(uri = "config://app-settings", description = "Application settings", mimeType = "application/json")
-public final class AppSettingsResource implements McpResource {
-    @Override
-    public ResourceContents read() {
-        return TextResourceContents.of(uri(), "application/json", settingsJson());
+@Resource(uri = "config://app", name = "Settings", description = "Application settings",
+          mimeType = "application/json")
+final class Settings implements McpResource {
+    @Override public ResourceContents read() {
+        return TextResourceContents.of(uri(), "application/json", "{\"mode\":\"prod\"}");
     }
 }
+```
 
-@Prompt(name = "summarize", args = @PromptArg(name = "text", required = true))
-public final class SummarizePrompt implements McpPrompt {
-    @Override
-    public PromptMessage render(PromptArguments args) {
+`@Resource` has `uri` (required), `name` (default: the uri), `description` and `mimeType` (default
+`text/plain`). `uri()` returns the declared URI. Resources are looked up by exact URI; templates are
+not supported. The only contents type is `TextResourceContents(uri, mimeType, text)`.
+
+## Prompts
+
+```java
+@Prompt(name = "summarize", description = "Summarize text", args = @PromptArg(name = "text", required = true))
+final class Summarize implements McpPrompt {
+    @Override public PromptMessage render(PromptArguments args) {
         return PromptMessage.withUserRole(new TextContent("Summarize: " + args.getString("text")));
     }
 }
 ```
 
-`McpResource.uri()` returns the URI declared on `@Resource`, cached at bind time — no repeated
-annotation lookups on the hot path.
+`@Prompt` has `name` (required), `description` and `args` (`@PromptArg(name, description, required)`;
+prompt arguments are strings). `PromptArguments` has `has` and `getString`. A `PromptMessage` has a role
+(`USER` or `ASSISTANT`) and one content block; use `withUserRole` or `withAssistantRole`.
 
 ## Content types
 
-`Content` and `ResourceContents` are `sealed`, currently permitting only `TextContent` and
-`TextResourceContents` respectively. This is a deliberate v1 scope cut, not an oversight — image
-content, embedded resources, and blob resources are extension points for a future revision
-(extend the `permits` clause and `McpContentWriter`).
-
-## Tool failures vs. protocol errors
-
-A `McpTool.call(...)` that throws is caught by the dispatcher and turned into
-`ToolResponse.error(message)` — per the MCP specification this is a normal JSON-RPC *result*
-with `isError: true`, not a JSON-RPC error, so the calling model can see and react to it. Prefer
-returning `ToolResponse.error(...)` explicitly when you can produce a better message than the
-raw exception text.
-
-`McpResource.read()`/`McpPrompt.render(...)` failures, by contrast, surface as JSON-RPC errors
-(`-32603 Internal error`) — the specification does not define a soft-failure content convention
-for those two.
+Only text is supported. `Content` and `ResourceContents` are sealed interfaces with `TextContent` and
+`TextResourceContents` as their only implementations.

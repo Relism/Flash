@@ -29,6 +29,10 @@ class ProtobufTest {
 
     static final class Echo extends ProtobufHandler<StringValue, StringValue> {
         @Override protected StringValue handle(Request request, Response response, StringValue body) { return body; }
+
+        Object invoke(Request request, Response response) throws Exception {
+            return super.handle(request, response);
+        }
     }
 
     @Test
@@ -53,7 +57,7 @@ class ProtobufTest {
     @Test
     void aNonMessageTypeFailsWhileTheReaderIsPrepared() {
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> protobuf.reader(String.class));
+                () -> protobuf.decoder(String.class));
 
         assertTrue(failure.getMessage().contains("protobuf Message"), failure.getMessage());
     }
@@ -61,7 +65,7 @@ class ProtobufTest {
     @Test
     void aTypeWithoutAGeneratedDefaultInstanceFailsClearly() {
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> protobuf.reader(com.google.protobuf.Message.class));
+                () -> protobuf.decoder(com.google.protobuf.Message.class));
 
         assertTrue(failure.getMessage().contains("generated protobuf message"), failure.getMessage());
     }
@@ -80,7 +84,7 @@ class ProtobufTest {
 
         ValidationException failure = assertThrows(ValidationException.class,
                 () -> checked.services().create(Echo.class)
-                        .handle(request(message.toByteArray()), new Response(200, ContentType.NONE)));
+                        .invoke(request(message.toByteArray()), new Response(200, ContentType.NONE)));
 
         assertEquals(422, failure.status());
     }

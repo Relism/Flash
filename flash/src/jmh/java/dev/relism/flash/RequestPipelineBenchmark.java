@@ -2,8 +2,7 @@ package dev.relism.flash;
 
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
-import dev.relism.flash.http.Handler;
-import dev.relism.flash.routing.Errors;
+import dev.relism.flash.routing.Next;
 import dev.relism.flash.routing.Router;
 import dev.relism.flash.transport.BufferedByteSource;
 import java.io.IOException;
@@ -36,8 +35,8 @@ import org.openjdk.jmh.annotations.Warmup;
  * per invocation, so the timed path matches production exactly: one {@link BufferedByteSource}
  * created once per connection and reused across every request, per {@code Http1Connection}'s own
  * shape — not recreated per benchmark iteration, which would contaminate the measurement with
- * harness allocation unrelated to the parser/router/model code under test (the same lesson {@code
- * WRITER.md} documents for {@code FrameWriterBenchmark}'s own harness).
+ * harness allocation unrelated to the parser/router/model code under test (the same lesson as for
+ * {@code FrameWriterBenchmark}'s own harness).
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
@@ -94,14 +93,14 @@ public class RequestPipelineBenchmark {
     parser = new RequestParser();
 
     router = new Router();
-    router.add(HttpMethod.GET, "/users/{id}", (r, res) -> "ok");
-    router.compile(Errors.notFound(false), Errors.handler(false));
+    router.add(HttpMethod.GET, "/users/{id}", exchange -> exchange.answer("ok"));
+    router.compile(exchange -> {});
     routeScratch = router.newScratch();
   }
 
   /** Parse and route without requesting user-facing header or parameter strings. */
   @Benchmark
-  public Handler parseAndRoute() throws IOException {
+  public Next parseAndRoute() throws IOException {
     Request request = parser.parse(in);
     request.drain();
     return router.route(request, routeScratch);
@@ -111,7 +110,7 @@ public class RequestPipelineBenchmark {
   @Benchmark
   public Object parseRouteAndExtractThreeFields() throws IOException {
     Request request = parser.parse(in);
-    Handler handler = router.route(request, routeScratch);
+    Next handler = router.route(request, routeScratch);
     String id = request.param("id");
     String host = request.header("Host");
     String auth = request.header("Authorization");

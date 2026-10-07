@@ -46,7 +46,7 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
   private long bodyRemaining;
   private int fixedPosition;
   private boolean unknownLength;
-  private boolean pushBody;
+  private int dataFrameStart = -1; // a duplex DATA frame still open in output, or -1
   private boolean finished;
   private boolean headersInBatch;
   private boolean endStreamInBatch;
@@ -170,7 +170,6 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
     fixedBody = response.isStreaming() ? null : response.getBody();
     streamBody = response.isStreaming() ? response.getStream() : null;
     unknownLength = response.isStreaming() && response.isChunked();
-    pushBody = response.isPushStreaming();
     if (response.isStreaming() && !unknownLength && response.getStreamLength() < 0) {
       throw new IllegalArgumentException("known response stream length must not be negative");
     }
@@ -213,10 +212,96 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       finished = true;
       endStreamInBatch = true;
     }
-    if (hasBody && availableFlowWindow > 0 && !pushBody) {
+    if (hasBody && availableFlowWindow > 0) {
       appendData(maxFrameSize, availableFlowWindow);
     }
     return dataBytesInBatch;
+  }
+
+  /**
+   * Starts a duplex batch with the HEADERS. The body follows as the handler writes it, in batches
+   * built by {@link #duplexData} and sent by the caller; nothing here is sent.
+   */
+  public void duplexHeaders(
+      Response response,
+      int streamId,
+      boolean sendDate,
+      boolean huffmanDynamicValues,
+      boolean emitTableSizeUpdate,
+      int maxFrameSize,
+      long maxHeaderListSize) {
+    headerBlock.reset();
+    duplexSent();
+    this.streamId = streamId;
+    this.huffmanDynamicValues = huffmanDynamicValues;
+    this.maxHeaderListSize = maxHeaderListSize;
+    this.response = response;
+    headerListSize = 0;
+    fixedBody = null;
+    streamBody = null;
+    finished = false;
+    headersInBatch = true;
+    if (emitTableSizeUpdate) HpackEncoder.writeDynamicTableSizeUpdateZero(headerBlock);
+    writeStatus(response.getStatusCode());
+    writeContentType(response.getContentType());
+    if (sendDate) {
+      addHeaderListSize(4, 29);
+      headerBlock.writeBytes(DateHeader.hpackBytes());
+    }
+    ResponseSerializer.forEachCustomField(response, this);
+    writeHeaderFrames(maxFrameSize, false);
+  }
+
+  /** Appends payload the caller already holds flow-control window for, filling DATA frames up to {@code maxFrameSize}. */
+  public void duplexData(byte[] bytes, int offset, int length, int maxFrameSize) {
+    while (length > 0) {
+      if (dataFrameStart >= 0 && output.length() - dataFrameStart - 9 == maxFrameSize) closeDataFrame();
+      if (dataFrameStart < 0) {
+        dataFrameStart = output.length();
+        frames.beginFrame(FrameType.DATA, 0, streamId);
+      }
+      int count = Math.min(length, maxFrameSize - (output.length() - dataFrameStart - 9));
+      output.writeBytes(bytes, offset, count);
+      dataBytesInBatch += count;
+      offset += count;
+      length -= count;
+    }
+  }
+
+  /** Ends the stream: the response's trailers, or an empty DATA frame, with END_STREAM. */
+  public void duplexEnd(int maxFrameSize) {
+    closeDataFrame();
+    if (response.hasTrailers()) {
+      appendTrailers(maxFrameSize);
+    } else {
+      frames.beginFrame(FrameType.DATA, FrameFlags.END_STREAM, streamId);
+      frames.endFrame();
+    }
+    endStreamInBatch = true;
+    finished = true;
+  }
+
+  /** Whether the batch holds anything to send; closes the open DATA frame so it can be. */
+  public boolean duplexPending() {
+    closeDataFrame();
+    return output.length() != 0;
+  }
+
+  /** Clears a batch the frame writer is done with. */
+  public void duplexSent() {
+    output.reset();
+    next = null;
+    dataFrameStart = -1;
+    headersInBatch = false;
+    endStreamInBatch = false;
+    dataBytesInBatch = 0;
+    trailerHeadersInBatch = false;
+  }
+
+  private void closeDataFrame() {
+    if (dataFrameStart < 0) return;
+    frames.endFrame();
+    dataFrameStart = -1;
   }
 
   /** Serializes the next DATA batch after a WINDOW_UPDATE or previous write completion. */
@@ -252,27 +337,21 @@ public final class Http2ResponseWriter implements WriteIntent, ResponseSerialize
       count = 0;
       boolean eof = false;
       try {
-        if (pushBody) {
-          int read = streamBody.read(relay, 0, limit);
-          if (read < 0) eof = true;
-          else count = read;
-        } else {
-          while (count < limit) {
-            int read = streamBody.read(relay, count, limit - count);
-            if (read < 0) {
+        while (count < limit) {
+          int read = streamBody.read(relay, count, limit - count);
+          if (read < 0) {
+            eof = true;
+            break;
+          }
+          if (read == 0) {
+            int one = streamBody.read();
+            if (one < 0) {
               eof = true;
               break;
             }
-            if (read == 0) {
-              int one = streamBody.read();
-              if (one < 0) {
-                eof = true;
-                break;
-              }
-              relay[count++] = (byte) one;
-            } else {
-              count += read;
-            }
+            relay[count++] = (byte) one;
+          } else {
+            count += read;
           }
         }
       } catch (IOException failure) {

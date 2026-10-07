@@ -1,21 +1,20 @@
 package dev.relism.flash.routing;
 
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.PathParams;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.bytes.FastPathViews;
-import dev.relism.flash.websocket.Upgrade;
 import dev.relism.fpr.core.ByteView;
 import dev.relism.fpr.core.FastPathRouter;
 import dev.relism.fpr.core.MatchResult;
 import dev.relism.fpr.core.RouterBuilder;
 import dev.relism.fpr.core.dsl.StringRouteParser;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Every route of one app in a single byte-level state machine, and the one path a request takes
@@ -29,15 +28,14 @@ import java.util.EnumSet;
 public final class Router {
 
     private static final byte[] WS = "WS".getBytes(StandardCharsets.US_ASCII);
-    private final RouterBuilder<Handler> builder = new RouterBuilder<>();
+    private final RouterBuilder<Next> builder = new RouterBuilder<>();
     private final EnumSet<HttpMethod> methods = EnumSet.noneOf(HttpMethod.class);
-    private FastPathRouter<ByteView, Handler> fsm;
+    private FastPathRouter<ByteView, Next> fsm;
     private String[] paramNames;
-    private Handler fallback;
-    private ErrorHandler errors;
+    private Next fallback;
 
-    /** Adds a route; {@code method} null is a WebSocket route. */
-    public void add(HttpMethod method, String path, Handler handler) {
+    /** Adds a route; {@code method == null} is the WebSocket route key. */
+    public void add(HttpMethod method, String path, Next handler) {
         String target = method == HttpMethod.CONNECT ? PathUtils.sanitizeAuthority(path) : PathUtils.sanitize(path);
         if (method != null) methods.add(method);
         builder.add(StringRouteParser.parse((method == null ? "WS" : method.name()) + target), handler);
@@ -47,9 +45,8 @@ public final class Router {
      * Freezes the routes. {@code fallback} answers a request no route matched, already wrapped in the
      * app's own middleware so a CORS preflight or an access log sees it too.
      */
-    public void compile(Handler fallback, ErrorHandler errors) {
+    public void compile(Next fallback) {
         this.fallback = fallback;
-        this.errors = errors;
         this.paramNames = builder.paramNames();
         this.fsm = builder.compile();
     }
@@ -60,32 +57,26 @@ public final class Router {
     }
 
     /**
-     * Runs {@code request} through its route and returns what to send: a {@link Response}, or an
-     * {@link Upgrade} when a WebSocket route accepted it. {@code upgrade} says whether the request
-     * asks for a WebSocket; without a socket route at that path it is served as a plain request.
+     * Runs {@code request} through its route and returns the response to send. A response written
+     * as it goes has been written by then.
      *
      * <p>A {@code HEAD} with no route of its own is served by the {@code GET} route (the writer
      * drops the body); a path that exists under other methods is a 405 naming them.
      */
-    public Object dispatch(Request request, Response response, boolean upgrade, Scratch scratch) {
+    public Response dispatch(Exchange exchange, Scratch scratch) throws Exception {
+        Request request = exchange.request();
         HttpMethod method = request.method();
-        Handler handler = upgrade ? match(WS, request, scratch) : null;
+        Next handler = websocket(request) ? match(WS, request, scratch) : null;
         if (handler == null) handler = route(request, scratch);
         if (handler == null && method == HttpMethod.HEAD) handler = match(HttpMethod.GET.getBytes(), request, scratch);
         if (handler == null) handler = fallback;
 
-        Object result;
-        try {
-            result = handler.handle(request, response);
-        } catch (Exception failure) {
-            result = Errors.recover(errors, failure, request, response);
-        }
-        if (result instanceof Response || result instanceof Upgrade) return result;
-        return result == null ? response : response.setBody(result);
+        handler.handle(exchange);
+        return exchange.response();
     }
 
     /** The route for {@code request}'s own method and path, or null: matching alone, path parameters set. */
-    public Handler route(Request request, Scratch scratch) {
+    public Next route(Request request, Scratch scratch) {
         return match(request.method().getBytes(), request, scratch);
     }
 
@@ -104,8 +95,8 @@ public final class Router {
         return allow == null ? null : allow.toString();
     }
 
-    private Handler match(byte[] method, Request request, Scratch scratch) {
-        MatchResult<Handler> result = scratch.result;
+    private Next match(byte[] method, Request request, Scratch scratch) {
+        MatchResult<Next> result = scratch.result;
         result.reset();
         ByteView path = request.requestLine().getPath();
         scratch.view.reset(method, path);
@@ -125,9 +116,21 @@ public final class Router {
         return result.handler();
     }
 
+    private static boolean websocket(Request request) {
+        if ("websocket".equals(request.connectProtocol())) return true;
+        ByteView value = request.headerView("Upgrade");
+        if (value == null || value.length() != 9) return false;
+        String expected = "websocket";
+        for (int i = 0; i < value.length(); i++) {
+            int actual = value.byteAt(i) & 0xff;
+            if ((actual | 0x20) != expected.charAt(i)) return false;
+        }
+        return true;
+    }
+
     /** Matching state for one connection; its arrays grow to the connection's widest route and stay. */
     public static final class Scratch {
-        final MatchResult<Handler> result = new MatchResult<>(32, 128);
+        final MatchResult<Next> result = new MatchResult<>(32, 128);
         final FastPathViews.MethodPathByteView view = new FastPathViews.MethodPathByteView();
         String[] names = new String[8];
         int[] starts = new int[8];

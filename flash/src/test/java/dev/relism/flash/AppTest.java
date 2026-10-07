@@ -1,12 +1,14 @@
 package dev.relism.flash;
 
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.Cors;
 import dev.relism.flash.routing.Middleware;
+import dev.relism.flash.sse.SseHandler;
+import dev.relism.flash.sse.SseStream;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
@@ -37,17 +39,16 @@ class AppTest {
     public record Greeting(String text) {}
 
     /** Built by the app, its service as a constructor argument. */
-    public static final class Greet implements Handler {
+    public static final class Greet extends RequestHandler {
         private final Greeting greeting;
         private String computed;
         public Greet(Greeting greeting) { this.greeting = greeting; }
-        @Override public void onInit() { computed = greeting.text() + "!"; }
-        @Override public Object handle(Request request, Response response) { return computed; }
+        @Override protected void onInit() { computed = greeting.text() + "!"; }
+        @Override protected Object handle(Request request, Response response) { return computed; }
     }
 
-    public static final class Echo implements WebSocketHandler {
-        @Override public void onOpen(WebSocketSession session) {}
-        @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {}
+    public static final class Echo extends WebSocketHandler {
+        @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) {}
     }
 
     @AfterEach
@@ -95,13 +96,17 @@ class AppTest {
         IllegalStateException refused = assertThrows(IllegalStateException.class,
                 () -> Server.start(App.create().scan("dev.relism.flash.scanbad"), ServerConfig.builder().port(0).build()));
         assertTrue(refused.getMessage().contains("two routing annotations"), refused.getMessage());
+
+        IllegalStateException wrongSse = assertThrows(IllegalStateException.class,
+                () -> App.create().scan("dev.relism.flash.scanbadsse"));
+        assertTrue(wrongSse.getMessage().contains("not an SseHandler"), wrongSse.getMessage());
     }
 
     @Test
     void mountMiddlewareAppliesWhateverOrderItIsDeclaredIn() throws Exception {
-        Middleware tag = next -> (request, response) -> {
-            response.header("X-Scope", "api");
-            return next.handle(request, response);
+        Middleware tag = (exchange, next) -> {
+            exchange.response().header("X-Scope", "api");
+            next.handle(exchange);
         };
         start(App.create().mount("/api", api -> api.get("/x", (req, res) -> "x").use(tag).get("/apiary", (req, res) -> "bees")));
 
@@ -186,7 +191,7 @@ class AppTest {
 
     @Test
     void aSocketRoutesMiddlewareRunsBeforeTheHandshake() {
-        Middleware deny = next -> (request, response) -> {
+        Middleware deny = (exchange, next) -> {
             throw HttpException.unauthorized();
         };
         start(App.create().ws("/socket", Echo.class, deny));
@@ -196,6 +201,34 @@ class AppTest {
                 .join());
         WebSocketHandshakeException handshake = assertInstanceOf(WebSocketHandshakeException.class, failed.getCause());
         assertEquals(401, handshake.getResponse().statusCode());
+    }
+
+    @Test
+    void httpAndWebSocketCoexistAtTheSamePath() throws Exception {
+        start(App.create().get("/same", (request, response) -> "http").ws("/same", Echo.class));
+
+        assertEquals("http", get("/same").body());
+        WebSocket socket = client.newWebSocketBuilder()
+                .buildAsync(URI.create("ws://127.0.0.1:" + server.port() + "/same"), new WebSocket.Listener() {})
+                .join();
+        socket.abort();
+    }
+
+    @Test
+    void middlewareCanFinishTheSseHandshakeBeforeTheStreamStarts() throws Exception {
+        Middleware after = (exchange, next) -> {
+            next.handle(exchange);
+            exchange.response().header("X-After", "middleware");
+        };
+        start(App.create().get("/events", new SseHandler() {
+            @Override protected void handle(Request request, SseStream stream) throws Exception {
+                stream.send("ready");
+            }
+        }, after));
+
+        HttpResponse<String> response = get("/events");
+        assertEquals("middleware", response.headers().firstValue("X-After").orElse(null));
+        assertEquals("data: ready\n\n", response.body());
     }
 
     @Test

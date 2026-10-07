@@ -1,8 +1,5 @@
 package dev.relism.flash;
 
-import dev.relism.flash.App;
-import dev.relism.flash.Server;
-import dev.relism.flash.ServerConfig;
 import dev.relism.flash.websocket.WebSocketFrame;
 import dev.relism.flash.websocket.WebSocketHandler;
 import dev.relism.flash.websocket.WebSocketSession;
@@ -17,7 +14,8 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,7 +25,7 @@ class HttpServerWebSocketTest {
 
     private Server server;
     private int port;
-    private final AtomicReference<Integer> closed = new AtomicReference<>();
+    private final CountDownLatch ended = new CountDownLatch(1);
 
     @BeforeEach
     void setUp() throws Exception {
@@ -38,25 +36,17 @@ class HttpServerWebSocketTest {
         app = App.create();
 
         app.ws("/chat", new WebSocketHandler() {
-            @Override
-            public void onOpen(WebSocketSession session) {}
-
-            @Override
-            public void onMessage(WebSocketSession session, WebSocketFrame frame) {
-                try {
-                    if (frame.opcode() == WebSocketFrame.OP_TEXT) {
-                        session.sendText(frame.copyPayload(), frame.payloadOffset(), frame.payloadLength());
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+            @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) throws Exception {
+                session.echo(frame);
             }
+        }, (exchange, next) -> {
+            next.handle(exchange);
+            exchange.response().header("X-After", "middleware");
         });
 
         app.ws("/close", new WebSocketHandler() {
-            @Override public void onOpen(WebSocketSession session) {}
-            @Override public void onMessage(WebSocketSession session, WebSocketFrame frame) {}
-            @Override public void onClose(WebSocketSession session, int code) { closed.set(code); }
+            @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) {}
+            @Override protected void onClose(WebSocketSession session, int code, String reason) { ended.countDown(); }
         });
 
         server = Server.start(app, config1);
@@ -131,6 +121,7 @@ class HttpServerWebSocketTest {
             assertTrue(headers.contains("Upgrade: websocket"));
             assertTrue(headers.contains("Connection: Upgrade"));
             assertTrue(headers.contains("Sec-WebSocket-Accept: "));
+            assertTrue(headers.contains("X-After: middleware"));
 
             out.write(textFrame("hello"));
             out.flush();
@@ -168,7 +159,7 @@ class HttpServerWebSocketTest {
     }
 
     @Test
-    void websocket_close_frame_closesSession() throws Exception {
+    void aPeerCloseIsAnsweredAndEndsTheHandler() throws Exception {
         try (Socket socket = new Socket("127.0.0.1", port);
              InputStream in = socket.getInputStream();
              OutputStream out = socket.getOutputStream()) {
@@ -183,11 +174,11 @@ class HttpServerWebSocketTest {
             out.flush();
             readHeaders(in);
 
-            out.write(closeFrame(1000));
+            out.write(closeFrame(1001));
             out.flush();
 
-            Thread.sleep(100);
-            assertEquals(1000, closed.get());
+            assertArrayEquals(new byte[] {(byte) 0x88, 2, 0x03, (byte) 0xE9}, in.readNBytes(4)); // its own code back
+            assertTrue(ended.await(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS));
         }
     }
 }

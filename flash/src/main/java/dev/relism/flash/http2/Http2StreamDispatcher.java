@@ -1,6 +1,7 @@
 package dev.relism.flash.http2;
 
 import dev.relism.flash.http.ContentType;
+import dev.relism.flash.http.Duplex;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http2.frame.Http2FrameWriter;
@@ -11,11 +12,7 @@ import dev.relism.flash.http2.stream.Http2StreamState;
 import dev.relism.flash.http2.stream.Http2StreamTable;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
-import dev.relism.flash.http.ResponseStreamOutputStream;
 import dev.relism.flash.transport.ConnectionContext;
-import dev.relism.flash.websocket.Upgrade;
-import dev.relism.flash.websocket.WebSocketLoop;
-import dev.relism.flash.websocket.WebSocketSession;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Set;
@@ -75,6 +72,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void scheduleResume(Http2Stream stream) {
+    if (stream.signalDuplex()) return;
     if (!stream.responseStarted() || stream.cancelled()) return;
     if (!stream.beginResponseBatch()) return;
     stream.markResumeTask();
@@ -114,35 +112,26 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     try {
       Request request = stream.assembleRequest(context.remoteAddress(), context.sslSocket(), trustedProxies);
       Response pooled = stream.resetResponse();
+      if (stream.duplex() == null) stream.duplex(new StreamDuplex(stream));
+      ((StreamDuplex) stream.duplex()).head = request.method() == HttpMethod.HEAD;
       Response response = pooled;
       if (!Http2Authority.isServed(request.header("host"), request.sslSession())) {
         response.status(HttpStatus.MISDIRECTED_REQUEST);
-        if (stream.websocketConnect()) response.type(ContentType.NONE).streaming(output -> {});
       } else {
-        Object answer =
-            context
-                .router()
-                .dispatch(request, response, stream.websocketConnect(), stream.routeScratch(context.router()));
-        if (answer instanceof Upgrade upgrade) {
-          response.type(ContentType.NONE).streaming(
-              output ->
-                  WebSocketLoop.run(
-                      new WebSocketSession(
-                          request.body().stream(),
-                          new ResponseStreamOutputStream(output),
-                          context.configuration().getWsFrameBufferSize(),
-                          request,
-                          false),
-                      upgrade.handler()));
-        } else {
-          response = (Response) answer;
-          // RFC 8441: a refused extended CONNECT is answered by its status alone.
-          if (stream.websocketConnect()) response.type(ContentType.NONE).streaming(output -> {});
+        Response answer = context.router().dispatch(
+            stream.exchange().reset(request, response, stream.duplex()),
+            stream.routeScratch(context.router()));
+        if (pooled.isCommitted()) {
+          ((StreamDuplex) stream.duplex()).finish();
+          return;
         }
+        response = answer;
       }
+      // RFC 8441: a refused extended CONNECT is answered by its status alone.
+      boolean statusAlone = stream.websocketConnect();
+      if (statusAlone) response.type(ContentType.NONE).body((byte[]) null);
 
-      boolean pushStreaming = response.isPushStreaming();
-      if (!pushStreaming) request.drain();
+      request.drain();
       Http2ResponseWriter responseWriter = stream.responseWriter();
       boolean dev = context.configuration().isDev();
       if (stream.cancelled()) {
@@ -167,7 +156,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
                   stream.id(),
                   headRequest,
                   context.configuration().isSendDate(),
-                  true,
+                  !statusAlone,
                   context.configuration().isH2HuffmanDynamicValues(),
                   tableUpdate,
                   peerSettings.maxFrameSize(),
@@ -178,7 +167,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
         }
         firstResponse = false;
       }
-      if (dev && !pushStreaming) request.recycle();
+      if (dev) request.recycle();
       stream.markResponseStarted();
       applyBatchTransition(stream, responseWriter);
       if (!stream.beginResponseBatch()) {
@@ -187,7 +176,8 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       detachFinalBatch(stream, responseWriter);
       frameWriter.write(responseWriter);
     } catch (Exception failure) {
-      failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
+      if (stream.duplex() instanceof StreamDuplex duplex && duplex.owner) duplex.abort(failure);
+      else failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
     }
   }
 
@@ -261,6 +251,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   @Override
   public void responseBatchCompleted(Http2Stream stream) {
     stream.touch();
+    if (stream.completeDuplexBatch()) return;
     stream.endResponseBatch();
     int streamId = stream.id();
     if (streamId == 0) return;
@@ -299,6 +290,138 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       log.debug("Failed to write RST_STREAM for {}", streamId, writeFailure);
     } finally {
       streams.release(stream);
+    }
+  }
+
+  /**
+   * {@link Duplex} on one stream. The writing thread builds each batch, hands it to the frame
+   * writer and waits for it to leave, so a write blocks while the socket or the peer's window
+   * cannot take more. Reads are the request body's DATA buffers, in place. One per pooled stream,
+   * bound to its response.
+   */
+  private final class StreamDuplex extends Duplex {
+    private final Http2Stream stream;
+    private boolean head;
+    private boolean owner; // between the commit and the last batch; see Http2Stream#enterDuplex
+    private int unsent; // window reserved for bytes the frame writer has not taken yet
+
+    StreamDuplex(Http2Stream stream) {
+      this.stream = stream;
+    }
+
+    @Override
+    public void write(byte[] bytes, int offset, int length) throws IOException {
+      commit();
+      if (head) return;
+      Http2ResponseWriter writer = stream.responseWriter();
+      int frame = peerSettings.maxFrameSize();
+      while (length > 0) {
+        int granted = flowController.reserveSend(stream, length);
+        if (granted == 0) {
+          send();
+          granted = stream.awaitSendWindow(flowController, length);
+        }
+        writer.duplexData(bytes, offset, granted, frame);
+        unsent += granted;
+        offset += granted;
+        length -= granted;
+        if (writer.dataBytesInBatch() >= frame) send();
+      }
+    }
+
+    @Override
+    public void flush() throws IOException {
+      commit();
+      send();
+    }
+
+    /** Ends a committed response: its trailers or END_STREAM, sent without waiting. */
+    void finish() throws IOException {
+      if (stream.cancelled()) throw new IOException("stream reset");
+      Http2ResponseWriter writer = stream.responseWriter();
+      writer.duplexEnd(peerSettings.maxFrameSize());
+      applyBatchTransition(stream, writer);
+      stream.beginResponseBatch();
+      stream.markResponseStarted();
+      owner = false;
+      stream.leaveDuplex();
+      detachFinalBatch(stream, writer);
+      unsent = 0;
+      frameWriter.write(writer);
+    }
+
+    /** Breaks the exchange off after its response started: a reset, unless the peer reset it first. */
+    void abort(Exception failure) {
+      owner = false;
+      if (unsent != 0) flowController.refundSend(stream, unsent);
+      unsent = 0;
+      int streamId = stream.id();
+      if (!stream.cancelled()) {
+        log.error("HTTP/2 stream {} failed", streamId, failure);
+        streams.removeIfSame(stream, streamId);
+        stream.cancel();
+        try {
+          failures.fail(streamId, Http2ErrorCode.INTERNAL_ERROR);
+        } catch (IOException writeFailure) {
+          log.debug("Failed to write RST_STREAM for {}", streamId, writeFailure);
+        }
+      }
+      if (stream.leaveDuplex()) streams.release(stream);
+    }
+
+    private void commit() throws IOException {
+      Response response = response();
+      if (response.isCommitted()) return;
+      if (stream.cancelled()) throw new IOException("stream reset");
+      stream.enterDuplex();
+      owner = true;
+      synchronized (Http2StreamDispatcher.this) {
+        stream.responseWriter().duplexHeaders(
+            response,
+            stream.id(),
+            context.configuration().isSendDate(),
+            context.configuration().isH2HuffmanDynamicValues(),
+            firstResponse,
+            peerSettings.maxFrameSize(),
+            peerSettings.maxHeaderListSize());
+        firstResponse = false;
+      }
+      response.commit();
+    }
+
+    /** Hands the batch to the frame writer and waits until it has left; false when there was none. */
+    private boolean send() throws IOException {
+      Http2ResponseWriter writer = stream.responseWriter();
+      if (!writer.duplexPending()) return false;
+      if (stream.cancelled()) throw new IOException("stream reset");
+      applyBatchTransition(stream, writer);
+      stream.beginResponseBatch();
+      unsent = 0;
+      stream.touch();
+      frameWriter.write(writer);
+      stream.awaitResponseBatch();
+      writer.duplexSent();
+      return true;
+    }
+
+    @Override
+    public int fill() throws IOException {
+      return stream.body().fill();
+    }
+
+    @Override
+    public byte[] array() {
+      return stream.body().window();
+    }
+
+    @Override
+    public int offset() {
+      return stream.body().windowOffset();
+    }
+
+    @Override
+    public void advance(int n) {
+      stream.body().advance(n);
     }
   }
 }

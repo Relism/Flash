@@ -4,7 +4,7 @@ import dev.relism.flash.App;
 import dev.relism.flash.Bound;
 import dev.relism.flash.Module;
 import dev.relism.flash.Services;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestAction;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.QueryParams;
 import dev.relism.flash.routing.Cors;
@@ -91,6 +91,7 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
     private Clients clients;
     private Cache<String, String> metadata;
     private Security security;
+    private Middleware signedIn;
 
     /**
      * @param resources the paths tokens may be issued for, as RFC 8707 resources on the application's origin;
@@ -203,13 +204,13 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
             log.warn("[flash-ext-security-oauth-server] No signing keys configured: tokens will not survive a restart.");
         }
         // Resolved when routes compile, after bind: the app's Security is not known before it starts.
-        Middleware signedIn = next -> security.enforce(SecurityPolicy.AUTHENTICATED).wrap(next);
+        Middleware requireSignIn = (exchange, next) -> signedIn.handle(exchange, next);
         Cors cors = Cors.allow().methods("GET", "POST", "OPTIONS").headers("Authorization", "Content-Type");
         app.add(OAuthServer.class, this)
                 .add(AuthenticationMechanism.class, this)
-                .get(AUTHORIZE, this::authorize, signedIn)
-                .post(AUTHORIZE, this::decide, signedIn)
-                .get(AUTHORIZE + "/request", this::request, signedIn)
+                .get(AUTHORIZE, this::authorize, requireSignIn)
+                .post(AUTHORIZE, this::decide, requireSignIn)
+                .get(AUTHORIZE + "/request", this::request, requireSignIn)
                 .get(METADATA, (req, res) -> json(res, 200, metadata.get(issuer(req), this::describe)), cors)
                 .get(JWKS, (req, res) -> json(res, 200, keys.publicJwks()), cors)
                 .post(TOKEN, endpoint(this::token), cors)
@@ -224,6 +225,7 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
     @Override
     public void bind(Services services) {
         security = services.get(Security.class);
+        signedIn = security.enforce(SecurityPolicy.AUTHENTICATED);
         CacheManager caches = services.get(CacheManager.class);
         clients = new Clients(store, localClients, caches.build("oauth-server.client-documents", spec -> spec.maxSize(1_000).ttl(Duration.ofMinutes(10))));
         // Keyed by issuer, which is the request's own origin when none is configured: bounded for that.
@@ -538,7 +540,7 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
     // -- Helpers ----------------------------------------------------------------
 
     /** RFC 6749 §5.2: every failure is a JSON error with its code; nothing here is ever cached. */
-    private static Handler endpoint(Handler handler) {
+    private static RequestAction endpoint(RequestAction handler) {
         return (req, res) -> {
             res.header("Cache-Control", "no-store");
             try {

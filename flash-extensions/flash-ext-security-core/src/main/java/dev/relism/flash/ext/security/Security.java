@@ -138,7 +138,7 @@ public final class Security implements Bound, RouteHook {
     }
 
     public Middleware enforce(SecurityPolicy policy) {
-        return next -> guard(policy, entryPoint, null).wrap(next);
+        return guard(policy, null, null);
     }
 
     /** {@code anonymous} answers a caller without credentials on this route instead of the configured entry point. */
@@ -156,7 +156,9 @@ public final class Security implements Bound, RouteHook {
     }
 
     private Middleware guard(SecurityPolicy policy, AuthenticationEntryPoint anonymous, AuthenticationMechanism[] only) {
-        return next -> (req, res) -> {
+        return (exchange, next) -> {
+            Request req = exchange.request();
+            var res = exchange.response();
             SecurityIdentity identity;
             try {
                 identity = authenticate(req, only);
@@ -165,7 +167,10 @@ public final class Security implements Bound, RouteHook {
                 identity = null;
             }
             if (identity == null) {
-                if (policy.required) return anonymous.commence(req, res);
+                if (policy.required) {
+                    exchange.answer((anonymous != null ? anonymous : entryPoint).commence(req, res));
+                    return;
+                }
             } else if (!policy.permitsScopes(identity)) {
                 throw HttpException.forbidden().header(WWW_AUTHENTICATE, policy.scopeChallenge);
             } else if (!policy.permitsRoles(identity, policy.on.length == 0 ? Target.NONE : name -> {
@@ -176,7 +181,7 @@ public final class Security implements Bound, RouteHook {
             }
             SecurityIdentity.CURRENT.set(identity);
             try {
-                return next.handle(req, res);
+                next.handle(exchange);
             } finally {
                 SecurityIdentity.CURRENT.remove();
             }

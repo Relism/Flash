@@ -13,7 +13,7 @@ package dev.relism.flash.http2.frame;
  * #buffer()}/{@link #offset()}/{@link #length()} just describe where that already-finished output
  * lives. {@code Http2FrameWriter} never serializes anything itself; it only ever issues one bulk
  * {@code write(buffer, offset, length)} while holding the connection's write lock — see {@code
- * WRITER.md} for why that distinction is the entire point of this design (the lock must never be
+ * flash/docs/http2/response-writer.md} for why that distinction is the entire point of this design (the lock must never be
  * held across serialization work, only across the syscall).
  *
  * <h3>Intrusive queue linkage</h3>

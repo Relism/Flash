@@ -8,13 +8,13 @@ import dev.relism.flash.http.ContentType;
  * JSON in and out, checked against the body type's own constraints.
  *
  * <pre>{@code
- * public final class CreateItem implements Handler {
+ * public final class CreateItem extends RequestHandler {
  *     private final Json json;
  *     private final Items items;
  *
  *     public CreateItem(Json json, Items items) { this.json = json; this.items = items; }
  *
- *     @Override public Object handle(Request req, Response res) throws Exception {
+ *     @Override protected Object handle(Request req, Response res) throws Exception {
  *         return json.write(res, items.create(json.read(req, NewItem.class)));
  *     }
  * }

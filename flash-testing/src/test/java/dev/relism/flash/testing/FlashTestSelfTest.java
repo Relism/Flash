@@ -1,7 +1,7 @@
 package dev.relism.flash.testing;
 
 import dev.relism.flash.App;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -137,10 +137,10 @@ class FlashTestSelfTest {
                         .body(req.body().bytes()));
     }
 
-    public static final class Greeting implements Handler {
+    public static final class Greeting extends RequestHandler {
         private final Greeter greeter;
         public Greeting(Greeter greeter) { this.greeter = greeter; }
-        @Override public Object handle(Request request, Response response) { return greeter.greet(); }
+        @Override protected Object handle(Request request, Response response) { return greeter.greet(); }
     }
 
     @FunctionalInterface

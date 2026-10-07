@@ -28,12 +28,14 @@ class JsonHandlerTest {
         @Override protected Order handle(Request request, Response response, Order order) {
             return new Order(order.id(), order.quantity() + 1);
         }
+        Object invoke(Request request, Response response) throws Exception { return super.handle(request, response); }
     }
 
     static final class Count extends JsonHandler<List<Order>, Integer> {
         @Override protected Integer handle(Request request, Response response, List<Order> orders) {
             return orders.size();
         }
+        Object invoke(Request request, Response response) throws Exception { return super.handle(request, response); }
     }
 
     static final class Blind extends JsonHandler<Unmapped, String> {
@@ -46,7 +48,7 @@ class JsonHandlerTest {
     void theBodyArrivesParsedAndTheAnswerLeavesAsJson() throws Exception {
         Place handler = app.services().create(Place.class);
 
-        Object body = handler.handle(request("{\"id\":\"o1\",\"quantity\":1}"), new Response(200, ContentType.NONE));
+        Object body = handler.invoke(request("{\"id\":\"o1\",\"quantity\":1}"), new Response(200, ContentType.NONE));
 
         assertEquals("{\"id\":\"o1\",\"quantity\":2}", new String((byte[]) body, StandardCharsets.UTF_8));
     }
@@ -55,7 +57,7 @@ class JsonHandlerTest {
     void aGenericBodyIsParsedAsWhatItSays() throws Exception {
         Count handler = app.services().create(Count.class);
 
-        Object body = handler.handle(request("[{\"id\":\"a\",\"quantity\":1},{\"id\":\"b\",\"quantity\":2}]"),
+        Object body = handler.invoke(request("[{\"id\":\"a\",\"quantity\":1},{\"id\":\"b\",\"quantity\":2}]"),
                 new Response(200, ContentType.NONE));
 
         assertEquals("2", new String((byte[]) body, StandardCharsets.UTF_8));

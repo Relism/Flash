@@ -24,14 +24,15 @@ final class McpTransportGuards {
         if (allowedOrigins.isEmpty()) {
             log.warn("[flash-ext-mcp] No allowedOrigins configured — Origin header validation " +
                     "(DNS-rebinding protection) is DISABLED. Configure McpConfig.allowedOrigins(...) for production use.");
-            return next -> next::handle;
+            return (exchange, next) -> next.handle(exchange);
         }
-        return next -> (req, res) -> {
+        return (exchange, next) -> {
+            var req = exchange.request();
             String origin = req.header("Origin");
             if (origin != null && !allowedOrigins.contains(origin)) {
                 throw HttpException.forbidden();
             }
-            return next.handle(req, res);
+            next.handle(exchange);
         };
     }
 }

@@ -2,7 +2,7 @@ package dev.relism.flash.ext.limiter;
 
 import dev.relism.flash.App;
 import dev.relism.flash.ext.openapi.OpenApiModule;
-import dev.relism.flash.http.Handler;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LimiterModuleTest {
 
     @Limit(requests = 2, window = 1, windowUnit = TimeUnit.HOURS)
-    public static final class Limited implements Handler {
-        @Override public Object handle(Request req, Response res) { return "ok"; }
+    public static final class Limited extends RequestHandler {
+        @Override protected Object handle(Request req, Response res) { return "ok"; }
     }
 
     static final LimiterModule limiter = new LimiterModule().resolver("everyone", req -> "all");

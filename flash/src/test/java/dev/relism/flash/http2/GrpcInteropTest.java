@@ -43,12 +43,8 @@ class GrpcInteropTest {
     app.post("/flash.test.Echo/Stream", (request, response) -> {
       byte[] message = request.body().bytes();
       return response.type("application/grpc").streaming(stream -> {
-        try {
-          for (int i = 0; i < 3; i++) stream.write(message, 0, message.length);
-          stream.trailer("grpc-status", "0");
-        } catch (Exception failure) {
-          throw new RuntimeException(failure);
-        }
+        for (int i = 0; i < 3; i++) stream.write(message, 0, message.length);
+        response.trailer("grpc-status", "0");
       });
     });
     app.post("/flash.test.Echo/Fail", (request, response) ->

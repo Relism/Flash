@@ -4,17 +4,12 @@ import dev.relism.flash.App;
 import dev.relism.flash.Module;
 import dev.relism.flash.ext.micrometer.MicrometerModule;
 import dev.relism.flash.http.Response;
-import dev.relism.flash.http.ResponseStream;
-import dev.relism.flash.http.ResponseStreamOutputStream;
 import dev.relism.flash.routing.PathUtils;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-import java.util.function.Consumer;
 
 /**
  * Installs Micrometer HTTP metrics and exposes a Prometheus scrape endpoint at {@code /metrics}.
@@ -30,7 +25,6 @@ public final class PrometheusModule implements Module {
 
     private final PrometheusMeterRegistry registry;
     private final String path;
-    private final Consumer<ResponseStream> scrape = this::scrape;
 
     public PrometheusModule() {
         this(new PrometheusMeterRegistry(PrometheusConfig.DEFAULT), "/metrics");
@@ -52,14 +46,6 @@ public final class PrometheusModule implements Module {
     }
 
     private Object metrics(dev.relism.flash.http.Request request, Response response) {
-        return response.type(CONTENT_TYPE).streaming(scrape);
-    }
-
-    private void scrape(ResponseStream stream) {
-        try {
-            registry.scrape(new ResponseStreamOutputStream(stream));
-        } catch (IOException failure) {
-            throw new UncheckedIOException(failure);
-        }
+        return response.type(CONTENT_TYPE).streaming(registry::scrape);
     }
 }

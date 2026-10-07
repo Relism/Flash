@@ -2,12 +2,9 @@ package dev.relism.flash.transport;
 
 import dev.relism.flash.bytes.ByteWriter;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-
 /**
  * Per-connection scratch that would otherwise be a {@link ThreadLocal}: the decimal-formatting
- * scratch, the streaming relay buffer, and the WebSocket-handshake {@link MessageDigest}.
+ * scratch and the streaming relay buffer, which a duplex response also reads its request body into.
  *
  * <h3>Why not {@code ThreadLocal}</h3>
  * {@code ThreadLocal} is the right idiom for a bounded platform-thread pool, where "one per
@@ -46,21 +43,8 @@ public final class ConnectionScratch {
      */
     public final ByteWriter responseHead = new ByteWriter(RESPONSE_HEAD_INITIAL_SIZE);
 
-    /** Scratch for the WebSocket handshake's {@code Sec-WebSocket-Accept} SHA-1 digest. */
-    public final MessageDigest sha1;
-
-    ConnectionScratch() {
-        try {
-            this.sha1 = MessageDigest.getInstance("SHA-1");
-        } catch (NoSuchAlgorithmException e) {
-            // Every JDK ships SHA-1 — this is a broken-runtime condition, not a request-time one.
-            throw new IllegalStateException("SHA-1 MessageDigest unavailable", e);
-        }
-    }
-
     /** Called by {@link ScratchPool} before handing a reused instance to a new connection. */
     void reset() {
-        sha1.reset();
         responseHead.reset();
         // relayBuffer needs no clearing: every reader only ever reads back exactly the region
         // the immediately preceding relay() call reports it filled, so stale bytes from a

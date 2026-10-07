@@ -43,6 +43,7 @@ public class Request {
     private InetSocketAddress remoteAddress;
     private SSLSocket sslSocket;
     private Set<String> trustedProxies;
+    private String connectProtocol;
     private boolean active;
 
     /** Pooled instance, positioned by {@link #forParsed}. One per connection — see {@link RequestParser}. */
@@ -66,6 +67,7 @@ public class Request {
         this.remoteAddress  = remoteAddress;
         this.sslSocket      = sslSocket;
         this.trustedProxies = trustedProxies;
+        this.connectProtocol = null;
         this.active         = true;
     }
 
@@ -90,6 +92,17 @@ public class Request {
     }
 
     void setPathParams(PathParams p) { this.pathParams = p; }
+
+    /** Set by the HTTP/2 driver for an extended CONNECT (RFC 8441); {@code public} for that package. */
+    public void connectProtocol(String protocol) {
+        this.connectProtocol = protocol;
+    }
+
+    /**
+     * The protocol an HTTP/2 extended CONNECT asks for ({@code :protocol}, e.g. {@code websocket}),
+     * or null. Such a request reaches its route as a {@code GET}.
+     */
+    public String connectProtocol() { checkActive(); return connectProtocol; }
 
     /** The trailers a protocol read after the body. */
     public void setTrailers(HeaderView trailers) {

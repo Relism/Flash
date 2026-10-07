@@ -61,15 +61,15 @@ class JsonTest {
     }
 
     @Test
-    void aTypeTheGeneratorNeverSawFailsWhenPrepared() {
-        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> json.prepare(Unmapped.class));
+    void aTypeTheGeneratorNeverSawFailsWhenAHandlerAsksAtBoot() {
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> json.decoder(Unmapped.class));
 
         assertTrue(refused.getMessage().contains("No JsonAdapter"), refused.getMessage());
     }
 
     @Test
     void anInterfaceIsLeftToItsRuntimeType() {
-        assertDoesNotThrow(() -> json.prepare(Runnable.class));
+        assertDoesNotThrow(() -> json.encoder(Runnable.class));
     }
 
     @RegisterExtension

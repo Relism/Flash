@@ -17,4 +17,16 @@ class Http2StreamLeakTest {
     assertEquals(1, table.freeCount());
     assertEquals(0, table.size());
   }
+
+  @Test
+  void aStreamIsReleasedOnlyOnce() {
+    Http2StreamTable table = new Http2StreamTable(1);
+    Http2Stream stream = table.acquire(1);
+    table.remove(1);
+
+    table.release(stream);
+    table.release(stream);
+
+    assertEquals(1, table.freeCount());
+  }
 }

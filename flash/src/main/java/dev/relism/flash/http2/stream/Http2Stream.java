@@ -2,6 +2,8 @@ package dev.relism.flash.http2.stream;
 
 import dev.relism.flash.bytes.PooledSlice;
 import dev.relism.flash.http.ContentType;
+import dev.relism.flash.http.Duplex;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http2.Http2ErrorCode;
 import dev.relism.flash.http2.Http2Limits;
@@ -21,6 +23,8 @@ import dev.relism.fpr.core.ByteView;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Set;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import javax.net.ssl.SSLSocket;
 
 /** Per-stream request, response, decoded-header and write state. */
@@ -46,6 +50,7 @@ public final class Http2Stream
   private final Http2RequestBody http2Body;
   private final Request request = new Request();
   private final Response response = new Response(200, ContentType.TEXT_PLAIN);
+  private final Exchange exchange = new Exchange();
   private final Http2ResponseWriter responseWriter = new Http2ResponseWriter();
   private final PooledSlice path = new PooledSlice();
   private final PooledSlice query = new PooledSlice();
@@ -66,12 +71,30 @@ public final class Http2Stream
   private boolean headersValidated;
   private Http2FlowController flowController;
   private ResponseSink responseSink;
-  private volatile boolean responseInFlight;
+  private WriteState writeState = WriteState.IDLE;
   private volatile boolean responseStarted;
   private boolean releaseClaimed;
   private volatile boolean resumeTask;
   private volatile long lastActivityNanos;
+  private Duplex duplex;
+  private final ReentrantLock writeLock = new ReentrantLock();
+  private final Condition writeChanged = writeLock.newCondition();
   Http2Stream poolNext;
+
+  private enum WriteState {
+    IDLE,
+    BATCH,
+    DUPLEX,
+    DUPLEX_BATCH;
+
+    boolean batch() {
+      return this == BATCH || this == DUPLEX_BATCH;
+    }
+
+    boolean duplex() {
+      return this == DUPLEX || this == DUPLEX_BATCH;
+    }
+  }
 
   Http2Stream(DataBufferPool dataBuffers) {
     http2Body = new Http2RequestBody(dataBuffers);
@@ -90,7 +113,7 @@ public final class Http2Stream
     dispatched = false;
     cancelled = false;
     headersValidated = false;
-    responseInFlight = false;
+    writeState = WriteState.IDLE;
     responseStarted = false;
     releaseClaimed = false;
     resumeTask = false;
@@ -140,6 +163,7 @@ public final class Http2Stream
     Request assembled =
         Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket, trustedProxies);
     assembled.setTrailers(trailers);
+    if (pseudoHeaders.websocket()) assembled.connectProtocol("websocket");
     return assembled;
   }
 
@@ -255,18 +279,148 @@ public final class Http2Stream
     resumeTask = true;
   }
 
-  public synchronized boolean beginResponseBatch() {
-    if (responseInFlight) return false;
-    responseInFlight = true;
-    return true;
+  /** The duplex bound to this stream's pooled response, or null before the first one is made. */
+  public Duplex duplex() {
+    return duplex;
   }
 
-  public synchronized void endResponseBatch() {
-    responseInFlight = false;
+  public void duplex(Duplex duplex) {
+    this.duplex = duplex;
   }
 
-  public synchronized boolean responseInFlight() {
-    return responseInFlight;
+  public Exchange exchange() {
+    return exchange;
+  }
+
+  /** The request body, read in place by a duplex response. */
+  public Http2RequestBody body() {
+    return http2Body;
+  }
+
+  /** A duplex response becomes this stream's writer until {@link #leaveDuplex}. */
+  public void enterDuplex() {
+    writeLock.lock();
+    try {
+      if (writeState != WriteState.IDLE) throw new IllegalStateException("stream already has a writer");
+      writeState = WriteState.DUPLEX;
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  /** Hands release back to the batch path; true when no batch is in flight and the caller releases. */
+  public boolean leaveDuplex() {
+    writeLock.lock();
+    try {
+      boolean release;
+      if (writeState == WriteState.DUPLEX) {
+        writeState = WriteState.IDLE;
+        release = true;
+      } else if (writeState == WriteState.DUPLEX_BATCH) {
+        writeState = WriteState.BATCH;
+        release = false;
+      } else {
+        throw new IllegalStateException("stream has no duplex writer");
+      }
+      writeChanged.signalAll();
+      return release;
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  /** Signals a duplex writer after a window update or reset. */
+  public boolean signalDuplex() {
+    writeLock.lock();
+    try {
+      if (!writeState.duplex()) return false;
+      writeChanged.signalAll();
+      return true;
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  /** Completes a duplex batch; false lets the ordinary response scheduler handle it. */
+  public boolean completeDuplexBatch() {
+    writeLock.lock();
+    try {
+      if (writeState != WriteState.DUPLEX_BATCH) return false;
+      writeState = WriteState.DUPLEX;
+      writeChanged.signalAll();
+      return true;
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  public boolean beginResponseBatch() {
+    writeLock.lock();
+    try {
+      if (writeState == WriteState.IDLE) writeState = WriteState.BATCH;
+      else if (writeState == WriteState.DUPLEX) writeState = WriteState.DUPLEX_BATCH;
+      else return false;
+      return true;
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  public void endResponseBatch() {
+    writeLock.lock();
+    try {
+      if (writeState != WriteState.BATCH) {
+        throw new IllegalStateException("stream has no ordinary response batch");
+      }
+      writeState = WriteState.IDLE;
+      writeChanged.signalAll();
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  public boolean responseInFlight() {
+    writeLock.lock();
+    try {
+      return writeState.batch();
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  /** Waits until the frame writer has consumed the current batch. */
+  public void awaitResponseBatch() throws IOException {
+    writeLock.lock();
+    try {
+      while (writeState == WriteState.DUPLEX_BATCH && !cancelled) awaitWriteChange();
+      if (cancelled) throw new IOException("stream reset");
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  /** Atomically rechecks both flow-control windows before sleeping. */
+  public int awaitSendWindow(Http2FlowController controller, int requested) throws IOException {
+    writeLock.lock();
+    try {
+      for (;;) {
+        if (cancelled) throw new IOException("stream reset");
+        int granted = controller.reserveSend(this, requested);
+        if (granted != 0) return granted;
+        awaitWriteChange();
+      }
+    } finally {
+      writeLock.unlock();
+    }
+  }
+
+  private void awaitWriteChange() throws IOException {
+    try {
+      writeChanged.await();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IOException("interrupted while writing HTTP/2 stream", interrupted);
+    }
   }
 
   synchronized boolean claimRelease() {
@@ -307,6 +461,7 @@ public final class Http2Stream
     // stream — RST_STREAM from the peer, connection teardown — doesn't leak it. No-op if the
     // response never streamed a body or already finished normally.
     responseWriter.abort();
+    signalDuplex();
   }
 
   public boolean cancelled() {

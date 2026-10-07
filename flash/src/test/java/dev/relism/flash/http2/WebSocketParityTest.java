@@ -1,18 +1,17 @@
 package dev.relism.flash.http2;
 
+import dev.relism.flash.websocket.WebSocketFrame;
+import dev.relism.flash.websocket.WebSocketHandler;
+import dev.relism.flash.websocket.WebSocketSession;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.App;
 import dev.relism.flash.Server;
 import dev.relism.flash.ServerConfig;
-import dev.relism.flash.websocket.WebSocketFrame;
-import dev.relism.flash.websocket.WebSocketHandler;
-import dev.relism.flash.websocket.WebSocketSession;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -36,21 +35,11 @@ class WebSocketParityTest {
                 .http2CleartextEnabled(true)
                 .build();
     app = App.create();
-    app.ws(
-        "/parity",
-        new WebSocketHandler() {
-          @Override
-          public void onOpen(WebSocketSession session) {}
-
-          @Override
-          public void onMessage(WebSocketSession session, WebSocketFrame frame) {
-            try {
-              session.echo(frame);
-            } catch (Exception failure) {
-              throw new RuntimeException(failure);
-            }
-          }
-        });
+    app.ws("/parity", new WebSocketHandler() {
+      @Override protected void onMessage(WebSocketSession session, WebSocketFrame frame) throws Exception {
+        session.echo(frame);
+      }
+    });
     server = Server.start(app, config1);
     int port = server.port();
 
@@ -60,7 +49,7 @@ class WebSocketParityTest {
     try (H2WebSocketTestClient client =
         new H2WebSocketTestClient("127.0.0.1", port, "/parity")) {
       client.sendText(new String(expected, StandardCharsets.UTF_8));
-      overHttp2 = client.readMessage(WebSocketFrame.OP_TEXT);
+      overHttp2 = client.readMessage((byte) 1);
       client.closeGracefully();
     }
 
@@ -88,10 +77,10 @@ class WebSocketParityTest {
       output.flush();
       assertTrue(readHeaders(input).startsWith("HTTP/1.1 101 Switching Protocols"));
 
-      output.write(maskedFrame(WebSocketFrame.OP_TEXT, payload));
+      output.write(maskedFrame((byte) 1, payload));
       output.flush();
-      byte[] echoed = readServerFrame(input, WebSocketFrame.OP_TEXT);
-      output.write(maskedFrame(WebSocketFrame.OP_CLOSE, new byte[] {3, (byte) 232}));
+      byte[] echoed = readServerFrame(input, (byte) 1);
+      output.write(maskedFrame((byte) 8, new byte[] {3, (byte) 232}));
       output.flush();
       return echoed;
     }

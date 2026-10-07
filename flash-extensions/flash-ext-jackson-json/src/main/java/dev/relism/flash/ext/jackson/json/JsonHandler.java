@@ -1,6 +1,6 @@
 package dev.relism.flash.ext.jackson.json;
 
-import dev.relism.flash.ext.serde.CodecHandler;
+import dev.relism.flash.ext.serde.CodecRequestHandler;
 
 /**
  * A handler that reads JSON and answers JSON.
@@ -23,6 +23,6 @@ import dev.relism.flash.ext.serde.CodecHandler;
  * ever reaches the handler. The published document describes both types.
  *
  * <p>{@link Void} as the first type reads nothing, and a pair of formats that differ is
- * {@link CodecHandler} with both named: {@code CodecHandler<Xml, Order, Json, Receipt>}.
+ * {@link CodecRequestHandler} with both named.
  */
-public abstract class JsonHandler<I, O> extends CodecHandler<Json, I, Json, O> {}
+public abstract class JsonHandler<I, O> extends CodecRequestHandler<Json, I, Json, O> {}

@@ -6,7 +6,6 @@ import dev.relism.flash.http2.frame.FrameType;
 import dev.relism.flash.http2.frame.FrameWriteBuffer;
 import dev.relism.flash.http2.hpack.HpackDecoder;
 import dev.relism.flash.http2.hpack.HpackEncoder;
-import dev.relism.flash.websocket.WebSocketFrame;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.EOFException;
@@ -47,18 +46,18 @@ final class H2WebSocketTestClient implements Closeable {
   }
 
   void sendText(String value) throws Exception {
-    sendWebSocketFrame(true, WebSocketFrame.OP_TEXT, value.getBytes(StandardCharsets.UTF_8), false);
+    sendWebSocketFrame(true, (byte) 1, value.getBytes(StandardCharsets.UTF_8), false);
   }
 
   void sendFragmentedText(String first, String second) throws Exception {
     sendWebSocketFrame(
-        false, WebSocketFrame.OP_TEXT, first.getBytes(StandardCharsets.UTF_8), false);
+        false, (byte) 1, first.getBytes(StandardCharsets.UTF_8), false);
     sendWebSocketFrame(
-        true, WebSocketFrame.OP_CONTINUATION, second.getBytes(StandardCharsets.UTF_8), false);
+        true, (byte) 0, second.getBytes(StandardCharsets.UTF_8), false);
   }
 
   void sendBinary(byte[] value) throws Exception {
-    sendWebSocketFrame(true, WebSocketFrame.OP_BINARY, value, false);
+    sendWebSocketFrame(true, (byte) 2, value, false);
   }
 
   byte[] readMessage(byte expectedOpcode) throws Exception {
@@ -95,7 +94,7 @@ final class H2WebSocketTestClient implements Closeable {
   }
 
   void closeGracefully() throws Exception {
-    sendWebSocketFrame(true, WebSocketFrame.OP_CLOSE, new byte[] {3, (byte) 232}, true);
+    sendWebSocketFrame(true, (byte) 8, new byte[] {3, (byte) 232}, true);
     while (!responseEnded) readAndHandleFrame();
   }
 

@@ -5,6 +5,7 @@ import dev.relism.flash.http.Handler;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.PreEncodedHeader;
 import dev.relism.flash.http.Request;
+import dev.relism.flash.http.RequestHandler;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.template.ErrorPages;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +40,7 @@ public final class Errors {
     }
 
     public static Handler notFound(boolean dev) {
-        return dev
+        return RequestHandler.of(dev
                 ? (request, response) -> {
                     response.status(404).type(ContentType.TEXT_HTML);
                     return ErrorPages.renderNotFound(request);
@@ -47,25 +48,12 @@ public final class Errors {
                 : (request, response) -> {
                     response.status(404).type(ContentType.JSON);
                     return NOT_FOUND;
-                };
+                });
     }
 
-    /**
-     * Places the application's error handler inside infrastructure that must observe its final
-     * response. The router keeps the same recovery as a last resort for failures outside this
-     * boundary.
-     */
-    public static Handler boundary(Handler next, ErrorHandler errors) {
-        return (request, response) -> {
-            try {
-                return next.handle(request, response);
-            } catch (Exception failure) {
-                return recover(errors, failure, request, response);
-            }
-        };
-    }
-
-    static Object recover(ErrorHandler errors, Exception failure, Request request, Response response) {
+    public static Object recover(ErrorHandler errors, Exception failure, Request request, Response response) {
+        // Too late for an error page: the connection breaks the exchange off instead.
+        if (response.isCommitted()) throw new IllegalStateException("the exchange failed after its response started", failure);
         try {
             return errors.handle(failure, request, response);
         } catch (Exception broken) {
