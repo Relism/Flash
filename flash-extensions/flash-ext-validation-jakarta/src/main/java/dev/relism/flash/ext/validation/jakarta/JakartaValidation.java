@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Jakarta Validation, as Hibernate Validator implements it.
@@ -61,16 +60,24 @@ public class JakartaValidation implements Module, Validation {
         app.add(Validation.class, this).install(Validation.docs());
     }
 
+    /** A collection is checked element by element, each failure's path prefixed with its index. */
     @Override
     public void verify(Object value) {
-        Set<ConstraintViolation<Object>> broken = delegate.validate(value);
-        if (broken.isEmpty()) return;
-
-        List<Violation> failures = new ArrayList<>(broken.size());
-        for (ConstraintViolation<?> violation : broken) {
-            failures.add(new Violation(violation.getPropertyPath().toString(), violation.getMessage()));
+        List<Violation> failures = new ArrayList<>();
+        if (value instanceof Collection<?> items) {
+            int index = 0;
+            for (Object item : items) check(item, "[" + index++ + "].", failures);
+        } else {
+            check(value, "", failures);
         }
-        throw new ValidationException(failures);
+        if (!failures.isEmpty()) throw new ValidationException(failures);
+    }
+
+    private void check(Object value, String prefix, List<Violation> failures) {
+        if (value == null) return;
+        for (ConstraintViolation<?> violation : delegate.validate(value)) {
+            failures.add(new Violation(prefix + violation.getPropertyPath(), violation.getMessage()));
+        }
     }
 
     /**

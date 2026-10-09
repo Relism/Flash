@@ -80,8 +80,12 @@ public final class Http2StreamTable {
     return stream;
   }
 
-  public synchronized void release(Http2Stream stream) {
-    if (!stream.claimRelease()) return;
+  /**
+   * Returns the stream to the pool, if it is still the generation {@code streamId} names: a thread
+   * that held on to it past its release cannot recycle the request the pool handed it to next.
+   */
+  public synchronized void release(Http2Stream stream, int streamId) {
+    if (stream.id() != streamId || !stream.claimRelease()) return;
     stream.clear();
     stream.poolNext = free;
     free = stream;
@@ -121,7 +125,7 @@ public final class Http2StreamTable {
   public synchronized boolean retire(Http2Stream stream, int streamId) {
     if (!removeIfSame(stream, streamId)) return false;
     rememberClosed(streamId, CLOSED_NORMALLY);
-    release(stream);
+    release(stream, streamId);
     return true;
   }
 

@@ -51,6 +51,18 @@ class ResponsePoolingTest {
     }
 
     @Test
+    void headerRegion_doesNotGrowAcrossCycles() {
+        Response r = new Response(200, ContentType.TEXT_PLAIN);
+        String value = "v".repeat(1000);
+        // more than the region budget in total, well under it per cycle
+        for (int cycle = 0; cycle < 2 * Http1Limits.MAX_RESPONSE_HEADER_BYTES / value.length(); cycle++) {
+            r.reset(200, ContentType.TEXT_PLAIN);
+            r.header("X-Big", value);
+        }
+        assertEquals(1, r.getHeaders().size());
+    }
+
+    @Test
     void mixedHeaderKinds_preserveInsertionOrder() {
         Response r = new Response(200, ContentType.TEXT_PLAIN);
         r.header("A", "1");

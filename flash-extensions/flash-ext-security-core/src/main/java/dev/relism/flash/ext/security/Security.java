@@ -185,6 +185,16 @@ public final class Security implements Bound, RouteHook {
             } finally {
                 SecurityIdentity.CURRENT.remove();
             }
+            // a duplex handler or a streaming body runs after the chain: the caller is current there too
+            SecurityIdentity caller = identity;
+            if (caller != null && exchange.deferred()) exchange.around(deferred -> {
+                SecurityIdentity.CURRENT.set(caller);
+                try {
+                    deferred.call();
+                } finally {
+                    SecurityIdentity.CURRENT.remove();
+                }
+            });
         };
     }
 

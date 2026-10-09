@@ -34,11 +34,14 @@ The status is chosen from how the handler ended:
 | Returns normally | `OK` (0) |
 | Throws `GrpcException(status, message)` | That status and message |
 | Throws `HttpException` 400 or 422, including validation failures and malformed protobuf | `INVALID_ARGUMENT` |
-| Throws `HttpException` 404 | `NOT_FOUND` |
+| Throws `HttpException` 401, 403, 404 | `UNAUTHENTICATED`, `PERMISSION_DENIED`, `NOT_FOUND` |
+| Throws `HttpException` 409, 412, 429 | `ABORTED`, `FAILED_PRECONDITION`, `RESOURCE_EXHAUSTED` |
+| Throws `HttpException` 501, 503, 504 | `UNIMPLEMENTED`, `UNAVAILABLE`, `DEADLINE_EXCEEDED` |
 | Any other `HttpException` | `INTERNAL`, with the exception's message |
 | Anything else | `INTERNAL`, no message. Logged as an error, or at debug level when the cause is an I/O error from the transport |
 
-The exception is found by walking the cause chain. `Status` lists the 17 gRPC codes, and
+The exception is found by walking the cause chain. After the trailers are written the handler
+throws `AnsweredFailure`, so a scope around it fails too: a `@Transactional` handler rolls back. `Status` lists the 17 gRPC codes, and
 `ordinal()` is the wire value.
 
 ```java

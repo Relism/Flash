@@ -14,6 +14,14 @@ public final class AuthenticationFailedException extends HttpException {
         if (challenge != null) header("WWW-Authenticate", challenge);
     }
 
+    /**
+     * A rejected bearer token. A new instance every time: an exception is mutable ({@link #header}),
+     * so a shared one would collect every header a caller adds to it.
+     */
+    public static AuthenticationFailedException invalidToken() {
+        return new AuthenticationFailedException("Bearer error=\"invalid_token\"");
+    }
+
     public String challenge() {
         return challenge;
     }

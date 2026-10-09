@@ -20,12 +20,14 @@ factory.
 tx.run(() -> { ... });
 User user = tx.call(() -> repository.save(new User("ada")));
 tx.call(tx.requiresNew(), () -> audit.record(...));
+List<Order> recent = tx.read(() -> orders.findAll(page));
 ```
 
 | Method | Behavior |
 |---|---|
 | `run(work)`, `call(work)` | Default definition: `REQUIRED`, default isolation, read-write |
 | `run(definition, work)`, `call(definition, work)` | With a `TxDefinition` |
+| `read(work)` | `SUPPORTS`, read-only: joins the current transaction, or runs without one. Use `call(readOnly(), work)` when several reads must see one snapshot |
 | `isActive()` | Whether a transaction is open on this thread |
 | `setRollbackOnly()` | Marks the current transaction so it rolls back when the work returns. Throws if none is active |
 | `resource(Class)` | The backend's resource: `Connection` for JDBC, `Session` for Hibernate |
@@ -47,7 +49,7 @@ TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRES_NEW)
 |---|---|
 | `REQUIRED` | Joins the current transaction, or starts one |
 | `REQUIRES_NEW` | Suspends the current one and starts a new one |
-| `SUPPORTS` | Joins the current one, or runs without a transaction |
+| `SUPPORTS` | Joins the current one, or runs without a transaction (what that means is the backend's: see its usage page) |
 | `MANDATORY` | Joins the current one. Fails with `IllegalStateException` if there is none |
 | `NOT_SUPPORTED` | Suspends the current one and runs without a transaction |
 
@@ -93,6 +95,10 @@ final class PlaceOrder extends RequestHandler { ... }
 | `MANDATORY` | `MANDATORY` |
 | `NOT_SUPPORTED` | `NOT_SUPPORTED` |
 | `NEVER` | `NOT_SUPPORTED`, and throws `TxException` if a transaction is already active |
+
+A duplex handler (SSE, gRPC) or a `Response.streaming` body runs after the middleware chain: it runs
+in a second transaction with the same definition, which spans the whole stream and holds a connection
+for as long. A gRPC call that ends with an error status rolls it back.
 
 `dontRollbackOn` lists exception types that commit the transaction and are then rethrown. Every other
 exception, including an `HttpException`, rolls it back. `rollbackOn` is not read. The annotation is

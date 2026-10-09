@@ -74,7 +74,6 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
     public static final String JWKS = "/oauth/jwks";
     public static final String METADATA = "/.well-known/oauth-authorization-server";
 
-    private static final AuthenticationFailedException INVALID = new AuthenticationFailedException("Bearer error=\"invalid_token\"");
     private static final Base64.Encoder BASE64URL = Base64.getUrlEncoder().withoutPadding();
     private static final Duration CODE_LIFETIME = Duration.ofMinutes(1);
 
@@ -258,7 +257,7 @@ public final class OAuthServer implements Module, AuthenticationMechanism, Bound
         } catch (Exception invalid) {
             // Refused below, like a token for another resource.
         }
-        throw INVALID;
+        throw AuthenticationFailedException.invalidToken();
     }
 
     /** The innermost of this server's resources {@code path} lies in, or {@code null}. */

@@ -27,7 +27,10 @@ public class HttpException extends RuntimeException {
 
     public int status() { return status; }
 
-    /** Headers the error response carries: a challenge, an {@code Allow}, a {@code Retry-After}. */
+    /**
+     * Headers the error response carries: a challenge, an {@code Allow}, a {@code Retry-After}.
+     * {@link #header} adds to this instance, so an exception is thrown new, never shared.
+     */
     public List<PreEncodedHeader> headers() { return headers; }
 
     public HttpException header(String name, String value) {

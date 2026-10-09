@@ -30,6 +30,30 @@ prepared but not sent, so headers and status can still change. Once a streaming 
 protocol has written its first bytes, `Response` is committed and further changes throw
 `IllegalStateException`.
 
+### Deferred work
+
+A duplex handler (SSE, gRPC, WebSocket) and a `Response.streaming` body run after the chain has
+returned, so whatever a middleware set up around `next` is gone by then. `exchange.deferred()` says
+whether such work is left, and `exchange.around(scope)` encloses it:
+
+```java
+Middleware tenant = (exchange, next) -> {
+    Tenant.set(exchange.request().header("X-Tenant"));
+    try { next.handle(exchange); } finally { Tenant.clear(); }
+    if (exchange.deferred()) exchange.around(deferred -> {
+        Tenant.set(exchange.request().header("X-Tenant"));
+        try { deferred.call(); } finally { Tenant.clear(); }
+    });
+};
+```
+
+Scopes registered by several middleware nest in chain order: the outermost middleware's scope is
+outermost. An error answer discards them.
+
+A duplex handler that reports a failure to its peer in its own protocol (gRPC trailers) throws
+`AnsweredFailure` with the cause: the scopes see the work fail, then the exchange drops it, since the
+peer already has its answer.
+
 ### Where middleware attaches
 
 | Call | Applies to |
@@ -114,3 +138,15 @@ Behavior:
   `Access-Control-Allow-Methods`, `Access-Control-Max-Age: 600` and, if configured,
   `Access-Control-Allow-Headers`. The route is not run.
 - Because `use` also wraps unmatched requests, a preflight to a path with no `OPTIONS` route works.
+
+## Request id
+
+`RequestId` puts a request id on every answer, error answers included:
+
+```java
+app.use(RequestId.header("X-Request-Id"));
+```
+
+The caller's id is echoed when it is 1 to 64 ASCII letters, digits or `-`. Otherwise the middleware
+makes one: a random prefix fixed per `RequestId` instance, then a counter in hex. The header is set
+before the chain runs, so a refused request carries it too.

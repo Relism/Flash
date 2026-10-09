@@ -8,6 +8,8 @@ import dev.relism.flash.ext.data.core.Tx;
 import dev.relism.flash.ext.data.core.TxDefinition;
 import dev.relism.flash.ext.data.core.TxException;
 import dev.relism.flash.ext.data.core.TxManager;
+import dev.relism.flash.http.AnsweredFailure;
+import dev.relism.flash.http.Exchange;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.routing.MiddlewareKey;
 import dev.relism.flash.routing.MiddlewareNode;
@@ -65,18 +67,18 @@ public final class DataModule implements Module {
             case NOT_SUPPORTED, NEVER -> TransactionPropagation.NOT_SUPPORTED;
         });
         Class<?>[] commitDespite = declared.dontRollbackOn();
-        Middleware middleware = (exchange, next) -> {
+        Exchange.Around inTransaction = work -> {
             if (type == Transactional.TxType.NEVER && tx.isActive())
                 throw new TxException("NEVER: " + handler.getName() + " runs inside a transaction");
             Exception[] kept = new Exception[1];
             tx.call(definition, () -> {
                 try {
-                    next.handle(exchange);
-                    return null;
+                    return work.call();
                 } catch (Exception failure) {
                     // dontRollbackOn: the transaction commits, and the exception still reaches the caller.
+                    Throwable reason = failure instanceof AnsweredFailure answered ? answered.getCause() : failure;
                     for (Class<?> exempt : commitDespite) {
-                        if (exempt.isInstance(failure)) {
+                        if (exempt.isInstance(reason)) {
                             kept[0] = failure;
                             return null;
                         }
@@ -85,6 +87,14 @@ public final class DataModule implements Module {
                 }
             });
             if (kept[0] != null) throw kept[0];
+        };
+        Middleware middleware = (exchange, next) -> {
+            inTransaction.run(() -> {
+                next.handle(exchange);
+                return null;
+            });
+            // a duplex handler or a streaming body runs after the chain, in a transaction of its own
+            if (exchange.deferred()) exchange.around(inTransaction);
         };
         return List.of(MiddlewareNode.of(TRANSACTION, middleware));
     }

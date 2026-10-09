@@ -58,8 +58,9 @@ public final class Http2Stream
   private final PooledSlice scanName = new PooledSlice();
   private final PooledSlice scanValue = new PooledSlice();
 
-  private int id;
-  private Http2StreamState state = Http2StreamState.IDLE;
+  // Read by the handler, the demux loop and the frame writer: volatile, and changed under writeLock.
+  private volatile int id;
+  private volatile Http2StreamState state = Http2StreamState.IDLE;
   private int sendWindow = 65_535;
   private int receiveWindow = Http2Limits.INITIAL_WINDOW_SIZE_LOCAL;
   private int consumedReceiveBytes;
@@ -240,7 +241,12 @@ public final class Http2Stream
   }
 
   public void transition(Http2StreamState.Event event) {
-    state = state.transition(id, event);
+    writeLock.lock();
+    try {
+      state = state.transition(id, event);
+    } finally {
+      writeLock.unlock();
+    }
   }
 
   public int id() {

@@ -46,9 +46,10 @@ public class HibernateTxManager implements TxManager {
                     ? joinExisting(definition)
                     : beginNew(definition);
             case REQUIRES_NEW -> beginNew(definition);
+            // A Session reads inside a transaction: with none to join, SUPPORTS opens one.
             case SUPPORTS -> ResourceRegistry.isBound(HIBERNATE_STATUS_KEY)
                     ? joinExisting(definition)
-                    : noOp(definition);
+                    : beginNew(definition);
             case MANDATORY -> {
                 if (!ResourceRegistry.isBound(HIBERNATE_STATUS_KEY))
                     throw new IllegalStateException("MANDATORY: no active transaction");
@@ -118,10 +119,6 @@ public class HibernateTxManager implements TxManager {
                 existing.rollbackMarker(),
                 0
         );
-    }
-
-    private TxStatus noOp(TxDefinition definition) {
-        return noOp(definition, null);
     }
 
     private TxStatus noOp(TxDefinition definition, HibernateTxStatus suspended) {

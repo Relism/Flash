@@ -1,11 +1,13 @@
 package dev.relism.flash;
 
 import dev.relism.flash.http.RequestHandler;
+import dev.relism.flash.http.AnsweredFailure;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.Cors;
+import dev.relism.flash.routing.RequestId;
 import dev.relism.flash.routing.Middleware;
 import dev.relism.flash.sse.SseHandler;
 import dev.relism.flash.sse.SseStream;
@@ -22,10 +24,12 @@ import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -229,6 +233,84 @@ class AppTest {
         HttpResponse<String> response = get("/events");
         assertEquals("middleware", response.headers().firstValue("X-After").orElse(null));
         assertEquals("data: ready\n\n", response.body());
+    }
+
+    @Test
+    void middlewareCanEncloseTheDeferredHandlerOutermostFirst() throws Exception {
+        List<String> order = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Middleware outer = (exchange, next) -> {
+            next.handle(exchange);
+            exchange.around(deferred -> { order.add("outer"); deferred.call(); });
+        };
+        Middleware inner = (exchange, next) -> {
+            next.handle(exchange);
+            exchange.around(deferred -> { order.add("inner"); deferred.call(); });
+        };
+        start(App.create().get("/events", new SseHandler() {
+            @Override protected void handle(Request request, SseStream stream) throws Exception {
+                stream.send(String.join(",", order));
+            }
+        }, outer, inner));
+
+        assertEquals("data: outer,inner\n\n", get("/events").body());
+    }
+
+    @Test
+    void anAnsweredFailureFailsTheScopesAroundTheHandlerButNotTheExchange() throws Exception {
+        List<Throwable> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Middleware scope = (exchange, next) -> {
+            next.handle(exchange);
+            exchange.around(deferred -> {
+                try {
+                    deferred.call();
+                } catch (AnsweredFailure answered) {
+                    seen.add(answered);
+                    throw answered;
+                }
+            });
+        };
+        start(App.create().get("/events", new SseHandler() {
+            @Override protected void handle(Request request, SseStream stream) throws Exception {
+                stream.send("told");
+                throw new AnsweredFailure(new IllegalStateException("told the peer"));
+            }
+        }, scope));
+
+        HttpResponse<String> response = get("/events");
+        assertEquals(200, response.statusCode());
+        assertEquals("data: told\n\n", response.body());
+        assertEquals(1, seen.size());
+    }
+
+    @Test
+    void anSseHandlerCanStillRefuseBeforeItsFirstEvent() throws Exception {
+        start(App.create().get("/events", new SseHandler() {
+            @Override protected void handle(Request request, SseStream stream) throws Exception {
+                if (request.query("limit") == null) throw HttpException.badRequest("limit is required");
+                stream.send("ok");
+            }
+        }));
+
+        HttpResponse<String> refused = get("/events");
+        assertEquals(400, refused.statusCode());
+        assertEquals("{\"error\":\"limit is required\",\"status\":400}", refused.body());
+        assertEquals("data: ok\n\n", get("/events?limit=1").body());
+    }
+
+    @Test
+    void aRequestIdIsEchoedWhenWellFormedAndMadeOtherwiseOnEveryAnswer() throws Exception {
+        start(App.create().use(RequestId.header("X-Request-Id"))
+                .get("/ok", (req, res) -> "ok")
+                .get("/refused", (req, res) -> { throw HttpException.conflict("no"); }));
+
+        assertEquals("abc-123-X", send(HttpRequest.newBuilder(URI.create(url("/ok"))).header("X-Request-Id", "abc-123-X"))
+                .headers().firstValue("X-Request-Id").orElse(null));
+        String made = send(HttpRequest.newBuilder(URI.create(url("/ok"))).header("X-Request-Id", "bad_id"))
+                .headers().firstValue("X-Request-Id").orElse("");
+        assertTrue(made.matches("[0-9a-f]+-[0-9a-f]+"), made);
+        assertNotEquals(made, get("/ok").headers().firstValue("X-Request-Id").orElse(null));
+        assertTrue(get("/refused").headers().firstValue("X-Request-Id").isPresent());
+        assertTrue(get("/missing").headers().firstValue("X-Request-Id").isPresent());
     }
 
     @Test

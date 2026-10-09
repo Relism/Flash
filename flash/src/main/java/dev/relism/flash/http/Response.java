@@ -101,6 +101,7 @@ public class Response {
     this.streamingBody = null;
     this.contentType = contentType.getBytes();
     this.headerQuadCount = 0;
+    if (headerRegion != null) headerRegion.reset();
     this.trailers.reset();
     this.active = true;
     return this;

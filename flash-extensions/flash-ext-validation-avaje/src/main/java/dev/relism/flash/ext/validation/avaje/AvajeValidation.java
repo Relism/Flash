@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Avaje Validator: the same constraints, checked by adapters generated at build time.
@@ -49,17 +48,27 @@ public class AvajeValidation implements Module, Validation {
         app.add(Validation.class, this).install(Validation.docs());
     }
 
-    /** {@code check} rather than {@code validate}: every failure at once, and no exception as a signal. */
+    /**
+     * {@code check} rather than {@code validate}: every failure at once, and no exception as a signal.
+     * A collection is checked element by element, each failure's path prefixed with its index.
+     */
     @Override
     public void verify(Object value) {
-        Set<ConstraintViolation> broken = delegate.check(value);
-        if (broken.isEmpty()) return;
-
-        List<Violation> failures = new ArrayList<>(broken.size());
-        for (ConstraintViolation violation : broken) {
-            failures.add(new Violation(violation.path(), violation.message()));
+        List<Violation> failures = new ArrayList<>();
+        if (value instanceof Collection<?> items) {
+            int index = 0;
+            for (Object item : items) check(item, "[" + index++ + "].", failures);
+        } else {
+            check(value, "", failures);
         }
-        throw new ValidationException(failures);
+        if (!failures.isEmpty()) throw new ValidationException(failures);
+    }
+
+    private void check(Object value, String prefix, List<Violation> failures) {
+        if (value == null) return;
+        for (ConstraintViolation violation : delegate.check(value)) {
+            failures.add(new Violation(prefix + violation.path(), violation.message()));
+        }
     }
 
     /**

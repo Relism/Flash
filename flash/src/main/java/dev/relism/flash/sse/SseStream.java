@@ -70,6 +70,7 @@ public final class SseStream implements AutoCloseable {
     public void await() throws IOException {
         lock.lock();
         try {
+            if (!closed) duplex.flush(); // the client learns the stream is open before the first event
             while (!closed) {
                 try {
                     if (ended.awaitNanos(KEEP_ALIVE_NANOS) > 0) continue;

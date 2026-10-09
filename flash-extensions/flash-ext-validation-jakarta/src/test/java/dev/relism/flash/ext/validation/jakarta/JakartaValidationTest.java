@@ -31,10 +31,18 @@ class JakartaValidationTest {
         }
     }
 
+    public static final class CreateAll extends JsonHandler<java.util.List<CreateUser>, String> {
+        @Override
+        protected String handle(Request req, Response res, java.util.List<CreateUser> users) {
+            return "created:" + users.size();
+        }
+    }
+
     @RegisterExtension
     static FlashTest app = FlashTest.of(() -> App.create()
             .install(new JsonModule(), new JakartaValidation())
-            .route(HttpMethod.POST, "/users", Create.class));
+            .route(HttpMethod.POST, "/users", Create.class)
+            .route(HttpMethod.POST, "/users/bulk", CreateAll.class));
 
     @Test
     void aValidBodyReachesTheHandler() {
@@ -69,5 +77,15 @@ class JakartaValidationTest {
         app.request().json("not json").post("/users")
                 .expectStatus(400)
                 .expectBodyContains("Invalid request body");
+    }
+
+    @Test
+    void aCollectionBodyIsCheckedElementByElement() {
+        String valid = "{\"name\":\"alice\",\"email\":\"a@b.com\",\"age\":30,\"address\":{\"street\":\"Main\"}}";
+        String broken = "{\"name\":\"\",\"email\":\"a@b.com\",\"age\":30,\"address\":{\"street\":\"Main\"}}";
+        app.request().json("[" + valid + "," + valid + "]").post("/users/bulk").expectStatus(200).expectBody("created:2");
+        app.request().json("[" + valid + "," + broken + "]").post("/users/bulk")
+                .expectStatus(422)
+                .expectBodyContains("[1].name");
     }
 }

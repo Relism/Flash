@@ -30,6 +30,8 @@ public final class SpecBuilder<T> {
 
         public <C extends Comparable<C>> Spec<T> gt(C value) { return ctx -> column + " > " + ctx.bind(value); }
         public <C extends Comparable<C>> Spec<T> lt(C value) { return ctx -> column + " < " + ctx.bind(value); }
+        public <C extends Comparable<C>> Spec<T> ge(C value) { return ctx -> column + " >= " + ctx.bind(value); }
+        public <C extends Comparable<C>> Spec<T> le(C value) { return ctx -> column + " <= " + ctx.bind(value); }
         public <C extends Comparable<C>> Spec<T> between(C lo, C hi) {
             return ctx -> column + " between " + ctx.bind(lo) + " and " + ctx.bind(hi);
         }

@@ -77,6 +77,18 @@ public final class Tx {
         return TxDefinition.DEFAULTS.asReadOnly();
     }
 
+    /**
+     * Reads inside the caller's transaction when there is one, and in none otherwise: the reads
+     * nested in {@code work} share one connection, without a BEGIN and a COMMIT around them. Use
+     * {@code call(readOnly(), work)} when the reads must see one snapshot.
+     */
+    public <T> T read(TxCallable<T> work) {
+        return call(READ, work);
+    }
+
+    private static final TxDefinition READ =
+            TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS).asReadOnly();
+
     private TxStatus currentStatus() {
         TxStatus status = stack.get().peek();
         if (status == null) throw new IllegalStateException("No active transaction");

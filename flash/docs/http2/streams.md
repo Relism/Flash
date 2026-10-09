@@ -45,7 +45,11 @@ dispatched as soon as its headers are complete, and the handler reads the body a
 
 A stream owns its request, response, decoded headers, body buffers and response writer, and is
 returned to the pool when the response completes or the stream is reset. A `RST_STREAM` from the
-peer marks a running stream cancelled; the thread that owns it releases it.
+peer marks a running stream cancelled before it closes it, so a write the handler was making fails
+as an `IOException` ("stream reset"); the thread that owns the stream releases it. A release names
+the stream id it owns: a thread that holds a pooled stream past its release cannot recycle the
+request the pool handed that stream to next. A stream's state is changed under its write lock, by
+the demultiplexer and the writing thread alike.
 
 A stream with no frame activity in either direction for `h2StreamIdleTimeoutMs` (60 s) is reset with
 `CANCEL`.

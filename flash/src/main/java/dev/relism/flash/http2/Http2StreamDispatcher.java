@@ -72,6 +72,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void scheduleResume(Http2Stream stream) {
+    int streamId = stream.id();
     if (stream.signalDuplex()) return;
     if (!stream.responseStarted() || stream.cancelled()) return;
     if (!stream.beginResponseBatch()) return;
@@ -80,13 +81,14 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       context.executor().execute(stream);
     } catch (RejectedExecutionException rejected) {
       stream.endResponseBatch();
-      failAndRelease(stream, Http2ErrorCode.REFUSED_STREAM, rejected);
+      failAndRelease(stream, streamId, Http2ErrorCode.REFUSED_STREAM, rejected);
     }
   }
 
   void dispatch(Http2Stream stream) {
+    int streamId = stream.id();
     if (stream.cancelled()) {
-      streams.release(stream);
+      streams.release(stream, streamId);
       return;
     }
     stream.markDispatched();
@@ -94,7 +96,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     try {
       context.executor().execute(stream);
     } catch (RejectedExecutionException rejected) {
-      failAndRelease(stream, Http2ErrorCode.REFUSED_STREAM, rejected);
+      failAndRelease(stream, streamId, Http2ErrorCode.REFUSED_STREAM, rejected);
     }
   }
 
@@ -104,9 +106,11 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
   }
 
   private void handle(Http2Stream stream) {
+    // This thread's generation of the pooled stream: every release below names it.
+    int streamId = stream.id();
     stream.touch();
     if (stream.cancelled()) {
-      streams.release(stream);
+      streams.release(stream, streamId);
       return;
     }
     try {
@@ -139,7 +143,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
           request.recycle();
           if (response == pooled) pooled.recycle();
         }
-        streams.release(stream);
+        streams.release(stream, streamId);
         return;
       }
       boolean headRequest = request.method() == HttpMethod.HEAD;
@@ -153,7 +157,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
           used =
               responseWriter.startFlowControlled(
                   response,
-                  stream.id(),
+                  streamId,
                   headRequest,
                   context.configuration().isSendDate(),
                   !statusAlone,
@@ -177,19 +181,19 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       frameWriter.write(responseWriter);
     } catch (Exception failure) {
       if (stream.duplex() instanceof StreamDuplex duplex && duplex.owner) duplex.abort(failure);
-      else failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
+      else failAndRelease(stream, streamId, Http2ErrorCode.INTERNAL_ERROR, failure);
     }
   }
 
   private void tryResumeResponse(Http2Stream stream) {
+    int streamId = stream.id();
     stream.touch();
     if (stream.cancelled()) {
       stream.endResponseBatch();
-      streams.release(stream);
+      streams.release(stream, streamId);
       return;
     }
     Http2ResponseWriter responseWriter = stream.responseWriter();
-    int streamId = stream.id();
     if (responseWriter.finished()) {
       stream.endResponseBatch();
       if (stream.state() == Http2StreamState.CLOSED) {
@@ -214,7 +218,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       frameWriter.write(responseWriter);
     } catch (Exception failure) {
       stream.endResponseBatch();
-      failAndRelease(stream, Http2ErrorCode.INTERNAL_ERROR, failure);
+      failAndRelease(stream, streamId, Http2ErrorCode.INTERNAL_ERROR, failure);
     }
   }
 
@@ -256,13 +260,13 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     int streamId = stream.id();
     if (streamId == 0) return;
     if (stream.cancelled()) {
-      streams.remove(stream.id());
-      streams.release(stream);
+      streams.removeIfSame(stream, streamId);
+      streams.release(stream, streamId);
       return;
     }
     if (stream.responseWriter().finished()) {
       if (stream.state() == Http2StreamState.CLOSED) {
-        if (!streams.retire(stream, streamId)) streams.release(stream);
+        if (!streams.retire(stream, streamId)) streams.release(stream, streamId);
       }
       return;
     }
@@ -275,8 +279,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     }
   }
 
-  private void failAndRelease(Http2Stream stream, Http2ErrorCode error, Exception cause) {
-    int streamId = stream.id();
+  private void failAndRelease(Http2Stream stream, int streamId, Http2ErrorCode error, Exception cause) {
     if (!streams.removeIfSame(stream, streamId) && stream.id() != streamId) return;
     if (cause != null) log.error("HTTP/2 stream {} failed", streamId, cause);
     try {
@@ -289,7 +292,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     } catch (IOException writeFailure) {
       log.debug("Failed to write RST_STREAM for {}", streamId, writeFailure);
     } finally {
-      streams.release(stream);
+      streams.release(stream, streamId);
     }
   }
 
@@ -303,6 +306,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
     private final Http2Stream stream;
     private boolean head;
     private boolean owner; // between the commit and the last batch; see Http2Stream#enterDuplex
+    private int streamId; // the generation this writer owns, taken at the commit
     private int unsent; // window reserved for bytes the frame writer has not taken yet
 
     StreamDuplex(Http2Stream stream) {
@@ -340,7 +344,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       if (stream.cancelled()) throw new IOException("stream reset");
       Http2ResponseWriter writer = stream.responseWriter();
       writer.duplexEnd(peerSettings.maxFrameSize());
-      applyBatchTransition(stream, writer);
+      transition(writer);
       stream.beginResponseBatch();
       stream.markResponseStarted();
       owner = false;
@@ -355,7 +359,6 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       owner = false;
       if (unsent != 0) flowController.refundSend(stream, unsent);
       unsent = 0;
-      int streamId = stream.id();
       if (!stream.cancelled()) {
         log.error("HTTP/2 stream {} failed", streamId, failure);
         streams.removeIfSame(stream, streamId);
@@ -366,7 +369,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
           log.debug("Failed to write RST_STREAM for {}", streamId, writeFailure);
         }
       }
-      if (stream.leaveDuplex()) streams.release(stream);
+      if (stream.leaveDuplex()) streams.release(stream, streamId);
     }
 
     private void commit() throws IOException {
@@ -375,6 +378,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       if (stream.cancelled()) throw new IOException("stream reset");
       stream.enterDuplex();
       owner = true;
+      streamId = stream.id();
       synchronized (Http2StreamDispatcher.this) {
         stream.responseWriter().duplexHeaders(
             response,
@@ -394,7 +398,7 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       Http2ResponseWriter writer = stream.responseWriter();
       if (!writer.duplexPending()) return false;
       if (stream.cancelled()) throw new IOException("stream reset");
-      applyBatchTransition(stream, writer);
+      transition(writer);
       stream.beginResponseBatch();
       unsent = 0;
       stream.touch();
@@ -402,6 +406,16 @@ final class Http2StreamDispatcher implements Http2Stream.ResponseSink {
       stream.awaitResponseBatch();
       writer.duplexSent();
       return true;
+    }
+
+    /** A send on a stream the peer reset ends the writer like any broken transport. */
+    private void transition(Http2ResponseWriter writer) throws IOException {
+      try {
+        applyBatchTransition(stream, writer);
+      } catch (Http2StreamException closed) {
+        if (stream.cancelled()) throw new IOException("stream reset", closed);
+        throw closed;
+      }
     }
 
     @Override

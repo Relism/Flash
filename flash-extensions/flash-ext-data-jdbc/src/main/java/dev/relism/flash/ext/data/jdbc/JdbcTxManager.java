@@ -11,6 +11,7 @@ public class JdbcTxManager implements TxManager {
     // Per manager, not per class: two databases on one thread never join each other's transaction.
     private final TxResourceKey JDBC_STATUS_KEY = TxResourceKey.of("jdbc.tx.status");
     private final TxResourceKey JDBC_SUSPENDED_KEY = TxResourceKey.of("jdbc.tx.suspended");
+    private final TxResourceKey JDBC_READ_KEY = TxResourceKey.of("jdbc.read");
 
     private final DataSource ds;
 
@@ -39,7 +40,7 @@ public class JdbcTxManager implements TxManager {
             case REQUIRES_NEW -> beginNew(definition);
             case SUPPORTS -> ResourceRegistry.isBound(JDBC_STATUS_KEY)
                     ? joinExisting(definition)
-                    : noOp(definition);
+                    : outsideTransaction(definition);
             case MANDATORY -> {
                 if (!ResourceRegistry.isBound(JDBC_STATUS_KEY))
                     throw new IllegalStateException("MANDATORY: no active transaction");
@@ -106,8 +107,33 @@ public class JdbcTxManager implements TxManager {
         );
     }
 
-    private TxStatus noOp(TxDefinition definition) {
-        return noOp(definition, null);
+    /**
+     * SUPPORTS with no transaction to join: one connection in autocommit for the whole scope, shared
+     * by the reads nested in it. No BEGIN and no COMMIT, so a single query costs one round trip.
+     */
+    private TxStatus outsideTransaction(TxDefinition definition) {
+        JdbcTxStatus outer = ResourceRegistry.getOrNull(JDBC_READ_KEY, JdbcTxStatus.class);
+        if (outer != null) return new JdbcTxStatus(outer.connection(), false, definition.readOnly(), null, outer.rollbackMarker(), 0);
+        Connection conn = null;
+        try {
+            conn = ds.getConnection();
+            if (!conn.getAutoCommit()) conn.setAutoCommit(true);
+        } catch (SQLException e) {
+            silentClose(conn);
+            throw new TxException(e);
+        }
+        JdbcTxStatus status = new JdbcTxStatus(conn, false, definition.readOnly(), null, new JdbcTxStatus.RollbackMarker(), 0);
+        ResourceRegistry.bind(JDBC_READ_KEY, status);
+        return status;
+    }
+
+    /** Ends the scope {@link #outsideTransaction} opened, when {@code status} is the one that opened it. */
+    private boolean endOutsideTransaction(JdbcTxStatus status) {
+        if (ResourceRegistry.getOrNull(JDBC_READ_KEY, JdbcTxStatus.class) != status) return false;
+        ResourceRegistry.unbind(JDBC_READ_KEY);
+        silentClose(status.connection());
+        cleanupIfIdle();
+        return true;
     }
 
     private TxStatus noOp(TxDefinition definition, JdbcTxStatus suspended) {
@@ -126,6 +152,7 @@ public class JdbcTxManager implements TxManager {
     @Override
     public void commit(TxStatus status) {
         JdbcTxStatus s = (JdbcTxStatus) status;
+        if (endOutsideTransaction(s)) return;
         if (!s.isNewTransaction()) {
             resumeIfNeeded(s);
             cleanupIfIdle();
@@ -179,6 +206,7 @@ public class JdbcTxManager implements TxManager {
     @Override
     public void rollback(TxStatus status) {
         JdbcTxStatus s = (JdbcTxStatus) status;
+        if (endOutsideTransaction(s)) return;
         if (!s.isNewTransaction()) {
             s.markRollbackOnly();
             resumeIfNeeded(s);
@@ -209,7 +237,8 @@ public class JdbcTxManager implements TxManager {
     }
 
     private void cleanupIfIdle() {
-        if (!ResourceRegistry.isBound(JDBC_STATUS_KEY) && !ResourceRegistry.isBound(JDBC_SUSPENDED_KEY)) {
+        if (!ResourceRegistry.isBound(JDBC_STATUS_KEY) && !ResourceRegistry.isBound(JDBC_SUSPENDED_KEY)
+                && !ResourceRegistry.isBound(JDBC_READ_KEY)) {
             ResourceRegistry.cleanup();
         }
     }

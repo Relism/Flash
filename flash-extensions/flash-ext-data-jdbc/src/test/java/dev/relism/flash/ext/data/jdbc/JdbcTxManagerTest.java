@@ -51,17 +51,40 @@ class JdbcTxManagerTest {
     }
 
     /**
-     * SUPPORTS without an active transaction yields a connectionless status — it must not be a
-     * transaction, and asking it for a connection must say so rather than NPE. Both propagations
-     * that produce one used to throw {@link NullPointerException} straight out of {@code begin()}.
+     * SUPPORTS without an active transaction runs on a connection of its own in autocommit, shared by
+     * every SUPPORTS nested in it and closed when the outermost one ends.
      */
     @Test
-    void supports_without_active_transaction_is_a_connectionless_no_op() {
-        TxStatus s = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS));
+    void supports_without_active_transaction_reads_on_one_autocommit_connection() throws Exception {
+        TxDefinition supports = TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS);
+        TxStatus outer = manager.begin(supports);
+        Connection connection = outer.resource(Connection.class);
+        assertFalse(outer.isNewTransaction());
+        assertTrue(connection.getAutoCommit());
 
-        assertFalse(s.isNewTransaction());
-        assertThrows(IllegalStateException.class, () -> s.resource(Connection.class));
-        assertDoesNotThrow(() -> manager.commit(s));
+        TxStatus nested = manager.begin(supports.asReadOnly());
+        assertSame(connection, nested.resource(Connection.class));
+        manager.commit(nested);
+        assertFalse(connection.isClosed());
+
+        manager.commit(outer);
+        assertTrue(connection.isClosed());
+    }
+
+    @Test
+    void tx_read_opens_no_transaction_and_joins_the_one_that_is_open() throws Exception {
+        Tx tx = new Tx(manager);
+        assertTrue(tx.read(() -> tx.resource(Connection.class).getAutoCommit()));
+        tx.run(() -> assertSame(tx.resource(Connection.class), tx.read(() -> tx.resource(Connection.class))));
+    }
+
+    @Test
+    void supports_joins_the_active_transaction() {
+        TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
+        TxStatus read = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS).asReadOnly());
+        assertSame(outer.resource(Connection.class), read.resource(Connection.class));
+        manager.commit(read);
+        manager.rollback(outer);
     }
 
     @Test

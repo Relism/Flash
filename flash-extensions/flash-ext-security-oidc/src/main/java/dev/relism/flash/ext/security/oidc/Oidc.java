@@ -38,7 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class Oidc implements AuthenticationMechanism, SessionRefresher, Bound {
 
-    private static final AuthenticationFailedException INVALID = new AuthenticationFailedException("Bearer error=\"invalid_token\"");
     private static final String FLOW = "flash_oidc";
     private static final Base64.Encoder BASE64URL = Base64.getUrlEncoder().withoutPadding();
 
@@ -125,14 +124,14 @@ public final class Oidc implements AuthenticationMechanism, SessionRefresher, Bo
             jwt = SignedJWT.parse(token);
             provider = byIssuer.get(String.valueOf(jwt.getJWTClaimsSet().getIssuer()));
         } catch (Exception malformed) {
-            throw INVALID;
+            throw AuthenticationFailedException.invalidToken();
         }
         if (provider == null) return null;
         try {
             Map<String, Object> claims = provider.verifyAccessToken(jwt);
             return new OidcPrincipal(provider.config.id(), (String) claims.get("sub"), claims, token, null, null);
         } catch (Exception invalid) {
-            throw INVALID;
+            throw AuthenticationFailedException.invalidToken();
         }
     }
 

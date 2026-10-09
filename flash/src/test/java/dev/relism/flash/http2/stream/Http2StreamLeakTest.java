@@ -11,7 +11,7 @@ class Http2StreamLeakTest {
     for (int i = 0; i < 100_000; i++) {
       Http2Stream stream = table.acquire((i << 1) | 1);
       table.remove(stream.id());
-      table.release(stream);
+      table.release(stream, stream.id());
     }
     assertEquals(1, table.createdCount());
     assertEquals(1, table.freeCount());
@@ -24,8 +24,8 @@ class Http2StreamLeakTest {
     Http2Stream stream = table.acquire(1);
     table.remove(1);
 
-    table.release(stream);
-    table.release(stream);
+    table.release(stream, 1);
+    table.release(stream, 1);
 
     assertEquals(1, table.freeCount());
   }
