@@ -46,6 +46,8 @@ Read it back with `identity.principal(OidcPrincipal.class)`.
 
 `AuthenticationFailedException(challenge)` is a stackless `HttpException` with status `401`. A
 non-null `challenge` becomes the `WWW-Authenticate` header, for example `Bearer error="invalid_token"`.
+`AuthenticationFailedException.invalidToken()` is that one. Throw a new instance each time: an
+`HttpException` collects the headers a middleware adds to it, so a shared one would keep them all.
 
 ## Schemes
 

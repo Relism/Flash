@@ -26,7 +26,6 @@ import java.util.List;
  */
 public final class ApiKeys<G> implements Module, AuthenticationMechanism {
 
-    private static final AuthenticationFailedException INVALID = new AuthenticationFailedException("Bearer error=\"invalid_token\"");
     private static final Base64.Encoder BASE64URL = Base64.getUrlEncoder().withoutPadding();
 
     private final String prefix;
@@ -53,9 +52,9 @@ public final class ApiKeys<G> implements Module, AuthenticationMechanism {
         String header = req.header("Authorization");
         if (header == null || !header.startsWith(bearer)) return null;
         int dot = header.indexOf('.', bearer.length());
-        if (dot < 0) throw INVALID;
+        if (dot < 0) throw AuthenticationFailedException.invalidToken();
         ApiKey<G> key = store.find(header.substring(bearer.length(), dot));
-        if (key == null || !matches(header.substring(dot + 1), key.secretHash()) || !key.isActive()) throw INVALID;
+        if (key == null || !matches(header.substring(dot + 1), key.secretHash()) || !key.isActive()) throw AuthenticationFailedException.invalidToken();
         return new ApiKeyPrincipal<>(key.id(), key.grant());
     }
 

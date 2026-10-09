@@ -4,11 +4,12 @@ package dev.relism.flash.ext.data.core;
 public interface Spec<T> {
     String toFragment(SpecContext ctx);
 
-    default Spec<T> and(Spec<T> other) {
+    // ? super T: SpecBuilder.field("x").eq(v) composes without type witnesses.
+    default Spec<T> and(Spec<? super T> other) {
         return ctx -> "(" + this.toFragment(ctx) + " AND " + other.toFragment(ctx) + ")";
     }
 
-    default Spec<T> or(Spec<T> other) {
+    default Spec<T> or(Spec<? super T> other) {
         return ctx -> "(" + this.toFragment(ctx) + " OR " + other.toFragment(ctx) + ")";
     }
 

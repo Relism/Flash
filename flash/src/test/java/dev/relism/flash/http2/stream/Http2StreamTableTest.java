@@ -22,7 +22,7 @@ class Http2StreamTableTest {
     assertNull(table.acquire(99));
     for (int i = 0; i < streams.length; i += 2) {
       assertSame(streams[i], table.remove(streams[i].id()));
-      table.release(streams[i]);
+      table.release(streams[i], streams[i].id());
     }
     for (int i = 1; i < streams.length; i += 2) {
       assertSame(streams[i], table.get(streams[i].id()));
@@ -40,6 +40,21 @@ class Http2StreamTableTest {
 
     assertFalse(table.retire(firstGeneration, 1));
     assertSame(secondGeneration, table.get(3));
+  }
+
+  @Test
+  void aLateReleaseCannotRecycleAReusedPooledStream() {
+    Http2StreamTable table = new Http2StreamTable(1);
+    Http2Stream stream = table.acquire(1);
+    table.remove(1);
+    table.release(stream, 1);
+    assertSame(stream, table.acquire(3));
+
+    // a thread that still held generation 1 lets go of it
+    table.release(stream, 1);
+
+    assertEquals(3, stream.id());
+    assertEquals(0, table.freeCount());
   }
 
   @Test
@@ -65,7 +80,7 @@ class Http2StreamTableTest {
     assertNotNull(second);
     assertNotSame(first, second);
 
-    table.release(first);
+    table.release(first, 1);
     assertTrue(table.retire(second, 3));
     assertEquals(2, table.createdCount());
     assertEquals(2, table.freeCount());

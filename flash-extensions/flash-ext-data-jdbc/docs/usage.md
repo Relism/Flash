@@ -9,27 +9,32 @@
   level (unless `DEFAULT`).
 - `REQUIRES_NEW` and `NOT_SUPPORTED` suspend the current transaction's connection and restore it
   afterwards.
+- `SUPPORTS` with no transaction to join takes one connection in auto-commit for its scope, shared by
+  every `SUPPORTS` nested in it: no `BEGIN` and no `COMMIT`. Repository reads and `tx.read` run this
+  way, so a lookup costs one round trip. A `REQUIRED` nested in it opens a transaction on a second
+  connection.
 - `close()` closes the `DataSource` when it is `AutoCloseable`, as a connection pool is.
 
 Inside a transaction, `tx.resource(Connection.class)` is the connection in use.
 
 ## JdbcRepository
 
-Extend `JdbcRepository<T, ID>(tx, table, idColumn)`. You supply:
+Extend `JdbcRepository<T, ID>(tx, table, idColumn)` and implement `mapRow(ResultSet)`. The rest is
+optional:
 
 | Method | Purpose |
 |---|---|
-| `mapRow(ResultSet)` | Row to entity |
-| `insertSql()`, `bindInsert(ps, entity)` | Insert statement and its parameters |
-| `updateSql()`, `bindUpdate(ps, entity)` | Update statement and its parameters |
-| `applyGeneratedKey(ps, entity)` | Optional: copy a generated key into the entity. Insert statements are prepared with `RETURN_GENERATED_KEYS` |
+| `columns()` | What `findById` and `findAll` select. Default `*` |
+| `insertSql()`, `bindInsert(ps, entity)` | Insert statement and its parameters, for `save`. Without them `save` throws `UnsupportedOperationException` |
+| `updateSql()`, `bindUpdate(ps, entity)` | Update statement and its parameters, for `update`. Same rule |
+| `applyGeneratedKey(ps, entity)` | Copy a generated key into the entity. Insert statements are prepared with `RETURN_GENERATED_KEYS` |
 
 The base class implements the rest as SQL against `table`:
 
 | Operation | SQL |
 |---|---|
-| `findById`, `existsById` | `select * ... where <idColumn> = ?`, `select 1 ...` |
-| `findAll(query)` | `select * from <table> [where <spec>] [order by <sort>] [limit ? offset ?]` |
+| `findById`, `existsById` | `select <columns> ... where <idColumn> = ?`, `select 1 ...` |
+| `findAll(query)` | `select <columns> from <table> [where <spec>] [order by <sort>] [limit ? offset ?]` |
 | `findPage` | The query plus `select count(*)` with the same condition |
 | `count` | `select count(*) from <table>` |
 | `save`, `update` | `insertSql()`, `updateSql()` |
@@ -44,12 +49,13 @@ database that accepts it.
 
 | Method | Purpose |
 |---|---|
-| `connection()` | The transaction's connection |
+| `connection()` | The connection in use: the transaction's, or the `SUPPORTS` scope's |
 | `queryOne(sql, binder)`, `queryOne(sql, binder, mapper)` | One row as `Optional` |
 | `queryMany(sql, binder)` | All rows mapped by `mapRow` |
 | `mutate(sql, binder)` | Execute an update, return the count |
 
 `SqlBinder` binds parameters on a `PreparedStatement`; `SqlMapper<R>` maps a `ResultSet` row. Call them
-from your own repository methods, wrapped in `roQuery` or `rwQuery` so they run in a transaction.
+from your own repository methods, wrapped in `roQuery` (joins, or runs as `SUPPORTS`) or `rwQuery`
+(joins, or opens a read-write transaction).
 
 Column names used in a `Spec` or `Sort` are written into the SQL as given: do not pass user input.

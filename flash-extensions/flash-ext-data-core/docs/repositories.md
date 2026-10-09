@@ -13,15 +13,16 @@ List<User> all = data.read(() -> users.findAll());
 | Method | Behavior |
 |---|---|
 | `repository(Class)` | One repository per entity type, created once and shared. It keeps no transaction state |
-| `read(work)` | Runs in a read-only transaction. Variants for a result: `read(TxCallable)` |
+| `read(work)` | `tx.read(work)`: joins the current transaction, or runs without one. Variants for a result: `read(TxCallable)` |
 | `write(work)` | Runs in a read-write transaction |
 | `afterCommit(runnable)` | Runs after the enclosing transaction commits |
 | `tx()` | The `Tx` |
 
 ## Repository
 
-Every method opens or joins a transaction on its own: reads join as read-only, writes as read-write.
-Wrap several calls in `data.write` or `tx.run` to make them one transaction.
+Every method joins the current transaction. Without one, a read runs as `SUPPORTS` (no transaction of
+its own on JDBC) and a write opens a read-write transaction. Wrap several calls in `data.write` or
+`tx.run` to make them one transaction.
 
 | Method | Returns |
 |---|---|
@@ -42,14 +43,13 @@ Pages are zero-based.
 A `Spec<T>` is a condition that renders a fragment and binds values as parameters.
 
 ```java
-Spec<User> adults = SpecBuilder.<User, Integer>field("age").gt(18);
-Spec<User> active = SpecBuilder.<User, String>field("status").eq("ACTIVE");
-List<User> result = users.findAll(adults.and(active));
+Spec<User> adults = SpecBuilder.<User, Integer>field("age").ge(18);
+List<User> result = users.findAll(adults.and(SpecBuilder.field("status").eq("ACTIVE")));
 ```
 
-`SpecBuilder.field(column)` offers `eq`, `neq`, `like`, `isNull`, `isNotNull`, `in`, `gt`, `lt` and
-`between`. `Spec` combines with `and`, `or` and `not`; `Spec.all()` matches everything and
-`Spec.none()` nothing.
+`SpecBuilder.field(column)` offers `eq`, `neq`, `like`, `isNull`, `isNotNull`, `in`, `gt`, `ge`, `lt`,
+`le` and `between`. `Spec` combines with `and`, `or` and `not`; an argument of `and` and `or` needs no
+type witness. `Spec.all()` matches everything and `Spec.none()` nothing.
 
 **Column names and sort columns are written into the statement as given.** Only values are bound as
 parameters. Never pass user input as a column name.

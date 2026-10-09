@@ -54,8 +54,8 @@ read scopes from the token.
 
 Inside a guarded handler, `SecurityIdentity.current()` returns the caller, or `null` when the caller
 is anonymous. It is set while the route's middleware chain runs, so it is available in `handle` and
-in other middleware that runs after the policy. It is not set inside a `Response.streaming`
-callback, which runs after the chain.
+in other middleware that runs after the policy. It is also set while a duplex handler (SSE, gRPC,
+WebSocket) or a `Response.streaming` body of an authenticated caller runs after the chain.
 
 | Method | Returns |
 |---|---|
@@ -74,7 +74,11 @@ Annotations cover handler classes. For a lambda or a custom rule build the middl
 Security security = securityModule.security();
 SecurityPolicy policy = SecurityPolicy.AUTHENTICATED;
 app.get("/me", (req, res) -> SecurityIdentity.current().principal().name(), security.enforce(policy));
+app.post("/reports", (req, res) -> reports.run(), security.enforce(SecurityPolicy.roles("ADMIN")));
 ```
+
+`SecurityPolicy.AUTHENTICATED` admits any caller; `SecurityPolicy.roles(roles...)` a caller holding
+any of them, as `@RolesAllowed` does.
 
 `enforce(policy, entryPoint)` answers an anonymous caller with your entry point on that route.
 `enforce(policy, entryPoint, mechanisms)` restricts the route to those mechanisms: every other

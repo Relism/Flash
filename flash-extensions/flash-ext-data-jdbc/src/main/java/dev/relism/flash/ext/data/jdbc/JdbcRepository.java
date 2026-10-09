@@ -23,14 +23,33 @@ public abstract class JdbcRepository<T, ID> extends Repository<T, ID> {
     }
 
     protected abstract T mapRow(ResultSet rs) throws SQLException;
-    protected abstract void bindInsert(PreparedStatement ps, T entity) throws SQLException;
-    protected abstract void bindUpdate(PreparedStatement ps, T entity) throws SQLException;
-    protected abstract String insertSql();
-    protected abstract String updateSql();
+
+    /** What {@code findById} and {@code findAll} select: every column unless overridden. */
+    protected String columns() {
+        return "*";
+    }
+
+    /** For {@code save}: override with {@link #bindInsert}. */
+    protected String insertSql() {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not override insertSql()");
+    }
+
+    protected void bindInsert(PreparedStatement ps, T entity) throws SQLException {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not override bindInsert()");
+    }
+
+    /** For {@code update}: override with {@link #bindUpdate}. */
+    protected String updateSql() {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not override updateSql()");
+    }
+
+    protected void bindUpdate(PreparedStatement ps, T entity) throws SQLException {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not override bindUpdate()");
+    }
 
     @Override
     protected Optional<T> doFindById(ID id) {
-        return queryOne("select * from " + table + " where " + idColumn + " = ?", ps -> ps.setObject(1, id));
+        return queryOne("select " + columns() + " from " + table + " where " + idColumn + " = ?", ps -> ps.setObject(1, id));
     }
 
     @Override
@@ -40,7 +59,7 @@ public abstract class JdbcRepository<T, ID> extends Repository<T, ID> {
         String order = query.sort() != null && query.sort().isSorted() ? " order by " + orderClause(query.sort()) : "";
         String paging = query.isPaged() ? " limit ? offset ?" : "";
 
-        return queryMany("select * from " + table + where + order + paging, ps -> {
+        return queryMany("select " + columns() + " from " + table + where + order + paging, ps -> {
             if (query.isPaged()) {
                 ctx.applyParameters(ps);
                 int base = ctx.size();

@@ -4,7 +4,8 @@ public abstract class RepositorySupport<T, ID> {
     private final Tx tx;
     private final TxDefinition rw = TxDefinition.DEFAULTS
             .withPropagation(TransactionPropagation.REQUIRED);
-    private final TxDefinition ro = rw.asReadOnly();
+    // A read joins the caller's transaction, and opens none of its own.
+    private final TxDefinition ro = rw.withPropagation(TransactionPropagation.SUPPORTS).asReadOnly();
 
     protected RepositorySupport(Tx tx) {
         this.tx = tx;

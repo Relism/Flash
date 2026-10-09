@@ -416,14 +416,13 @@ public final class Http2Connection implements ConnectionProtocol {
     }
     boolean releaseDeferred =
         stream.dispatched() || stream.state() == Http2StreamState.HALF_CLOSED_REMOTE;
+    // Cancelled before CLOSED is visible: a writer that finds the stream closed knows it was reset.
+    if (releaseDeferred) stream.cancel();
     stream.transition(Http2StreamState.Event.RECV_RST);
     if (!streams.removeIfSame(stream, frame.streamId())) return;
     streams.rememberReset(frame.streamId());
-    if (releaseDeferred) {
-      stream.cancel();
-      if (stream.responseStarted() && !stream.responseInFlight()) streams.release(stream);
-    } else {
-      streams.release(stream);
+    if (!releaseDeferred || stream.responseStarted() && !stream.responseInFlight()) {
+      streams.release(stream, frame.streamId());
     }
   }
 
@@ -529,7 +528,7 @@ public final class Http2Connection implements ConnectionProtocol {
       streams.rememberReset(streamId);
       sendRstStream(writer, streamId, Http2ErrorCode.CANCEL);
       if (stream.dispatched()) stream.cancel();
-      else streams.release(stream);
+      else streams.release(stream, streamId);
     }
   }
 
@@ -576,7 +575,7 @@ public final class Http2Connection implements ConnectionProtocol {
     if (!streams.removeIfSame(stream, streamId)) return;
     streams.rememberReset(streamId);
     if (stream.dispatched()) stream.cancel();
-    else streams.release(stream);
+    else streams.release(stream, streamId);
     if (pendingHeaderStream == stream) pendingHeaderStream = null;
   }
 

@@ -26,8 +26,15 @@ public final class Data {
         return (Repository<T, ID>) cache.computeIfAbsent(type, key -> repositories.create(tx, type));
     }
 
-    public void read(Tx.TxRunnable work) { tx.run(tx.readOnly(), work); }
-    public <T> T read(Tx.TxCallable<T> work) { return tx.call(tx.readOnly(), work); }
+    /** See {@link Tx#read}: the caller's transaction if there is one, otherwise none. */
+    public void read(Tx.TxRunnable work) {
+        tx.read(() -> {
+            work.run();
+            return null;
+        });
+    }
+
+    public <T> T read(Tx.TxCallable<T> work) { return tx.read(work); }
     public void write(Tx.TxRunnable work) { tx.run(work); }
     public <T> T write(Tx.TxCallable<T> work) { return tx.call(work); }
     /** Transitional low-level access for infrastructure that needs an explicit definition. */

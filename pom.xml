@@ -43,7 +43,7 @@
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <hibernate.validator.version>9.1.0.Final</hibernate.validator.version>
         <expressly.version>6.0.0</expressly.version>
-        <avaje.validator.version>2.12</avaje.validator.version>
+        <avaje.validator.version>2.18</avaje.validator.version>
         <avaje.jsonb.version>3.16</avaje.jsonb.version>
         <protobuf.version>4.36.2</protobuf.version>
         <grpc.version>1.84.0</grpc.version>

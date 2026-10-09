@@ -18,9 +18,12 @@ public abstract class SseHandler extends DuplexHandler {
         response.type(ContentType.TEXT_EVENT_STREAM).header(NO_CACHE);
     }
 
+    /**
+     * The headers leave with the first event, or when the handler waits in {@link SseStream#await()}:
+     * until then a failure, such as a bad parameter, is an ordinary error response.
+     */
     @Override
     protected final void handle(Request request, Response response, Duplex duplex) throws Exception {
-        duplex.flush();
         SseStream stream = new SseStream(duplex);
         try {
             handle(request, stream);

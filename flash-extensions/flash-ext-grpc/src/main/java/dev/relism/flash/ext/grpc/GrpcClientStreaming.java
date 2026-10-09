@@ -8,6 +8,6 @@ public abstract non-sealed class GrpcClientStreaming<I, O> extends GrpcHandler<I
 
     @Override
     final void invoke(Request request, Call<I, O> call) throws Exception {
-        call.send(handle(request, call));
+        call.reply(handle(request, call));
     }
 }

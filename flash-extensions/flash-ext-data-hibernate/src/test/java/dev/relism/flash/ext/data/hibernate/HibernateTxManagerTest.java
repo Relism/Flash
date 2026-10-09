@@ -66,13 +66,13 @@ class HibernateTxManagerTest {
         manager.rollback(outer);
     }
 
-    /** SUPPORTS without an active transaction yields a sessionless status: not a transaction, no session to hand out. */
+    /** SUPPORTS without an active transaction opens one: a Session reads inside a transaction. */
     @Test
-    void supports_without_active_transaction_is_a_sessionless_no_op() {
+    void supports_without_active_transaction_opens_one_for_its_session() {
         TxStatus s = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.SUPPORTS));
 
-        assertFalse(s.isNewTransaction());
-        assertThrows(IllegalStateException.class, () -> s.resource(Session.class));
+        assertTrue(s.isNewTransaction());
+        assertNotNull(s.resource(Session.class));
         assertDoesNotThrow(() -> manager.commit(s));
     }
 

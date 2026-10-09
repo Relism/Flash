@@ -20,6 +20,12 @@ public final class SecurityPolicy {
         this.scopeChallenge = "Bearer error=\"insufficient_scope\", scope=\"" + String.join(" ", scopes) + "\"";
     }
 
+    /** A caller holding any of {@code roles}: what {@code @RolesAllowed} says, for a route without a class. */
+    public static SecurityPolicy roles(String... roles) {
+        if (roles.length == 0) throw new IllegalArgumentException("roles names nothing");
+        return new SecurityPolicy(true, roles.clone(), AUTHENTICATED.on, AUTHENTICATED.scopes);
+    }
+
     /** The policy {@code type} declares, or {@code null} when it carries no security annotation. */
     public static SecurityPolicy of(Class<?> type) {
         boolean permitAll = type.isAnnotationPresent(PermitAll.class);

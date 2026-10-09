@@ -16,12 +16,14 @@ final class Clock extends SseHandler {
 
 `@Sse(path)` declares a `GET` route. Without scanning, register an instance:
 `app.get("/clock", new Clock())`. Middleware runs before the stream starts, so a request can be
-refused with an `HttpException`.
+refused with an `HttpException`. So can the handler, until its first event: a bad parameter is an
+ordinary error response.
 
 ## Response
 
-Flash sets `Content-Type: text/event-stream` and `Cache-Control: no-cache`, sends the headers when the
-handler is entered, and ends the response when `handle` returns. HTTP/1.1 uses chunked encoding;
+Flash sets `Content-Type: text/event-stream` and `Cache-Control: no-cache`, sends the headers with
+the first event, or when the handler enters `await()`, and ends the response when `handle` returns. A
+handler that returns without an event answers `200` with an empty body. HTTP/1.1 uses chunked encoding;
 HTTP/2 uses DATA frames.
 
 ## SseStream
@@ -31,7 +33,7 @@ HTTP/2 uses DATA frames.
 | `send(String)` | An event with that data |
 | `send(SseEvent)` | An event with optional `event`, `id` and `retry` |
 | `send(bytes, off, len)` | An event whose data is those bytes |
-| `await()` | Blocks until the stream is closed, sending a `:` comment line every 15 seconds |
+| `await()` | Sends the headers if no event has, then blocks until the stream is closed, sending a `:` comment line every 15 seconds |
 | `close()`, `isOpen()` | End the stream, and tell whether it is still open |
 
 Sending and closing are safe from any thread, so an event source can feed the stream from another

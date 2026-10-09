@@ -52,6 +52,7 @@ class GrpcTest {
     public static final class Unary extends GrpcUnary<StringValue, StringValue> {
         @Override protected StringValue handle(Request request, StringValue in) {
             if (in.getValue().equals("missing")) throw new GrpcException(Status.NOT_FOUND, "no order é");
+            if (in.getValue().equals("taken")) throw dev.relism.flash.http.HttpException.conflict("taken");
             return text("hello " + in.getValue());
         }
     }
@@ -75,6 +76,21 @@ class GrpcTest {
                                         GrpcOutput<StringValue> out) throws Exception {
             for (StringValue message; (message = in.next()) != null;)
                 out.send(text(message.getValue().toUpperCase()));
+        }
+    }
+
+    /** Writes until the transport stops it, and says how it was stopped. */
+    public static final class Flood extends GrpcServerStreaming<StringValue, StringValue> {
+        static final java.util.concurrent.CompletableFuture<Throwable> ENDED = new java.util.concurrent.CompletableFuture<>();
+
+        @Override protected void handle(Request request, StringValue in, GrpcOutput<StringValue> out) throws Exception {
+            try {
+                for (int i = 0; i < 1_000_000; i++) out.send(text("x".repeat(1024)));
+                ENDED.complete(null);
+            } catch (Throwable stopped) {
+                ENDED.complete(stopped);
+                throw stopped;
+            }
         }
     }
 
@@ -140,16 +156,48 @@ class GrpcTest {
 
     @Test
     void anAppErrorIsItsStatusInTheTrailersAndAMalformedMessageIsInvalidArgument() throws Exception {
-        int port = start(App.create().route(HttpMethod.POST, "/flash.test.Echo/Unary", Unary.class));
+        List<Throwable> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Middleware scope = (exchange, next) -> {
+            next.handle(exchange);
+            exchange.around(deferred -> {
+                try {
+                    deferred.call();
+                } catch (Exception failed) {
+                    seen.add(failed.getCause());
+                    throw failed;
+                }
+            });
+        };
+        int port = start(App.create().route(HttpMethod.POST, "/flash.test.Echo/Unary", Unary.class, scope));
 
         try (H2c client = new H2c(port)) {
             Call missing = client.call(1, "/flash.test.Echo/Unary", text("missing"));
             assertEquals(List.of(), missing.messages);
             assertEquals("5", missing.trailers.get("grpc-status"));
             assertEquals("no order %C3%A9", missing.trailers.get("grpc-message"));
+            // a scope around the handler sees it fail, so a transaction there rolls back
+            assertTrue(seen.get(0) instanceof GrpcException);
 
             Call malformed = client.raw(3, "/flash.test.Echo/Unary", new byte[] {0, 0, 0, 0, 2, (byte) 0xFF, (byte) 0xFF});
             assertEquals("3", malformed.trailers.get("grpc-status"));
+
+            Call conflict = client.call(5, "/flash.test.Echo/Unary", text("taken"));
+            assertEquals(String.valueOf(Status.ABORTED.ordinal()), conflict.trailers.get("grpc-status"));
+        }
+    }
+
+    @Test
+    void aStreamTheClientResetsEndsItsHandlerAsATransportFailureAndTheConnectionGoesOn() throws Exception {
+        int port = start(App.create()
+                .route(HttpMethod.POST, "/flash.test.Echo/Watch", Flood.class)
+                .route(HttpMethod.POST, "/flash.test.Echo/Unary", Unary.class));
+
+        try (H2c client = new H2c(port)) {
+            client.open(1, "/flash.test.Echo/Watch", text("go"));
+            client.awaitData(1);
+            client.reset(1);
+            assertTrue(Flood.ENDED.get(5, TimeUnit.SECONDS) instanceof IOException);
+            assertEquals(List.of("hello again"), client.call(3, "/flash.test.Echo/Unary", text("again")).messages);
         }
     }
 
@@ -207,9 +255,36 @@ class GrpcTest {
             out = socket.getOutputStream();
             out.write(PREFACE);
             frame(4, 0, 0, new byte[0]); // SETTINGS
+            // room on the connection beyond one stream's window: a stream that is never read cannot starve the next
+            frame(8, 0, 0, ByteBuffer.allocate(4).putInt(1 << 20).array()); // WINDOW_UPDATE
         }
 
         Call call(int stream, String path, StringValue... messages) throws IOException {
+            return raw(stream, path, framed(messages));
+        }
+
+        /** Sends a call without reading its answer. */
+        void open(int stream, String path, StringValue... messages) throws IOException {
+            send(stream, path, framed(messages));
+        }
+
+        /** Reads until the stream's first DATA frame: its handler is running and writing. */
+        void awaitData(int stream) throws IOException {
+            while (true) {
+                byte[] header = in.readNBytes(9);
+                if (header.length < 9) throw new EOFException("connection closed");
+                int length = ((header[0] & 0xFF) << 16) | ((header[1] & 0xFF) << 8) | (header[2] & 0xFF);
+                in.readNBytes(length);
+                if (header[3] == 4 && (header[4] & 0x1) == 0) frame(4, 0x1, 0, new byte[0]); // ack SETTINGS
+                if (header[3] == 0 && (ByteBuffer.wrap(header, 5, 4).getInt() & 0x7FFFFFFF) == stream) return;
+            }
+        }
+
+        void reset(int stream) throws IOException {
+            frame(3, 0, stream, new byte[] {0, 0, 0, 8}); // RST_STREAM, CANCEL
+        }
+
+        private static byte[] framed(StringValue... messages) {
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             for (StringValue message : messages) {
                 byte[] bytes = message.toByteArray();
@@ -217,10 +292,15 @@ class GrpcTest {
                 body.writeBytes(ByteBuffer.allocate(4).putInt(bytes.length).array());
                 body.writeBytes(bytes);
             }
-            return raw(stream, path, body.toByteArray());
+            return body.toByteArray();
         }
 
         Call raw(int stream, String path, byte[] body) throws IOException {
+            send(stream, path, body);
+            return read(stream);
+        }
+
+        private void send(int stream, String path, byte[] body) throws IOException {
             ByteWriter block = new ByteWriter(128);
             HpackEncoder.writeLiteralWithNameIndex(block, 2, ascii("POST"), false);
             HpackEncoder.writeLiteralWithNameIndex(block, 6, ascii("http"), false);
@@ -229,7 +309,9 @@ class GrpcTest {
             HpackEncoder.writeLiteralWithNameIndex(block, 31, ascii("application/grpc"), false);
             frame(1, 0x4, stream, java.util.Arrays.copyOf(block.array(), block.length())); // HEADERS, END_HEADERS
             frame(0, 0x1, stream, body); // DATA, END_STREAM
+        }
 
+        private Call read(int stream) throws IOException {
             List<Map<String, String>> blocks = new ArrayList<>();
             ByteArrayOutputStream data = new ByteArrayOutputStream();
             while (true) {

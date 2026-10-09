@@ -26,7 +26,8 @@ throw new HttpException(418, "short and stout");
 | `tooManyRequests(seconds)` | 429 | `Too Many Requests`, with `Retry-After` |
 | `internal(message)` | 500 | message |
 
-`header(name, value)` adds a response header to the error answer.
+`header(name, value)` adds a response header to the error answer. It changes the instance, so throw a
+new exception each time rather than a shared constant.
 
 ## Default handler
 

@@ -8,6 +8,11 @@ name fails the boot.
 
 Model values are passed to the template by name. The template declares `@param` for each one it uses.
 
+`${value}` escapes and writes a `String`, an `Enum`, a `gg.jte.Content`, a primitive, a `Boolean`, a
+`Character` or a `Number`. Any other type, `Instant` or `UUID` for example, does not compile
+(`no suitable method found for writeUserContent`): format it in the template, `${createdAt.toString()}`,
+or pass the model a `String`.
+
 ## Globals
 
 Globals are merged flat into the model. A template declares one `@param` for each global it uses,

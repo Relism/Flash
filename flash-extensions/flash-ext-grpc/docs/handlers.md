@@ -73,6 +73,8 @@ Read metadata with `request.header(name)`. Handlers are built like any other
 handler, so services come through the constructor. Middleware registered with `use` or on the route
 runs before the call starts and sees the request like any HTTP request. It may add response headers.
 A middleware that throws an `HttpException` refuses the call with an ordinary HTTP error response,
-before any gRPC message is sent.
+before any gRPC message is sent. What a middleware encloses with `exchange.around` holds while the
+handler runs: `SecurityIdentity.current()` is the caller, and a handler class annotated
+`@Transactional` runs in a transaction.
 
 A handler can be registered without scanning: `app.route(HttpMethod.POST, "/orders.v1.Orders/Place", Place.class)`.

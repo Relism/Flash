@@ -84,7 +84,8 @@ public final class Protobuf implements Codec, Bound {
         public void encode(Object value, ByteWriter out) throws IOException {
             Message message = (Message) value;
             int size = message.getSerializedSize();
-            CodedOutputStream coded = CodedOutputStream.newInstance(out.array(), out.reserve(size), size);
+            int at = out.reserve(size); // reserve may grow the buffer: read array() after it
+            CodedOutputStream coded = CodedOutputStream.newInstance(out.array(), at, size);
             message.writeTo(coded);
             coded.checkNoSpaceLeft();
         }

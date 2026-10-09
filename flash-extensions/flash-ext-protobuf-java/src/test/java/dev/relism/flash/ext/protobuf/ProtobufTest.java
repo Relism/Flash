@@ -47,6 +47,18 @@ class ProtobufTest {
     }
 
     @Test
+    void theEncoderWritesIntoTheBufferEvenWhenItHasToGrow() throws Exception {
+        StringValue message = StringValue.of("x".repeat(1000));
+        dev.relism.flash.bytes.ByteWriter out = new dev.relism.flash.bytes.ByteWriter(16);
+        out.writeByte((byte) 7);
+
+        protobuf.encoder(StringValue.class).encode(message, out);
+
+        assertEquals(7, out.array()[0]);
+        assertEquals(message, StringValue.parseFrom(java.util.Arrays.copyOfRange(out.array(), 1, out.length())));
+    }
+
+    @Test
     void malformedWireDataIsABadRequest() {
         HttpException failure = assertThrows(HttpException.class,
                 () -> protobuf.read(request(new byte[] {10, 5, 'x'}), StringValue.class));

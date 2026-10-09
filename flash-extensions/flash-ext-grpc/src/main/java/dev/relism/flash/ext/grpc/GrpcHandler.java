@@ -3,6 +3,7 @@ package dev.relism.flash.ext.grpc;
 import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.ext.protobuf.Protobuf;
 import dev.relism.flash.ext.serde.CodecDuplexHandler;
+import dev.relism.flash.http.AnsweredFailure;
 import dev.relism.flash.http.Duplex;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.Request;
@@ -36,6 +37,7 @@ public abstract sealed class GrpcHandler<I, O>
         response.type(CONTENT_TYPE);
     }
 
+    /** A failure ends the call with its status in the trailers, and still fails the work for the scopes around it. */
     @Override
     protected final void handle(Request request, Response response, Duplex duplex) {
         Call<I, O> call = new Call<>(this, duplex, response);
@@ -44,6 +46,7 @@ public abstract sealed class GrpcHandler<I, O>
             call.close(null);
         } catch (Throwable failure) {
             call.close(failure);
+            throw new AnsweredFailure(failure);
         }
     }
 
@@ -109,6 +112,15 @@ public abstract sealed class GrpcHandler<I, O>
         }
 
         void send(O value) throws IOException {
+            write(value, true);
+        }
+
+        /** The one reply of a unary or client-streaming call: the trailers follow at once, so no flush of its own. */
+        void reply(O value) throws IOException {
+            write(value, false);
+        }
+
+        private void write(O value, boolean flush) throws IOException {
             lock.lock();
             try {
                 if (closed) throw new IOException("the call has ended");
@@ -129,7 +141,7 @@ public abstract sealed class GrpcHandler<I, O>
                 bytes[3] = (byte) (length >>> 8);
                 bytes[4] = (byte) length;
                 duplex.write(bytes, 0, out.length());
-                duplex.flush();
+                if (flush) duplex.flush();
             } finally {
                 lock.unlock();
             }
@@ -159,7 +171,15 @@ public abstract sealed class GrpcHandler<I, O>
                 if (current instanceof GrpcException grpc) return grpc.status();
                 if (current instanceof HttpException refused) return switch (refused.status()) {
                     case 400, 422 -> Status.INVALID_ARGUMENT;
+                    case 401 -> Status.UNAUTHENTICATED;
+                    case 403 -> Status.PERMISSION_DENIED;
                     case 404 -> Status.NOT_FOUND;
+                    case 409 -> Status.ABORTED;
+                    case 412 -> Status.FAILED_PRECONDITION;
+                    case 429 -> Status.RESOURCE_EXHAUSTED;
+                    case 501 -> Status.UNIMPLEMENTED;
+                    case 503 -> Status.UNAVAILABLE;
+                    case 504 -> Status.DEADLINE_EXCEEDED;
                     default -> Status.INTERNAL;
                 };
             }

@@ -4,7 +4,9 @@
 
 `new HibernateTxManager(sessionFactory)` opens one `Session` per transaction. It implements the
 propagation rules of [transactions](../../flash-ext-data-core/docs/transactions.md): `REQUIRES_NEW`
-and `NOT_SUPPORTED` suspend the current session and restore it afterwards.
+and `NOT_SUPPORTED` suspend the current session and restore it afterwards. `SUPPORTS` with no
+transaction to join opens one, since a `Session` reads inside a transaction: repository reads and
+`tx.read` cost a `BEGIN` and a `COMMIT` here, unlike with JDBC.
 
 A new transaction begins a Hibernate transaction, sets the session read-only by default when the
 definition is read-only, and applies a non-default isolation level through the connection. Inside a

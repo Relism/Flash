@@ -10,6 +10,6 @@ public abstract non-sealed class GrpcUnary<I, O> extends GrpcHandler<I, O> {
     final void invoke(Request request, Call<I, O> call) throws Exception {
         I input = call.required();
         call.requireEnd();
-        call.send(handle(request, input));
+        call.reply(handle(request, input));
     }
 }
