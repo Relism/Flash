@@ -5,7 +5,7 @@ directory served from memory. Built on [`flash-ext-view-core`](../flash-ext-view
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-view-jte</artifactId>
 </dependency>
 ```

@@ -7,7 +7,7 @@ an OAuth authorization server).
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-security-core</artifactId>
 </dependency>
 ```

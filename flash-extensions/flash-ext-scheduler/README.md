@@ -4,7 +4,7 @@ Background jobs on an interval or a cron expression, stopped with the app.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-scheduler</artifactId>
 </dependency>
 ```

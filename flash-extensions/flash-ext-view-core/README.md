@@ -6,7 +6,7 @@ the `ViewEngine` contract. Install an engine module ([jte](../flash-ext-view-jte
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-view-core</artifactId>
 </dependency>
 ```

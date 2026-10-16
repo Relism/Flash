@@ -5,7 +5,7 @@ Built on [`flash-ext-view-core`](../flash-ext-view-core/README.md).
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-view-thymeleaf</artifactId>
 </dependency>
 ```

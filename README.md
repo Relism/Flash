@@ -1,5 +1,7 @@
 # Flash
 
+[![JitPack](https://jitpack.io/v/Relism/Flash.svg)](https://jitpack.io/#Relism/Flash)
+
 An HTTP/1.1 and HTTP/2 server and routing library for Java 21. It runs one virtual thread per
 connection and uses the same `Request`, `Response` and handler types on both protocols.
 
@@ -17,6 +19,40 @@ runs it. Tests run the same `App` on a port of their own.
 
 - Java 21 or later
 - Maven 3.8 or later
+
+## Installation
+
+Releases are published on [JitPack](https://jitpack.io/#Relism/Flash). Every module has the
+groupId `dev.relism.Flash` and the release tag as its version, shown in the badge above. Import
+`flash-parent` once and declare modules without a version:
+
+```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>dev.relism.Flash</groupId>
+            <artifactId>flash-parent</artifactId>
+            <version>vX.Y.Z</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>dev.relism.Flash</groupId>
+        <artifactId>flash</artifactId>
+    </dependency>
+</dependencies>
+```
 
 ## Documentation
 

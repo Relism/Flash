@@ -5,7 +5,7 @@ An in-process `CacheManager` backed by [Caffeine](https://github.com/ben-manes/c
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-cache-caffeine</artifactId>
 </dependency>
 ```

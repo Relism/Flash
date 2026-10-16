@@ -55,27 +55,27 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-serde</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-cache-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-cache-caffeine</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -85,12 +85,12 @@
                 <version>${caffeine.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-micrometer</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-micrometer-prometheus</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -105,49 +105,49 @@
                 <version>${micrometer.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-test</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-avaje-jsonb</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-protobuf-java</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-grpc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-ndjson</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-webdav</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-basic</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-validation-protovalidate</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -162,22 +162,22 @@
                 <version>${protovalidate.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-json</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-xml</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-view-jte</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -212,22 +212,22 @@
                 <version>2.5.1</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-vite</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-jdbc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-hibernate</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -270,14 +270,5 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <!--
-      No maven-deploy-plugin skip here (there used to be one): flash-extensions is a
-      pom-packaging aggregator with no jar of its own, but every flash-ext-* submodule's
-      effective POM inherits from it via <parent> — skipping its deploy meant remote consumers
-      (anything resolving a flash-ext-* artifact from Gitea's Maven registry rather than a
-      local ~/.m2 install) couldn't resolve that parent POM at all. See
-      pathway/.gitea/workflows/docker-build.yml and pathway/docs/CI-CD.md.
-    -->
 
 </project>

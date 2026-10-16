@@ -6,7 +6,7 @@ a message that breaks a rule is a `422`.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-validation-protovalidate</artifactId>
 </dependency>
 ```

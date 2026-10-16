@@ -5,7 +5,7 @@ Binary Protocol Buffers over HTTP bodies, through Google's generated Java messag
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-protobuf-java</artifactId>
 </dependency>
 ```

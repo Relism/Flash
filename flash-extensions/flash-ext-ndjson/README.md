@@ -5,7 +5,7 @@ time. Lines are read and written with the app's JSON codec, chosen when the modu
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-ndjson</artifactId>
 </dependency>
 ```

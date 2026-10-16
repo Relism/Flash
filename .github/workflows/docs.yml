@@ -14,11 +14,6 @@ on:
         description: 'Docs version to publish (e.g. 2.1.0)'
         required: true
         type: string
-    secrets:
-      MAVEN_USERNAME:
-        required: true
-      MAVEN_PASSWORD:
-        required: true
 
 jobs:
   docs:
@@ -29,37 +24,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Temurin 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
           cache: maven
 
       - name: Build project (compile + resolve deps, skip tests)
-        run: mvn -B --settings .github/settings.xml clean verify -DskipTests
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        run: mvn -B clean verify -DskipTests
 
       # javadoc:aggregate runs on the reactor root.
       # With flash + flash-extensions both declared as modules in root pom.xml,
       # this produces a single aggregated Javadoc covering all modules.
       # Default output path: target/site/apidocs/ (no custom reportOutputDirectory set).
       - name: Generate aggregated JavaDoc
-        run: |
-          mvn -B \
-            --settings .github/settings.xml \
-            -DskipTests \
-            org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-          
+        run: mvn -B -DskipTests javadoc:aggregate
+
       - name: Verify JavaDoc output exists
         run: |
           APIDOCS=""
@@ -82,7 +67,7 @@ jobs:
           echo "JavaDoc OK — $COUNT HTML files at $APIDOCS"
 
       - name: Checkout gh-pages
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: gh-pages-out

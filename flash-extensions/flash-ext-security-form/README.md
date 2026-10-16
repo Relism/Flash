@@ -5,7 +5,7 @@ hashing, and a session on success. Needs `flash-ext-security-core`.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-security-form</artifactId>
 </dependency>
 ```

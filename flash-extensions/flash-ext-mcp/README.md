@@ -6,7 +6,7 @@ call is authenticated through `flash-ext-security-core`.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-mcp</artifactId>
 </dependency>
 ```

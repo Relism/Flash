@@ -7,7 +7,7 @@ else, such as an operating system mounting a [WebDAV](../flash-ext-webdav/README
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-security-basic</artifactId>
 </dependency>
 ```

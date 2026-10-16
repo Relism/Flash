@@ -5,7 +5,7 @@ messages and one handler class per call shape.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-grpc</artifactId>
 </dependency>
 ```

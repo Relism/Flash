@@ -7,7 +7,7 @@ generated at build time, so nothing is reflected on at runtime. It provides the 
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-avaje-jsonb</artifactId>
 </dependency>
 ```

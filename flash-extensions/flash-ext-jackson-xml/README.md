@@ -6,7 +6,7 @@ with `application/xml`.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-jackson-xml</artifactId>
 </dependency>
 ```

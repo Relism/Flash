@@ -7,7 +7,7 @@ resources such as an MCP endpoint, where clients register themselves.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-security-oauth-server</artifactId>
 </dependency>
 ```

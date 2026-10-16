@@ -5,7 +5,7 @@ directory or an engine of your own. Finder, Windows Explorer, rclone and cadaver
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-webdav</artifactId>
 </dependency>
 ```

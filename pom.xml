@@ -9,22 +9,35 @@
     <version>2.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <name>Flash</name>
+    <description>An HTTP/1.1 and HTTP/2 server and routing library for Java 21.</description>
+    <url>https://github.com/Relism/Flash</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>Relism</id>
+            <url>https://github.com/Relism</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/Relism/Flash</url>
+        <connection>scm:git:https://github.com/Relism/Flash.git</connection>
+        <developerConnection>scm:git:https://github.com/Relism/Flash.git</developerConnection>
+    </scm>
+
     <modules>
         <module>flash</module>
         <module>flash-testing</module>
         <module>flash-extensions</module>
     </modules>
-
-    <distributionManagement>
-        <repository>
-            <id>Personal</id>
-            <url>https://maven.relism.dev/releases</url>
-        </repository>
-        <snapshotRepository>
-            <id>Personal-snapshots</id>
-            <url>https://maven.relism.dev/snapshots</url>
-        </snapshotRepository>
-    </distributionManagement>
 
     <properties>
         <!-- surefire skips the real-client tests unless the interop profile clears it -->
@@ -55,16 +68,10 @@
     </properties>
 
     <repositories>
-        <!--
-          maven.relism.dev went down; fpr-core's source (dev.relism/FastPathRouter) now
-          publishes to Gitea's own Maven registry instead, via that repo's
-          .gitea/workflows/publish-maven.yml (same pattern as this project's own). Public repo
-          owned by a public Gitea user, so this resolves anonymously — no credentials needed.
-        -->
+        <!-- FastPathRouter (fpr-core) is published only through JitPack -->
         <repository>
-            <id>gitea-fastpathrouter</id>
-            <name>Gitea Maven Registry (Relism/FastPathRouter)</name>
-            <url>https://git.pixel-services.com/api/packages/Relism/maven</url>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
         </repository>
     </repositories>
 
@@ -76,52 +83,52 @@
               pin by hand, which is how two versions of Flash end up on one classpath.
             -->
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-apikey</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-form</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-oauth-server</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-test</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-jdbc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-data-hibernate</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-testing</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -131,27 +138,27 @@
                 <version>${jakarta.validation.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-scheduler</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-cache-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-cache-caffeine</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-micrometer</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-micrometer-prometheus</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -166,52 +173,52 @@
                 <version>${micrometer.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-validation-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-validation-jakarta</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-validation-avaje</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-validation-protovalidate</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-serde</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-protobuf-java</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-grpc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-ndjson</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-webdav</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-basic</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -278,73 +285,69 @@
                 <version>${avaje.validator.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-avaje-jsonb</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-json</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-jackson-xml</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-openapi</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-security-oidc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-view-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-view-jte</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-view-thymeleaf</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-limiter</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-vite</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-mcp</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>dev.relism</groupId>
+                <groupId>dev.relism.FastPathRouter</groupId>
                 <artifactId>fpr-core</artifactId>
-                <!-- Gitea can't republish an existing name+version, so FastPathRouter's CI
-                     stamps a commit-scoped version on every push — see its own
-                     .gitea/workflows/publish-maven.yml. Bump by hand to pick up newer
-                     FastPathRouter changes, same precedent as Pathway's flash.version. -->
-                <version>1.1.0-36216cd</version>
+                <version>v1.1.0</version>
             </dependency>
             <dependency>
                 <groupId>org.projectlombok</groupId>

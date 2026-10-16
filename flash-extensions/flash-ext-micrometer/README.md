@@ -5,7 +5,7 @@ status, written to a registry you supply.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-micrometer</artifactId>
 </dependency>
 ```
