@@ -23,7 +23,8 @@ runs it. Tests run the same `App` on a port of their own.
 ## Installation
 
 Releases are published on [JitPack](https://jitpack.io/#Relism/Flash). Every module has the
-groupId `dev.relism.Flash` and the release tag as its version, shown in the badge above. Import
+groupId `dev.relism.Flash` and the release version as its version, which is the tag without its
+`v`, shown in the badge above. Import
 `flash-parent` once and declare modules without a version:
 
 ```xml
@@ -39,7 +40,7 @@ groupId `dev.relism.Flash` and the release tag as its version, shown in the badg
         <dependency>
             <groupId>dev.relism.Flash</groupId>
             <artifactId>flash-parent</artifactId>
-            <version>vX.Y.Z</version>
+            <version>X.Y.Z</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>

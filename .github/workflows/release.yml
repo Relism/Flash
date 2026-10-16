@@ -32,14 +32,16 @@ jobs:
       - env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
+          # JitPack serves the release as the tag without its v (3.0.2), the form consumers use.
+          VERSION="${TAG#v}"
           base="https://jitpack.io/dev/relism/Flash"
           # Asked within seconds of the tag, JitPack answers "tag not found" and only rechecks later.
           sleep 120
           for _ in $(seq 60); do
-            curl -sf -o /dev/null --max-time 60 "$base/flash/$TAG/flash-$TAG.pom" && exit 0
+            curl -sf -o /dev/null --max-time 60 "$base/flash/$VERSION/flash-$VERSION.pom" && exit 0
             sleep 30
           done
-          curl -s "$base/$TAG/build.log" | tail -n 80
+          curl -s "$base/$VERSION/build.log" | tail -n 80
           exit 1
 
   docs:
