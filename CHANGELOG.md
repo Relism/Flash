@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2](https://github.com/Relism/Flash/compare/v3.0.1...v3.0.2) (2026-10-16)
+
+
+### Build System
+
+* add the Maven wrapper, so JitPack builds with Maven 3.9.16 ([#14](https://github.com/Relism/Flash/issues/14)) ([b5a0f5f](https://github.com/Relism/Flash/commit/b5a0f5f35ad0c78289d2eee2dc0e27eef2c6b209))
+
 ## [3.0.1](https://github.com/Relism/Flash/compare/v3.0.0...v3.0.1) (2026-10-16)
 
 
