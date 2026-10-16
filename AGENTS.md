@@ -133,7 +133,8 @@ admin merges them through the ruleset bypass, which works only inside a PR.
 Releases are served by [JitPack](https://jitpack.io/#Relism/Flash), which builds the tag with the
 JDK set in `jitpack.yml`. Every module is published as `dev.relism.Flash:<artifactId>:v<version>`.
 The `dev.relism` prefix comes from the DNS TXT record `git.relism.dev` pointing to
-`https://github.com/Relism`; without it JitPack serves the same build as `com.github.Relism.Flash`.
+`https://github.com/Relism`. JitPack also serves every tag as `com.github.Relism.Flash`, but builds
+each groupId separately, so `release.yml` requests the `dev.relism` build that consumers resolve.
 
 JitPack rewrites the groupId and version of every published POM, but not literal values inside
 `<dependencyManagement>`. Managed Flash modules are therefore declared with

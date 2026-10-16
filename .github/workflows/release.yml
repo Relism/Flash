@@ -26,14 +26,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      # The first request starts the JitPack build, the POM is served once it succeeds.
+      # The first request starts the JitPack build under the groupId consumers use (dev.relism, from
+      # the git.relism.dev TXT record); JitPack builds each groupId separately. The POM is served once
+      # the build succeeds.
       - env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          base="https://jitpack.io/com/github/Relism/Flash"
-          for _ in $(seq 80); do
+          base="https://jitpack.io/dev/relism/Flash"
+          for _ in $(seq 60); do
             curl -sf -o /dev/null --max-time 60 "$base/flash/$TAG/flash-$TAG.pom" && exit 0
-            sleep 15
+            sleep 30
           done
           curl -s "$base/$TAG/build.log" | tail -n 80
           exit 1
