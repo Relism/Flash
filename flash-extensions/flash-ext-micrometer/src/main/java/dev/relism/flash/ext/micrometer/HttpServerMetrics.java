@@ -23,6 +23,8 @@ final class HttpServerMetrics implements ExchangeInterceptor {
     private static final String UNKNOWN = "UNKNOWN";
     private static final String NOT_FOUND = "NOT_FOUND";
     private static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
+    /** The tag of a method token outside {@link HttpMethod}, as OpenTelemetry names it: a client cannot add series. */
+    private static final String OTHER = "_OTHER";
     private static final String[] STATUS = statuses();
     private static final VarHandle METHODS = MethodHandles.arrayElementVarHandle(MethodMeters[].class);
     private static final VarHandle TIMERS = MethodHandles.arrayElementVarHandle(Timer[].class);
@@ -75,7 +77,7 @@ final class HttpServerMetrics implements ExchangeInterceptor {
 
     private final class Meters {
         private final String uri;
-        private final MethodMeters[] methods = new MethodMeters[HttpMethod.values().length];
+        private final MethodMeters[] methods = new MethodMeters[HttpMethod.values().length + 1]; // the last: OTHER
 
         Meters(String uri, HttpMethod warmMethod) {
             this.uri = uri;
@@ -83,9 +85,9 @@ final class HttpServerMetrics implements ExchangeInterceptor {
         }
 
         void record(HttpMethod method, int status, long nanos) {
-            int index = method.ordinal();
+            int index = method == null ? methods.length - 1 : method.ordinal();
             MethodMeters meters = (MethodMeters) METHODS.getAcquire(methods, index);
-            if (meters == null) meters = method(index, method.name());
+            if (meters == null) meters = method(index, method == null ? OTHER : method.name());
             meters.timer(status).record(nanos, TimeUnit.NANOSECONDS);
         }
 

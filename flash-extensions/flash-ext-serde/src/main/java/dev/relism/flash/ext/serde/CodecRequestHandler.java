@@ -22,10 +22,6 @@ public abstract class CodecRequestHandler<CI extends Codec, I, CO extends Codec,
 
     protected void onCodecInit() {}
 
-    /** The four resolved signature arguments, for boot-time integrations such as OpenAPI. */
-    public static Type[] signature(Class<?> handler) {
-        return CodecBinding.arguments(handler, CodecRequestHandler.class);
-    }
     protected abstract O handle(Request request, Response response, I input) throws Exception;
 
     @Override

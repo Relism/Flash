@@ -34,7 +34,7 @@ public final class ErrorPages {
     public static byte[] renderNotFound(Request request) {
         RequestLine rl = request.requestLine();
         return TEMPLATE_404.render(
-                "method",    rl.getMethod().toString(),
+                "method",    rl.getMethodName(),
                 "path",      rl.getPath().toString(),
                 "protocol",  rl.getProtocol().toString(),
                 "timestamp", Instant.now().toString()
@@ -46,7 +46,7 @@ public final class ErrorPages {
         StringWriter sw = new StringWriter();
         ex.printStackTrace(new PrintWriter(sw));
         return TEMPLATE_500.render(
-                "method",            rl.getMethod().toString(),
+                "method",            rl.getMethodName(),
                 "path",              rl.getPath().toString(),
                 "protocol",          rl.getProtocol().toString(),
                 "exception_type",    ex.getClass().getName(),

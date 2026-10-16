@@ -68,6 +68,7 @@ public class RequestParser {
     private final RequestBody       requestBody = new RequestBody();
     // Views over the parse buffer, repositioned per request instead of allocated. queryView is only
     // reset and used when a query string is actually present; RequestLine.getQuery() must keep returning null otherwise (see reset()).
+    private final FastPathViews.RequestByteView methodView   = new FastPathViews.RequestByteView(null, 0, 0);
     private final FastPathViews.RequestByteView pathView     = new FastPathViews.RequestByteView(null, 0, 0);
     private final FastPathViews.RequestByteView queryView    = new FastPathViews.RequestByteView(null, 0, 0);
     private final FastPathViews.RequestByteView protocolView = new FastPathViews.RequestByteView(null, 0, 0);
@@ -163,7 +164,8 @@ public class RequestParser {
         if (methodEnd == base) throw new MalformedRequestException(400, "Missing HTTP method");
 
         HttpMethod method = HttpMethod.fromBytes(buffer, base, methodEnd - base);
-        if (method == null) throw new MalformedRequestException(501, "Unsupported HTTP method");
+        methodView.reset(buffer, base, methodEnd - base);
+        if (method == null && !ByteScan.isToken(methodView)) throw new MalformedRequestException(400, "Invalid HTTP method");
 
         int pathStart = methodEnd + 1;
         int pathEnd   = ByteScan.indexOf(buffer, pathStart, headerEndIdx, (byte) ' ');
@@ -294,7 +296,7 @@ public class RequestParser {
             preBufLen = (int) contentLength;
         }
 
-        requestLine.reset(method, pathView, queryMark != -1 ? queryView : null, protocolView, headerMap);
+        requestLine.reset(method, methodView, pathView, queryMark != -1 ? queryView : null, protocolView, headerMap);
 
         // Javadoc) -- reset() repositions it for the fixed-length/empty case (contentLength == 0
         // is handled by the same call: preBufLen is already forced to 0 for it above) or the

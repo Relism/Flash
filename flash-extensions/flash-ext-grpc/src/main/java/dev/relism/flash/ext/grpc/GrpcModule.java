@@ -9,6 +9,7 @@ import dev.relism.flash.App;
 import dev.relism.flash.Module;
 import dev.relism.flash.ext.protobuf.Protobuf;
 import dev.relism.flash.ext.serde.CodecDuplexHandler;
+import dev.relism.flash.ext.serde.TypeArguments;
 import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.RouteHook;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +63,7 @@ public final class GrpcModule implements Module, RouteHook {
             return;
         }
         MethodDescriptor method = method(route.path());
-        Type[] signature = CodecDuplexHandler.signature(handler);
+        Type[] signature = TypeArguments.of(handler, CodecDuplexHandler.class);
         boolean client = GrpcClientStreaming.class.isAssignableFrom(handler)
                 || GrpcBidiStreaming.class.isAssignableFrom(handler);
         boolean server = GrpcServerStreaming.class.isAssignableFrom(handler)

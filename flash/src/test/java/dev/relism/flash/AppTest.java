@@ -135,7 +135,8 @@ class AppTest {
 
     @Test
     void corsAnswersAPreflightOnAnyPath() throws Exception {
-        start(App.create().use(Cors.allow("https://app.example").headers("Authorization")).get("/data", (req, res) -> "d"));
+        start(App.create().use(Cors.allow("https://app.example").headers("Authorization").expose("X-Total"))
+                .get("/data", (req, res) -> "d"));
 
         HttpResponse<String> preflight = send(HttpRequest.newBuilder(URI.create(url("/unrouted")))
                 .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
@@ -144,6 +145,10 @@ class AppTest {
         assertEquals(204, preflight.statusCode());
         assertEquals("https://app.example", preflight.headers().firstValue("Access-Control-Allow-Origin").orElse(null));
         assertEquals("Authorization", preflight.headers().firstValue("Access-Control-Allow-Headers").orElse(null));
+        assertTrue(preflight.headers().firstValue("Access-Control-Expose-Headers").isEmpty());
+
+        HttpResponse<String> data = send(HttpRequest.newBuilder(URI.create(url("/data"))).header("Origin", "https://app.example"));
+        assertEquals("X-Total", data.headers().firstValue("Access-Control-Expose-Headers").orElse(null));
 
         HttpResponse<String> foreign = send(HttpRequest.newBuilder(URI.create(url("/data"))).header("Origin", "https://evil.example"));
         assertTrue(foreign.headers().firstValue("Access-Control-Allow-Origin").isEmpty());

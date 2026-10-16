@@ -111,6 +111,10 @@ public class Request {
 
     // -- Request line -------------------------------------------------------------
 
+    /**
+     * The method, or {@code null} for a token outside {@link HttpMethod}, which only a route for
+     * every method receives; {@code requestLine().getMethodName()} is the token as text.
+     */
     public HttpMethod method() { checkActive(); return requestLine.getMethod(); }
 
     /** The path, decoded as UTF-8, without the query: {@code /users/42?page=1} → {@code /users/42}. */
@@ -331,7 +335,7 @@ public class Request {
 
     @Override
     public String toString() {
-        return "Request(method=" + (requestLine != null ? requestLine.getMethod() : null)
+        return "Request(method=" + (requestLine != null ? requestLine.getMethodName() : null)
                 + ", path=" + (requestLine != null ? requestLine.getPath() : null) + ")";
     }
 }

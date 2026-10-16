@@ -37,7 +37,7 @@ Format: `<type>(<scope>): <short description>`
 | `ci` | Changes to GitHub Actions workflows |
 
 Allowed scopes: `core`, `testing`, `ext-jackson`, `ext-avaje-jsonb`, `ext-openapi`, `ext-security`,
-`ext-oidc`, `ext-protobuf-java`, `ext-grpc`, `ext-validation-protovalidate`, `ext-micrometer`,
+`ext-oidc`, `ext-protobuf-java`, `ext-grpc`, `ext-ndjson`, `ext-webdav`, `ext-validation-protovalidate`, `ext-micrometer`,
 `ext-view-core`, `ext-view-jte`, `ext-view-thymeleaf`, `ext-limiter`, `ext-vite`,
 `ext-mcp`, `ext-validation`, `ext-scheduler`, `ext-data-core`, `ext-data-jdbc`, `ext-data-hibernate`,
 `ext-cache-core`, `ext-cache-caffeine`, `release`, `deps`, `ci`.

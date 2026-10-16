@@ -13,6 +13,7 @@ flowchart TD
     B --> C[dispatch<br/>bodyReadTimeoutMs for the body]
     C --> D[write response]
     D --> E[discard unread body]
+    D -->|unread body over maxDiscardedBodySize| L[linger and close]
     E -->|keep-alive| A
     E -->|close| Z[close]
 ```
@@ -23,6 +24,22 @@ flowchart TD
   `Connection: keep-alive`. `Connection` is read as a token list, so `keep-alive, Upgrade` is understood.
 - During [shutdown](transport.md#shutdown) the response in progress is sent with `Connection: close`.
 
+## Unread bodies
+
+A client sends the whole request body before it reads the answer. When a handler answers without
+reading the body (a refused upload, say), discarding the rest would keep the client sending for
+nothing. So after the response:
+
+| Body left unread | Then |
+|---|---|
+| None, or a `Content-Length` of at most [`maxDiscardedBodySize`](config.md#limits) (2 MiB by default) | The rest is read and dropped, and the connection stays open |
+| A larger `Content-Length`, or a chunked body not read to its end | The response carries `Connection: close`. The server stops writing (a half-close, except over TLS), reads and drops what still arrives for at most 2 seconds so the client can read the answer, then closes |
+
+Some clients read the answer only once they have sent the whole body, and report a connection closed
+before that as a network error: the Windows WebDAV client does. For them, a larger
+`maxDiscardedBodySize` trades a refusal that arrives late, after the whole upload, for one they can
+show.
+
 ## Request rules
 
 The parser rejects a request before routing when it breaks one of these rules. The answer is a
@@ -30,8 +47,7 @@ minimal `text/plain` response with the status and a message, and the connection 
 
 | Condition | Status |
 |---|---|
-| Missing or malformed method, target or protocol on the request line | 400 |
-| Method not one of `GET POST PUT DELETE PATCH OPTIONS HEAD TRACE CONNECT PURGE QUERY` | 501 |
+| Missing or malformed method, target or protocol on the request line, or a method that is not a token | 400 |
 | Request line over 8,192 bytes | 431 |
 | Head over [`maxHeaderBufferSize`](config.md#limits) | 431 |
 | More than 100 header lines | 431 |
@@ -61,6 +77,11 @@ answered with the status shown, thrown from the read:
 | Chunk size line | 16 hex digits, extensions 256 bytes | 400 |
 | Trailer lines | 50, each at most 8,192 bytes | 431 |
 | Trailer with a forbidden field or bad syntax | | 400 |
+| Connection closed before the last chunk | | 400 |
+
+A `Content-Length` body is held to its length the same way: when the connection closes before that
+many bytes arrived, the read throws a 400 instead of ending the body early, so a handler never takes
+a truncated upload for a whole one.
 
 These are exceptions raised while the handler reads, so the app's [error handler](errors.md) answers
 them like an `HttpException`.

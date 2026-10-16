@@ -57,6 +57,7 @@ non-null `challenge` becomes the `WWW-Authenticate` header, for example `Bearer 
 |---|---|---|
 | `SecurityScheme.bearer(name, bearerFormat)` | HTTP bearer | `Bearer realm="<name>"` |
 | `SecurityScheme.openIdConnect(name, issuer)` | OpenID Connect with the discovery URL | `Bearer realm="<name>"` |
+| `SecurityScheme.basic(realm)` | HTTP basic, named `basic` | `Basic realm="<realm>", charset="UTF-8"` |
 
 The record also holds the raw OpenAPI definition map and the `issuer`. `"/"` as issuer means the
 application is its own authorization server. A `401` without credentials lists every challenge of

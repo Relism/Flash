@@ -119,7 +119,8 @@ public class RequestBody {
         if (copied > 0) System.arraycopy(preBuf, preBufOff, buf, 0, copied);
         if (copied < size) {
             try {
-                socket.readNBytes(buf, copied, size - copied);
+                if (socket.readNBytes(buf, copied, size - copied) < size - copied)
+                    throw new MalformedRequestException(400, "Request body shorter than Content-Length");
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -200,7 +201,8 @@ public class RequestBody {
             }
             if (socketRemaining == 0) return -1;
             int b = socket.read();
-            if (b >= 0) { socketRemaining--; socketConsumed++; }
+            if (b < 0) throw truncated();
+            socketRemaining--; socketConsumed++;
             return b;
         }
 
@@ -216,8 +218,14 @@ public class RequestBody {
             }
             if (socketRemaining == 0) return -1;
             int n = socket.read(dst, off, (int) Math.min(len, socketRemaining));
-            if (n > 0) { socketRemaining -= n; socketConsumed += n; }
+            if (n < 0) throw truncated();
+            socketRemaining -= n; socketConsumed += n;
             return n;
+        }
+
+        /** The connection closed before Content-Length bytes arrived: a short body is never a complete one. */
+        private MalformedRequestException truncated() {
+            return new MalformedRequestException(400, "Request body shorter than Content-Length");
         }
     }
 }

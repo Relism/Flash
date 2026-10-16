@@ -16,6 +16,8 @@ import java.util.Set;
  * <pre>{@code
  * app.use(Cors.allow("https://app.example").methods("GET", "POST").headers("Authorization", "Content-Type"));
  * }</pre>
+ *
+ * <p>{@link #expose} names the response headers a page script may read beyond the safelisted ones.
  */
 public final class Cors implements Middleware {
 
@@ -26,38 +28,47 @@ public final class Cors implements Middleware {
     private final Set<String> origins;
     private final List<String> methods;
     private final List<String> headers;
+    private final List<String> exposed;
     private final boolean credentials;
     private final PreEncodedHeader allowMethods;
     private final PreEncodedHeader allowHeaders;
+    private final PreEncodedHeader exposeHeaders;
     private final PreEncodedHeader maxAge = new PreEncodedHeader("Access-Control-Max-Age", "600");
 
-    private Cors(Set<String> origins, List<String> methods, List<String> headers, boolean credentials) {
+    private Cors(Set<String> origins, List<String> methods, List<String> headers, List<String> exposed, boolean credentials) {
         if (credentials && origins.isEmpty())
             throw new IllegalArgumentException("Credentials cannot be allowed for any origin: name the origins");
         this.origins = origins;
         this.methods = methods;
         this.headers = headers;
+        this.exposed = exposed;
         this.credentials = credentials;
         this.allowMethods = new PreEncodedHeader("Access-Control-Allow-Methods", String.join(", ", methods));
         this.allowHeaders = headers.isEmpty() ? null : new PreEncodedHeader("Access-Control-Allow-Headers", String.join(", ", headers));
+        this.exposeHeaders = exposed.isEmpty() ? null : new PreEncodedHeader("Access-Control-Expose-Headers", String.join(", ", exposed));
     }
 
     /** Only {@code origins} (scheme and host, e.g. {@code https://app.example}); none named means any. */
     public static Cors allow(String... origins) {
-        return new Cors(Set.of(origins), List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"), List.of(), false);
+        return new Cors(Set.of(origins), List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"), List.of(), List.of(), false);
     }
 
     public Cors methods(String... methods) {
-        return new Cors(origins, List.of(methods), headers, credentials);
+        return new Cors(origins, List.of(methods), headers, exposed, credentials);
     }
 
     public Cors headers(String... headers) {
-        return new Cors(origins, methods, List.of(headers), credentials);
+        return new Cors(origins, methods, List.of(headers), exposed, credentials);
+    }
+
+    /** Response headers a page script may read, sent as {@code Access-Control-Expose-Headers}. */
+    public Cors expose(String... headers) {
+        return new Cors(origins, methods, this.headers, List.of(headers), credentials);
     }
 
     /** Lets a browser send cookies and authorization with the request; needs named origins. */
     public Cors credentials() {
-        return new Cors(origins, methods, headers, true);
+        return new Cors(origins, methods, headers, exposed, true);
     }
 
     @Override
@@ -79,6 +90,7 @@ public final class Cors implements Middleware {
                 response.status(204);
                 return;
             }
+            if (exposeHeaders != null) response.header(exposeHeaders);
             next.handle(exchange);
     }
 

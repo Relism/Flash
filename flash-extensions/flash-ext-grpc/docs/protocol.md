@@ -2,14 +2,17 @@
 
 ## Request checks
 
-Before a handler runs, the handshake checks:
+The request's `Content-Type`, without parameters and in any case, chooses the wire:
 
-| Condition | Answer |
-|---|---|
-| The request is not HTTP/2 | `505`, `gRPC runs over HTTP/2` |
-| `Content-Type` is not `application/grpc`, `application/grpc+proto` or starts `application/grpc;` | `415` |
+| Content type | Wire | HTTP version | Response content type |
+|---|---|---|---|
+| `application/grpc`, `application/grpc+proto` | gRPC | HTTP/2 only, `505` `gRPC runs over HTTP/2` otherwise | `application/grpc` |
+| `application/grpc-web`, `application/grpc-web+proto` | gRPC-Web | any | `application/grpc-web+proto` |
+| `application/grpc-web-text`, `application/grpc-web-text+proto` | gRPC-Web, base64 | any | `application/grpc-web-text+proto` |
+| anything else, `+json` included | | | `415` |
 
-The response carries `Content-Type: application/grpc`.
+A binary gRPC-Web request whose `Accept` contains `application/grpc-web-text` gets a base64 answer.
+gRPC-Web is described in [grpc-web.md](grpc-web.md).
 
 ## Framing
 
@@ -26,8 +29,9 @@ is gathered once.
 
 ## Status
 
-A call ends with `grpc-status` and, for a failure, `grpc-message` (percent-encoded) as trailers.
-The status is chosen from how the handler ended:
+A call ends with `grpc-status` and, for a failure, `grpc-message` (percent-encoded). On gRPC they
+are HTTP trailers; on gRPC-Web they travel in the body or the headers, as
+[grpc-web.md](grpc-web.md#status) describes. The status is chosen from how the handler ended:
 
 | Handler outcome | Status |
 |---|---|
@@ -50,5 +54,5 @@ throw new GrpcException(Status.NOT_FOUND, "order 7");
 
 ## Not implemented
 
-Compression, server reflection, gRPC-Web, health checking, deadline handling and a client. A client
+Compression, server reflection, health checking, deadline handling and a client. A client
 that resets the stream interrupts the next read or write.

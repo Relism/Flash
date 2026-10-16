@@ -127,13 +127,15 @@ app.use(Cors.allow("https://app.example")
 | `Cors.allow(origins...)` | none named means any origin | Origins are scheme and host, for example `https://app.example` |
 | `methods(...)` | `GET, HEAD, POST, PUT, PATCH, DELETE` | `Access-Control-Allow-Methods` in a preflight answer |
 | `headers(...)` | none | `Access-Control-Allow-Headers` in a preflight answer, omitted when empty |
+| `expose(...)` | none | `Access-Control-Expose-Headers` on every other answer to an allowed origin, omitted when empty |
 | `credentials()` | off | Adds `Access-Control-Allow-Credentials: true`. Requires named origins, otherwise `IllegalArgumentException` |
 
 Behavior:
 
 - A request without `Origin`, or from an origin not allowed, continues unchanged.
 - For an allowed origin, `Access-Control-Allow-Origin` is `*` when no origins are named, otherwise
-  the matched origin together with `Vary: Origin`.
+  the matched origin together with `Vary: Origin`. `Access-Control-Expose-Headers` is added next to
+  it when `expose` named headers.
 - An `OPTIONS` request with `Access-Control-Request-Method` is answered with `204`,
   `Access-Control-Allow-Methods`, `Access-Control-Max-Age: 600` and, if configured,
   `Access-Control-Allow-Headers`. The route is not run.

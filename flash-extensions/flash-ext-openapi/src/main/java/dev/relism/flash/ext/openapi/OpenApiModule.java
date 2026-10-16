@@ -96,9 +96,14 @@ public class OpenApiModule implements Module {
             spec.contributors(services.all(OpenApiContributor.class));
         }
 
+        /**
+         * A protocol handler is documented only when a contributor says what it carries, as NDJSON's
+         * does. A route for every method is not: OpenAPI 3.0 cannot name methods outside its eight.
+         */
         @Override
         public void routed(Route route) {
-            if (route.handler() == null || DuplexHandler.class.isAssignableFrom(route.handler())) return;
+            if (route.handler() == null || route.method() == null) return;
+            if (DuplexHandler.class.isAssignableFrom(route.handler()) && !spec.describes(route.handler())) return;
             spec.addOperation(route, route.handler().getAnnotation(ApiOperation.class), route.handler());
         }
     }

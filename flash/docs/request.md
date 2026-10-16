@@ -25,10 +25,10 @@ returning the next request's data.
 
 | Method | Returns |
 |---|---|
-| `method()` | `HttpMethod`: `GET POST PUT DELETE PATCH OPTIONS HEAD TRACE CONNECT PURGE QUERY` |
+| `method()` | `HttpMethod`: `GET POST PUT DELETE PATCH OPTIONS HEAD TRACE CONNECT PURGE QUERY`, or `null` for any other token, which only a route for every method receives |
 | `path()` | The path without the query, bytes decoded as UTF-8. Percent escapes are not decoded |
 | `rawQuery()` | The query string without `?` as a `ByteView`, or `null` |
-| `requestLine()` | The parsed line: method, path, query, protocol, headers |
+| `requestLine()` | The parsed line: method, path, query, protocol, headers. `getMethodName()` is the method token as text, `getMethodToken()` its bytes |
 | `connectProtocol()` | For an HTTP/2 extended CONNECT, the `:protocol` value (`websocket`), otherwise `null`. Such a request is routed as a `GET` |
 
 ## Headers
@@ -50,7 +50,7 @@ Over HTTP/2, `:authority` is also visible as `Host`, so `header("Host")` works o
 
 | Method | Behavior |
 |---|---|
-| `param(name)` | Path parameter from `{name}`, or `null` |
+| `param(name)` | Path parameter from `{name}`, or `null`. `param("**")` is the rest of a path declared with a trailing `/**` |
 | `paramLong(name)`, `paramInt(name)` | Parsed from the path bytes. Missing or not a number: `400` |
 | `query(name)` | First value of the query parameter, or `null` |
 | `queries(name)` | All values in order |
@@ -87,7 +87,10 @@ Bodies are bounded by [`maxBodySize`](config.md#limits) (default 10 MiB):
 | HTTP/2, `content-length` or received data above the limit | The stream is reset with `PROTOCOL_ERROR` |
 
 Whatever the handler leaves unread is discarded after it returns so the connection can serve the
-next request.
+next request. Over HTTP/1.1 this holds up to [`maxDiscardedBodySize`](config.md#limits), 2 MiB by
+default: a larger `Content-Length`, or a chunked body, left
+unread closes the connection instead (see [http1.md](http1.md#unread-bodies)), so a client is not kept
+sending an upload the handler refused.
 
 ### Form fields
 

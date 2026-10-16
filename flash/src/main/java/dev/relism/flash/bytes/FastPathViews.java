@@ -121,14 +121,23 @@ public final class FastPathViews {
      * {@code supportsLong()} is {@code true}).
      */
     public static final class MethodPathByteView implements ByteView {
-        private byte[] method;
+        private final RequestByteView bytes = new RequestByteView(null, 0, 0);
+        private ByteView method;
         private ByteView path;
+        private int methodLength;
         private int totalLength;
 
         public void reset(byte[] method, ByteView path) {
+            bytes.reset(method, 0, method.length);
+            reset(bytes, path);
+        }
+
+        /** The method as it arrived, in place: any token, not only those {@code byte[]} constants name. */
+        public void reset(ByteView method, ByteView path) {
             this.method = method;
             this.path = path;
-            this.totalLength = method.length + path.length();
+            this.methodLength = method.length();
+            this.totalLength = methodLength + path.length();
         }
 
         @Override
@@ -138,7 +147,7 @@ public final class FastPathViews {
 
         @Override
         public byte byteAt(int index) {
-            return index < method.length ? method[index] : path.byteAt(index - method.length);
+            return index < methodLength ? method.byteAt(index) : path.byteAt(index - methodLength);
         }
     }
 

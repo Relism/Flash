@@ -292,6 +292,11 @@ public final class OpenApiBuilder {
         return consumes == null ? ContentType.JSON : consumes.value();
     }
 
+    /** Whether a contributor states a media type for this handler's body. */
+    boolean describes(Class<?> handlerClass) {
+        return contributedMediaType(handlerClass, true) != null || contributedMediaType(handlerClass, false) != null;
+    }
+
     /** A handler whose codecs are in its signature is described by them, not by an annotation. */
     private ContentType contributedMediaType(Class<?> handlerClass, boolean request) {
         for (OpenApiContributor contributor : contributors()) {
