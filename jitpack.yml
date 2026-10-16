@@ -1,2 +1,8 @@
 jdk:
   - openjdk21
+# Central rate-limits JitPack's builders (429), which failed release builds, so JitPack downloads
+# Maven and every dependency from Google's mirror of Central. CI and local builds use Central.
+env:
+  MVNW_REPOURL: https://maven-central.storage-download.googleapis.com/maven2
+install:
+  - ./mvnw -B install -DskipTests -s .mvn/jitpack-settings.xml
