@@ -1,0 +1,10 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+    <!-- Used only by jitpack.yml: JitPack resolves Maven Central through Google's mirror of it. -->
+    <mirrors>
+        <mirror>
+            <id>google-maven-central</id>
+            <mirrorOf>central</mirrorOf>
+            <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+        </mirror>
+    </mirrors>
+</settings>
