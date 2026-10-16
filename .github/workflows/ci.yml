@@ -64,6 +64,10 @@ jobs:
           -Dflash.performance.gates=true
           clean verify
 
+      # docs.yml runs this on release; failing here keeps a release from shipping without JavaDoc.
+      - name: Check aggregated JavaDoc
+        run: mvn -B -DskipTests javadoc:aggregate
+
       - name: Publish test results
         uses: actions/upload-artifact@v7
         if: failure()

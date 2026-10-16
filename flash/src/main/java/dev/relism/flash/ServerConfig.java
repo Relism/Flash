@@ -170,6 +170,13 @@ public class ServerConfig {
   @Builder.Default boolean sendDate = true;
 
   /**
+   * Builds a {@link ServerConfig}, from {@link #builder()}: one method per field above, with the
+   * defaults they document. Lombok generates its body; it is declared here so that the type exists
+   * for javadoc, which reads the source without running Lombok.
+   */
+  public static class ServerConfigBuilder {}
+
+  /**
    * One bind target: a TCP port, an optional bind host (default: all interfaces), and optional TLS.
    */
   public record Listener(int port, String host, TlsConfig tls) {
