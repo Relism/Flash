@@ -111,7 +111,8 @@ Configured on GitHub, not in files. Change them only on explicit instruction.
   - MAJOR: breaking API changes
   - MINOR: new backward-compatible features
   - PATCH: backward-compatible bug fixes on an already-released version
-- During development, master always carries a `-SNAPSHOT` version.
+- Between releases, `master` carries the last released version. Consumers only ever see release
+  tags, so there is no `-SNAPSHOT` phase (`skip-snapshot` in `release-please-config.json`).
 - **Never manually edit the project version**: versions are bumped exclusively by
   [release-please](https://github.com/googleapis/release-please), configured in
   `release-please-config.json` and `.release-please-manifest.json`.
@@ -122,8 +123,6 @@ Configured on GitHub, not in files. Change them only on explicit instruction.
    `CHANGELOG.md` from the Conventional Commits merged since the last release.
 2. Merging it tags `v<version>` and creates the GitHub Release. `release.yml` then builds the tag
    on JitPack and publishes the JavaDoc.
-3. release-please then opens a `chore(release): <next>-SNAPSHOT` PR. Merge it to move `master`
-   back to a snapshot.
 
 PRs opened by release-please do not trigger workflows, so their checks never report. A repository
 admin merges them through the ruleset bypass, which works only inside a PR.
