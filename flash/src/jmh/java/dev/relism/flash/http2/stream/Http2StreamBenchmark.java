@@ -74,7 +74,7 @@ public class Http2StreamBenchmark {
         .prepare(response, 1, false, false, true, false, false, 16_384, 32_768, 65_535);
     int bytes = stream.responseWriter().length();
     streams.remove(1);
-    streams.release(stream);
+    streams.release(stream, 1);
     return bytes;
   }
 
@@ -102,7 +102,7 @@ public class Http2StreamBenchmark {
             65_535);
     int bytes = stream.responseWriter().length();
     streams.remove(1);
-    streams.release(stream);
+    streams.release(stream, 1);
     return bytes;
   }
 }
