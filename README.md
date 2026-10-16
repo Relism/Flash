@@ -123,8 +123,8 @@ groupId `dev.relism.Flash` and the release tag as its version, shown in the badg
 ## Build
 
 ```bash
-mvn clean package -DskipTests      # build every module
-mvn test                           # run the tests, without those against real clients
-mvn test -pl flash -Dtest=AppTest  # one test class in one module
-mvn test -Pinterop                 # only the tests against real clients (Node, Docker)
+./mvnw clean package -DskipTests      # build every module
+./mvnw test                           # run the tests, without those against real clients
+./mvnw test -pl flash -Dtest=AppTest  # one test class in one module
+./mvnw test -Pinterop                 # only the tests against real clients (Node, Docker)
 ```

@@ -129,8 +129,10 @@ admin merges them through the ruleset bypass, which works only inside a PR.
 
 ### Publishing
 
-Releases are served by [JitPack](https://jitpack.io/#Relism/Flash), which builds the tag with the
-JDK set in `jitpack.yml`. Every module is published as `dev.relism.Flash:<artifactId>:v<version>`.
+Releases are served by [JitPack](https://jitpack.io/#Relism/Flash), which builds the tag with
+`./mvnw clean install -DskipTests`: the JDK comes from `jitpack.yml`, the Maven version from
+`.mvn/wrapper/maven-wrapper.properties`. Without the wrapper JitPack falls back to an old Maven or
+generates a wrapper itself, and both have failed release builds. Every module is published as `dev.relism.Flash:<artifactId>:v<version>`.
 The `dev.relism` prefix comes from the DNS TXT record `git.relism.dev` pointing to
 `https://github.com/Relism`. JitPack also serves every tag as `com.github.Relism.Flash`, but builds
 each groupId separately, so `release.yml` requests the `dev.relism` build that consumers resolve.

@@ -1,6 +1,2 @@
 jdk:
   - openjdk21
-# Without this JitPack first generates a Maven wrapper, extra downloads from Central that fail
-# whenever Central rate-limits JitPack.
-install:
-  - mvn -B install -DskipTests
