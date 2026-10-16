@@ -57,7 +57,8 @@ final class ChunkedInputStream extends InputStream implements BodyCompletion {
             if (chunkRemaining == 0) { consumeTrailers(); done = true; return -1; }
         }
         int b = src.read();
-        if (b >= 0 && --chunkRemaining == 0) consumeChunkTerminator();
+        if (b < 0) throw new MalformedRequestException(400, "Truncated chunk data");
+        if (--chunkRemaining == 0) consumeChunkTerminator();
         return b;
     }
 
@@ -69,6 +70,7 @@ final class ChunkedInputStream extends InputStream implements BodyCompletion {
             if (chunkRemaining == 0) { consumeTrailers(); done = true; return -1; }
         }
         int n = src.read(buf, off, Math.min(len, chunkRemaining));
+        if (n < 0) throw new MalformedRequestException(400, "Truncated chunk data");
         if (n > 0) {
             chunkRemaining -= n;
             if (chunkRemaining == 0) consumeChunkTerminator();

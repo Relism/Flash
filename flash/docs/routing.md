@@ -8,7 +8,8 @@ starts. Matching runs on the method and path bytes and allocates nothing per req
 ```java
 app.get("/users/{id}", (req, res) -> "user " + req.param("id"));
 app.post("/users", CreateUser.class);                  // built by Flash, takes services
-app.route(HttpMethod.QUERY, "/search", new Search());  // any method
+app.route(HttpMethod.QUERY, "/search", new Search());  // any method of HttpMethod
+app.any("/files/**", new Files());                     // every method, PROPFIND included
 ```
 
 A route is a method, a path and a handler. The handler is a lambda `(Request, Response) -> Object`,
@@ -31,7 +32,9 @@ app.scan("com.acme.api");
 
 Annotations: `@GET`, `@POST`, `@PUT`, `@PATCH`, `@DELETE`, `@HEAD`, `@OPTIONS`, `@TRACE`, `@CONNECT`,
 `@PURGE`, `@QUERY`, each with the path as `value()`, plus `@Sse` and `@Ws` for protocol handlers. A
-verb annotation is any annotation marked `@Verb(HttpMethod.X)` with a `String value()`.
+verb annotation is any annotation marked `@Verb(HttpMethod.X)` with a `String value()`. An
+annotation marked `@AnyMethod` with a `String value()` declares a route for every method, as `any`
+does; an extension uses it for a protocol of its own methods.
 
 `scan(package)` visits the package and its subpackages and skips abstract classes. It fails the boot
 when:
@@ -58,18 +61,37 @@ the boot. The router rewrites each declared path to one leading slash and no tra
 slashes, so `users//` is `/users`.
 
 Parameters are read with `req.param(name)`, `paramInt` and `paramLong`. See
-[request.md](request.md#path-and-query-parameters).
+[request.md](request.md#path-and-query-parameters). A path that ends in `/**` also names what `**`
+matched: `req.param("**")` is the rest of the path after the prefix, without a leading slash, as it
+was sent (not percent-decoded), and empty for the prefix itself (`/files/**` matches `/files`).
+
+## Methods
+
+A method is a token (RFC 9110): `HttpMethod` names the common ones, and a client may send any other,
+such as WebDAV's `PROPFIND`.
+
+| Request method | Reaches |
+|---|---|
+| In `HttpMethod` | A route of that method, else a route for every method on the path |
+| Any other token | Only a route for every method (`any`, `@AnyMethod`). `req.method()` is `null`; `req.requestLine().getMethodName()` is the token |
+| A token no route takes, in an app with no route for every method | `501 Not Implemented` |
+| Not a token | `400` on HTTP/1.1, the stream reset with `PROTOCOL_ERROR` on HTTP/2 |
+
+`any(path, handler)` is one route. A route of a single method on the same path wins over it, and its
+`Route.method()` is `null`.
 
 ## Matching rules
 
 - `HEAD` with no `HEAD` route runs the `GET` route. The body is dropped on the wire, and headers
-  such as `Content-Length` are those the `GET` would send.
+  such as `Content-Length` are those the `GET` would send. This holds when a route for every method
+  covers the path too; that route gets the `HEAD` only when the path has no `GET` route.
 - A path that exists under other methods answers `405` with an `Allow` header listing them.
 - A path that exists under none answers `404` through `onNotFound`.
 - A `WebSocketHandler` route is stored under its own key (`WS`), so one path can serve a normal
   `GET` and a WebSocket. A request is tried as a WebSocket first when it carries
   `Upgrade: websocket` (HTTP/1.1) or an extended CONNECT with `:protocol` `websocket` (HTTP/2),
-  then as an ordinary route.
+  then as an ordinary route. A route for every method also answers an upgrade request on a path
+  with no WebSocket route, as the `GET` it is.
 - `CONNECT` routes match the request target as an authority (`host:port`), not a path.
 
 The 404 and 405 answers pass through the app's middleware, so a CORS preflight or an access log sees
@@ -107,6 +129,6 @@ app.add(RouteHook.class, SecurityHook.class);
 | `middleware(Class<?> handler)` | For each route, with the handler's class. Returns `MiddlewareNode`s |
 | `routed(Route route)` | Once per route after its chain is composed |
 
-`Route` is a record of `method`, `path` (mount prefix included), `handler` (class) and `middleware`
-(classes, outermost first). For a lambda route `handler` is the class of the wrapper Flash created,
+`Route` is a record of `method` (`null` for a route for every method), `path` (mount prefix
+included), `handler` (class) and `middleware` (classes, outermost first). For a lambda route `handler` is the class of the wrapper Flash created,
 which carries no annotations.

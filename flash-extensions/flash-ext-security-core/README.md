@@ -2,8 +2,8 @@
 
 Authentication and authorization for Flash. It defines how a caller is identified, what a handler's
 annotations require, and where sessions live. Credentials are read by
-`AuthenticationMechanism`s, which other modules provide (OIDC, API keys, form login, an OAuth
-authorization server).
+`AuthenticationMechanism`s, which other modules provide (OIDC, API keys, form login, HTTP Basic,
+an OAuth authorization server).
 
 ```xml
 <dependency>

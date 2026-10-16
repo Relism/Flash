@@ -18,6 +18,12 @@ public record SecurityScheme(String name, Map<String, Object> definition, String
                 "Bearer realm=\"" + name + "\"", null);
     }
 
+    /** HTTP Basic: user name and password in every request, UTF-8 as the challenge says (RFC 7617). */
+    public static SecurityScheme basic(String realm) {
+        return new SecurityScheme("basic", Map.of("type", "http", "scheme", "basic"),
+                "Basic realm=\"" + realm + "\", charset=\"UTF-8\"", null);
+    }
+
     public static SecurityScheme openIdConnect(String name, String issuer) {
         return new SecurityScheme(name,
                 Map.of("type", "openIdConnect", "openIdConnectUrl", issuer + (issuer.endsWith("/") ? "" : "/") + ".well-known/openid-configuration"),

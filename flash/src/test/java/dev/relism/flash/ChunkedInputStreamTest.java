@@ -220,4 +220,10 @@ class ChunkedInputStreamTest {
         MalformedRequestException e = assertThrows(MalformedRequestException.class, in::readAllBytes);
         assertEquals(431, e.status());
     }
+
+    @Test
+    void connectionClosedInsideChunkDataIs400() {
+        MalformedRequestException e = assertThrows(MalformedRequestException.class, () -> readAll(wrap("a\r\nhello")));
+        assertEquals(400, e.status());
+    }
 }

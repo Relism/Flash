@@ -28,7 +28,7 @@ public final class Errors {
     public static ErrorHandler handler(boolean dev) {
         return (failure, request, response) -> {
             if (failure instanceof HttpException refused) return render(refused, response);
-            log.error("Unhandled exception in {} {}", request.method(), request.path(), failure);
+            log.error("Unhandled exception in {} {}", request.requestLine().getMethodName(), request.path(), failure);
             response.status(500);
             if (dev) {
                 response.type(ContentType.TEXT_HTML);
@@ -57,7 +57,7 @@ public final class Errors {
         try {
             return errors.handle(failure, request, response);
         } catch (Exception broken) {
-            log.error("The error handler failed on {} {}", request.method(), request.path(), broken);
+            log.error("The error handler failed on {} {}", request.requestLine().getMethodName(), request.path(), broken);
             response.status(500).type(ContentType.JSON);
             return INTERNAL;
         }

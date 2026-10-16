@@ -19,6 +19,7 @@ class MicrometerModuleTest {
     final FlashTest app = FlashTest.of(() -> App.create()
             .install(new MicrometerModule(registry))
             .get("/users/{id}", (request, response) -> "ok")
+            .any("/files/**", (request, response) -> "any")
             .get("/fail", (request, response) -> { throw new IllegalArgumentException("bad"); })
             .onError((failure, request, response) -> response.status(422).body("invalid")));
 
@@ -34,11 +35,25 @@ class MicrometerModuleTest {
         assertNull(registry.find("http.server.requests").tag("uri", "/users/7").timer());
     }
 
+    /** A method outside the enum is one series, {@code _OTHER}, however many tokens clients invent. */
+    @Test
+    void aRouteForEveryMethodTagsTheStandardOnesAndOneOtherForTheRest() {
+        app.get("/files/a").expectStatus(200);
+        for (String method : new String[] {"PROPFIND", "MKCOL", "INVENTED"}) app.request().send(method, "/files/a").expectStatus(200);
+
+        assertCount("GET", "/files/**", "200", "SUCCESS", 1);
+        assertCount("_OTHER", "/files/**", "200", "SUCCESS", 3);
+    }
+
     private void assertCount(String uri, String status, String outcome) {
+        assertCount("GET", uri, status, outcome, 1);
+    }
+
+    private void assertCount(String method, String uri, String status, String outcome, int count) {
         Timer timer = registry.find("http.server.requests")
-                .tags("method", "GET", "uri", uri, "status", status, "outcome", outcome)
+                .tags("method", method, "uri", uri, "status", status, "outcome", outcome)
                 .timer();
         assertNotNull(timer);
-        assertEquals(1, timer.count());
+        assertEquals(count, timer.count());
     }
 }

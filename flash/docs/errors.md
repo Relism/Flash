@@ -36,6 +36,7 @@ new exception each time rather than a shared constant.
 | `HttpException` | Its status and headers, body `{"error":"<message>","status":<status>}` as `application/json`, message JSON-escaped |
 | Any other exception | Logged at error level. `500` with `{"error":"Internal Server Error","status":500}` |
 | No route (404) | `{"error":"Not Found","status":404}` |
+| A method no route takes, in an app with no route for every method (501) | `{"error":"Unsupported HTTP method","status":501}`, through the app's middleware like a 404 |
 
 In [development mode](config.md#development-mode) the unexpected-exception and 404 answers are HTML
 pages, the first with the stack trace. In production nothing internal leaves the server.

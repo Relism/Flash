@@ -238,7 +238,29 @@ class GrpcTest {
         }
     }
 
-    record Call(Map<String, String> headers, List<String> messages, Map<String, String> trailers) {}
+    record Call(Map<String, String> headers, List<String> messages, Map<String, String> trailers) {
+        /** Splits a body into its messages; a gRPC-Web trailer frame ({@code 0x80}) replaces the HTTP trailers. */
+        static Call of(Map<String, String> headers, byte[] body, Map<String, String> trailers) throws IOException {
+            List<String> messages = new ArrayList<>();
+            ByteBuffer bytes = ByteBuffer.wrap(body);
+            while (bytes.remaining() >= 5) {
+                byte flags = bytes.get();
+                byte[] message = new byte[bytes.getInt()];
+                bytes.get(message);
+                if ((flags & 0x80) == 0) {
+                    messages.add(StringValue.parseFrom(message).getValue());
+                    continue;
+                }
+                trailers = new HashMap<>();
+                for (String line : new String(message, StandardCharsets.UTF_8).split("\r\n")) {
+                    int colon = line.indexOf(':');
+                    trailers.put(line.substring(0, colon), line.substring(colon + 1).strip());
+                }
+            }
+            if (bytes.hasRemaining()) throw new IOException("body ends mid-frame");
+            return new Call(headers, messages, trailers);
+        }
+    }
 
     /** A cleartext HTTP/2 client that knows exactly enough to make gRPC calls, one at a time. */
     static final class H2c implements Closeable {
@@ -247,6 +269,7 @@ class GrpcTest {
         private final InputStream in;
         private final OutputStream out;
         private final HpackDecoder decoder = new HpackDecoder();
+        String contentType = "application/grpc";
 
         H2c(int port) throws IOException {
             socket = new Socket("127.0.0.1", port);
@@ -284,7 +307,7 @@ class GrpcTest {
             frame(3, 0, stream, new byte[] {0, 0, 0, 8}); // RST_STREAM, CANCEL
         }
 
-        private static byte[] framed(StringValue... messages) {
+        static byte[] framed(StringValue... messages) {
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             for (StringValue message : messages) {
                 byte[] bytes = message.toByteArray();
@@ -306,12 +329,12 @@ class GrpcTest {
             HpackEncoder.writeLiteralWithNameIndex(block, 6, ascii("http"), false);
             HpackEncoder.writeLiteralWithNameIndex(block, 4, ascii(path), false);
             HpackEncoder.writeLiteralWithNameIndex(block, 1, ascii("localhost"), false);
-            HpackEncoder.writeLiteralWithNameIndex(block, 31, ascii("application/grpc"), false);
+            HpackEncoder.writeLiteralWithNameIndex(block, 31, ascii(contentType), false);
             frame(1, 0x4, stream, java.util.Arrays.copyOf(block.array(), block.length())); // HEADERS, END_HEADERS
             frame(0, 0x1, stream, body); // DATA, END_STREAM
         }
 
-        private Call read(int stream) throws IOException {
+        Call read(int stream) throws IOException {
             List<Map<String, String>> blocks = new ArrayList<>();
             ByteArrayOutputStream data = new ByteArrayOutputStream();
             while (true) {
@@ -332,15 +355,7 @@ class GrpcTest {
                 }
                 if ((flags & 0x1) != 0) break;
             }
-            List<String> messages = new ArrayList<>();
-            ByteBuffer bytes = ByteBuffer.wrap(data.toByteArray());
-            while (bytes.remaining() >= 5) {
-                bytes.get();
-                byte[] message = new byte[bytes.getInt()];
-                bytes.get(message);
-                messages.add(StringValue.parseFrom(message).getValue());
-            }
-            return new Call(blocks.get(0), messages, blocks.get(blocks.size() - 1));
+            return Call.of(blocks.get(0), data.toByteArray(), blocks.get(blocks.size() - 1));
         }
 
         private void frame(int type, int flags, int stream, byte[] payload) throws IOException {

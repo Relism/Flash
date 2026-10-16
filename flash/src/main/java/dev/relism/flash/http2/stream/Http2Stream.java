@@ -1,5 +1,6 @@
 package dev.relism.flash.http2.stream;
 
+import dev.relism.flash.bytes.ByteScan;
 import dev.relism.flash.bytes.PooledSlice;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.Duplex;
@@ -154,12 +155,14 @@ public final class Http2Stream
     PooledSlice methodBytes = pseudoHeaders.method();
     HttpMethod method =
         HttpMethod.fromBytes(methodBytes.array(), methodBytes.offset(), methodBytes.length());
-    if (method == null) {
-      throw new Http2StreamException(
-          id, Http2ErrorCode.PROTOCOL_ERROR, "unsupported request method");
+    if (method == null && !ByteScan.isToken(methodBytes)) {
+      throw new Http2StreamException(id, Http2ErrorCode.PROTOCOL_ERROR, "invalid request method");
     }
-    if (pseudoHeaders.websocket()) method = HttpMethod.GET;
-    requestLine.reset(method, path, question < 0 ? null : query, protocol, headers);
+    if (pseudoHeaders.websocket()) {
+      requestLine.reset(HttpMethod.GET, path, question < 0 ? null : query, protocol, headers);
+    } else {
+      requestLine.reset(method, methodBytes, path, question < 0 ? null : query, protocol, headers);
+    }
     requestBody.reset(http2Body, http2Body.declaredLength(), null, 0, 0);
     Request assembled =
         Request.forParsed(request, requestLine, requestBody, remoteAddress, sslSocket, trustedProxies);

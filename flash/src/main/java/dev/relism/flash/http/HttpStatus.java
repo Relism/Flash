@@ -20,6 +20,7 @@ public enum HttpStatus {
   ACCEPTED(202, "Accepted"),
   NO_CONTENT(204, "No Content"),
   PARTIAL_CONTENT(206, "Partial Content"),
+  MULTI_STATUS(207, "Multi-Status"),
 
   // 3xx
   MOVED_PERMANENTLY(301, "Moved Permanently"),
@@ -46,6 +47,8 @@ public enum HttpStatus {
   EXPECTATION_FAILED(417, "Expectation Failed"),
   MISDIRECTED_REQUEST(421, "Misdirected Request"),
   UNPROCESSABLE_ENTITY(422, "Unprocessable Entity"),
+  LOCKED(423, "Locked"),
+  FAILED_DEPENDENCY(424, "Failed Dependency"),
   TOO_MANY_REQUESTS(429, "Too Many Requests"),
   REQUEST_HEADER_FIELDS_TOO_LARGE(431, "Request Header Fields Too Large"),
 

@@ -43,7 +43,8 @@ runs it. Tests run the same `App` on a port of their own.
 | [flash-ext-jackson-xml](flash-extensions/flash-ext-jackson-xml/README.md) | XML through Jackson |
 | [flash-ext-avaje-jsonb](flash-extensions/flash-ext-avaje-jsonb/README.md) | JSON through Avaje Jsonb, adapters generated at build time |
 | [flash-ext-protobuf-java](flash-extensions/flash-ext-protobuf-java/README.md) | Protocol Buffers bodies |
-| [flash-ext-grpc](flash-extensions/flash-ext-grpc/README.md) | gRPC over HTTP/2 |
+| [flash-ext-grpc](flash-extensions/flash-ext-grpc/README.md) | gRPC over HTTP/2, gRPC-Web over HTTP/1.1 and HTTP/2 |
+| [flash-ext-ndjson](flash-extensions/flash-ext-ndjson/README.md) | Newline-delimited JSON streams, in and out |
 | [flash-ext-validation-core](flash-extensions/flash-ext-validation-core/README.md) | Validation contract |
 | [flash-ext-validation-jakarta](flash-extensions/flash-ext-validation-jakarta/README.md) | Jakarta Validation through Hibernate Validator |
 | [flash-ext-validation-avaje](flash-extensions/flash-ext-validation-avaje/README.md) | Avaje Validator |
@@ -58,6 +59,7 @@ runs it. Tests run the same `App` on a port of their own.
 | [flash-ext-security-oidc](flash-extensions/flash-ext-security-oidc/README.md) | OpenID Connect |
 | [flash-ext-security-apikey](flash-extensions/flash-ext-security-apikey/README.md) | API keys |
 | [flash-ext-security-form](flash-extensions/flash-ext-security-form/README.md) | Password sign-in |
+| [flash-ext-security-basic](flash-extensions/flash-ext-security-basic/README.md) | HTTP Basic over the password sign-in accounts |
 | [flash-ext-security-oauth-server](flash-extensions/flash-ext-security-oauth-server/README.md) | OAuth 2.1 authorization server |
 | [flash-ext-security-test](flash-extensions/flash-ext-security-test/README.md) | Test helpers for security |
 | [flash-ext-limiter](flash-extensions/flash-ext-limiter/README.md) | Rate limiting |
@@ -72,6 +74,7 @@ runs it. Tests run the same `App` on a port of their own.
 | [flash-ext-vite](flash-extensions/flash-ext-vite/README.md) | Vite frontend |
 | [flash-ext-vite-maven-plugin](flash-extensions/flash-ext-vite-maven-plugin/README.md) | Builds the Vite frontend into the jar |
 | [flash-ext-mcp](flash-extensions/flash-ext-mcp/README.md) | Model Context Protocol server |
+| [flash-ext-webdav](flash-extensions/flash-ext-webdav/README.md) | WebDAV file shares with per-request spaces and quotas, over a directory or an engine of your own |
 | [flash-ext-scheduler](flash-extensions/flash-ext-scheduler/README.md) | Interval and cron jobs |
 | [flash-ext-cache-core](flash-extensions/flash-ext-cache-core/README.md) | Cache contract |
 | [flash-ext-cache-caffeine](flash-extensions/flash-ext-cache-caffeine/README.md) | In-process cache with Caffeine |
@@ -85,6 +88,7 @@ runs it. Tests run the same `App` on a port of their own.
 
 ```bash
 mvn clean package -DskipTests      # build every module
-mvn test                           # run all tests
+mvn test                           # run the tests, without those against real clients
 mvn test -pl flash -Dtest=AppTest  # one test class in one module
+mvn test -Pinterop                 # only the tests against real clients (Node, Docker)
 ```

@@ -12,7 +12,7 @@
 
     <artifactId>flash-ext-grpc</artifactId>
     <name>flash-ext-grpc</name>
-    <description>gRPC over Flash's own HTTP/2: protobuf handlers and streamers under @Grpc, checked against the .proto at boot.</description>
+    <description>gRPC over Flash's own HTTP/2 and gRPC-Web over any HTTP version: protobuf handlers and streamers under @Grpc, checked against the .proto at boot.</description>
 
     <dependencies>
         <dependency>
@@ -35,6 +35,21 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-security-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-limiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-micrometer</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

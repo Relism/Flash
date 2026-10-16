@@ -11,7 +11,7 @@ import java.lang.annotation.Target;
 /**
  * A gRPC method at its path, {@code /package.Service/Method}. Its handler extends one of the four
  * explicit gRPC handler classes; the boot checks its cardinality and message types against the
- * registered descriptor.
+ * registered descriptor. The route answers gRPC over HTTP/2 and gRPC-Web over any HTTP version.
  *
  * <pre>{@code
  * @Grpc("/orders.v1.Orders/Watch")

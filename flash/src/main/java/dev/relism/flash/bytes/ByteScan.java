@@ -75,6 +75,13 @@ public final class ByteScan {
         return b >= 0 && b < 128 && TCHAR[b];
     }
 
+    /** Whether {@code view} is an RFC 9110 {@code token}: one or more {@code tchar}s, as a method is. */
+    public static boolean isToken(ByteView view) {
+        if (view.length() == 0) return false;
+        for (int i = 0; i < view.length(); i++) if (!isTChar(view.byteAt(i))) return false;
+        return true;
+    }
+
     // ── Single-byte search ───────────────────────────────────────────────────
 
     /**

@@ -3,6 +3,7 @@ package dev.relism.flash.ext.openapi;
 import dev.relism.flash.Services;
 import dev.relism.flash.ext.serde.Codec;
 import dev.relism.flash.ext.serde.CodecRequestHandler;
+import dev.relism.flash.ext.serde.TypeArguments;
 import dev.relism.flash.http.ContentType;
 import java.lang.reflect.Type;
 
@@ -22,7 +23,7 @@ final class CodecDocs implements OpenApiContributor {
     @Override
     public OpenApiOperationContribution operationFor(Class<?> handler) {
         if (!CodecRequestHandler.class.isAssignableFrom(handler)) return OpenApiOperationContribution.empty();
-        Type[] signature = CodecRequestHandler.signature(handler);
+        Type[] signature = TypeArguments.of(handler, CodecRequestHandler.class);
         boolean reads = signature[1] != Void.class;
         return OpenApiOperationContribution.builder()
                 .consumes(reads ? contentType(signature[0]) : null)

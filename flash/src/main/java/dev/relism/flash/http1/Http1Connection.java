@@ -25,6 +25,9 @@ import java.net.SocketTimeoutException;
  */
 public final class Http1Connection implements ConnectionProtocol {
 
+    /** How long the bytes still arriving are read and dropped after such an answer, so the client can read it before the connection closes. */
+    static final long LINGER_NANOS = 2_000_000_000L;
+
     @Override
     public void run(ConnectionContext ctx) throws IOException {
         ServerConfig config = ctx.configuration();
@@ -84,11 +87,17 @@ public final class Http1Connection implements ConnectionProtocol {
             if (streamed && duplex.finish()) return;
             if (!streamed) response = answer;
 
+            boolean discardable = request.body().fullyRead()
+                    || request.body().contentLength() >= 0 && request.body().contentLength() <= config.getMaxDiscardedBodySize();
             // A server that started stopping while the handler ran closes this connection.
-            boolean actuallyKeepAlive = keepAlive && !ctx.stopped().getAsBoolean();
+            boolean actuallyKeepAlive = keepAlive && discardable && !ctx.stopped().getAsBoolean();
             if (!streamed) {
                 Http1ResponseWriter.writeResponse(out, response, request.method(), actuallyKeepAlive,
                         config.isSendDate(), ctx.scratch());
+            }
+            if (!discardable) {
+                linger(ctx);
+                break;
             }
             request.drain();
             if (config.isDev()) {
@@ -99,6 +108,23 @@ public final class Http1Connection implements ConnectionProtocol {
             }
             in.clearDeadline();
             if (!actuallyKeepAlive) break;
+        }
+    }
+
+    /**
+     * Stops writing and drops what the client still sends, for {@link #LINGER_NANOS} at most: closing
+     * at once, with its bytes unread, would reset the connection and could discard the answer
+     * before the client reads it.
+     */
+    private static void linger(ConnectionContext ctx) {
+        try {
+            ctx.out().flush();
+            if (ctx.sslSocket() == null) ctx.socket().shutdownOutput(); // TLS cannot half-close
+            ctx.in().setDeadline(System.nanoTime() + LINGER_NANOS);
+            byte[] dropped = new byte[8192];
+            while (ctx.in().read(dropped, 0, dropped.length) > 0) { /* dropped */ }
+        } catch (IOException closedOrTimedOut) {
+            // the connection closes either way
         }
     }
 }

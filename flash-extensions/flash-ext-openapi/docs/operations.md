@@ -1,7 +1,10 @@
 # Operations
 
 Every route built from a handler class or instance becomes one operation at its full path (mount
-prefix included) and method. Routes of a `DuplexHandler` (`@Ws`, `@Sse`, `@Grpc`) are not documented.
+prefix included) and method. A route of a `DuplexHandler` (`@Ws`, `@Sse`, `@Grpc`) is documented only
+when a contributor states a media type for it with `consumes` or `produces`, as flash-ext-ndjson does;
+the others are left out. A route for every method (`app.any`, `@AnyMethod`) is left out too: OpenAPI
+3.0 has no way to name a method outside its own eight.
 A route declared with a lambda has no handler class to read, so it is listed with its path and
 method and a bare `200 OK` response. This includes the module's own `.json`, `.yaml` and `/docs`
 routes.

@@ -201,4 +201,18 @@ class RequestBodyTest {
         body.drain();
         assertEquals(0, secondSocket.available(), "drain() must fully consume the second request's chunked body too");
     }
+
+    // --- truncated bodies: a connection closed before Content-Length bytes is never a whole body ---
+
+    @Test
+    void bytes_shorterThanContentLengthIs400() {
+        RequestBody body = new RequestBody(new ByteArrayInputStream("hel".getBytes(StandardCharsets.UTF_8)), 5, new byte[0], 0, 0);
+        assertEquals(400, assertThrows(MalformedRequestException.class, body::bytes).status());
+    }
+
+    @Test
+    void stream_shorterThanContentLengthIs400() {
+        RequestBody body = new RequestBody(new ByteArrayInputStream("l".getBytes(StandardCharsets.UTF_8)), 5, "hel".getBytes(StandardCharsets.UTF_8), 0, 3);
+        assertEquals(400, assertThrows(MalformedRequestException.class, () -> body.stream().readAllBytes()).status());
+    }
 }

@@ -2,6 +2,7 @@ package dev.relism.flash;
 
 import dev.relism.flash.ServerConfig;
 import dev.relism.flash.http.MalformedRequestException;
+import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.transport.BufferedByteSource;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -140,11 +142,21 @@ class RequestParserTest {
     }
 
     @Test
-    void unknownHttpMethod_throwsMalformedRequestException() {
-        // RFC 9110 §9.1 SHOULD 501 an unrecognised method.
-        MalformedRequestException e = assertThrows(MalformedRequestException.class,
-                () -> parse(req("BREW /coffee HTTP/1.1", "Host: localhost")));
-        assertEquals(501, e.status());
+    void aMethodOutsideTheEnumIsItsToken() throws IOException {
+        // RFC 9110 §9.1: a method is a token; the router answers 501 when nothing takes it.
+        Request r = parse(req("BREW /coffee HTTP/1.1", "Host: localhost"));
+        assertEquals(null, r.method());
+        assertEquals("BREW", r.requestLine().getMethodName());
+        assertEquals(HttpMethod.GET, parse(req("GET / HTTP/1.1", "Host: localhost")).method());
+    }
+
+    @Test
+    void aMethodThatIsNoTokenIs400() {
+        for (String line : List.of("GE(T / HTTP/1.1", "G\"T / HTTP/1.1", "PROP:FIND / HTTP/1.1")) {
+            MalformedRequestException e = assertThrows(MalformedRequestException.class,
+                    () -> parse(req(line, "Host: localhost")), line);
+            assertEquals(400, e.status(), line);
+        }
     }
 
     @Test
@@ -206,13 +218,11 @@ class RequestParserTest {
     }
 
     @Test
-    void contentLength_largerThanBody_readsPartial() throws IOException {
-        // Content-Length claims 50 but stream ends after 5 bytes
-        String body = "hello";
-        String raw  = "POST / HTTP/1.1\r\nContent-Length: 50\r\n\r\n" + body;
+    void contentLength_largerThanBody_is400() throws IOException {
+        // Content-Length claims 50 but the stream ends after 5 bytes: never a whole body
+        String raw  = "POST / HTTP/1.1\r\nContent-Length: 50\r\n\r\nhello";
         Request r   = new RequestParser().parse(source(raw.getBytes(StandardCharsets.UTF_8)));
         assertNotNull(r);
-        assertEquals(50, r.body().bytes().length);
-        assertEquals(body, new String(r.body().bytes(), 0, body.length(), StandardCharsets.UTF_8));
+        assertEquals(400, assertThrows(MalformedRequestException.class, () -> r.body().bytes()).status());
     }
 }

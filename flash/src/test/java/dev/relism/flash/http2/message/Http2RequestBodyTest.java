@@ -8,6 +8,7 @@ import dev.relism.flash.http2.Http2ErrorCode;
 import dev.relism.flash.http2.Http2Limits;
 import dev.relism.flash.http2.Http2StreamException;
 import dev.relism.flash.http.RequestBody;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -82,5 +83,30 @@ class Http2RequestBodyTest {
                 source.offer(
                     1, new byte[1], 0, 1025, 1));
     assertEquals(Http2ErrorCode.PROTOCOL_ERROR, failure.errorCode());
+  }
+
+  @Test
+  void resetBeforeEndStreamFailsTheReaderInsteadOfEndingTheBody() {
+    Http2RequestBody streaming = new Http2RequestBody(new DataBufferPool(8, 1));
+    streaming.begin(10, false, bytes -> {}, 1024);
+    streaming.offer(1, new byte[] {1, 2, 3}, 0, 3, 3);
+    streaming.cancel();
+    assertThrows(IOException.class, streaming::readAllBytes);
+
+    Http2RequestBody inline = new Http2RequestBody(new DataBufferPool(8, 1));
+    inline.begin(10, true, bytes -> {}, 1024);
+    inline.offer(1, new byte[] {1, 2, 3}, 0, 3, 3);
+    inline.cancel();
+    assertThrows(IOException.class, inline::readAllBytes);
+  }
+
+  @Test
+  void cancelAfterEndStreamKeepsTheBodyWhole() throws Exception {
+    Http2RequestBody inline = new Http2RequestBody(new DataBufferPool(8, 1));
+    inline.begin(3, true, bytes -> {}, 1024);
+    inline.offer(1, new byte[] {1, 2, 3}, 0, 3, 3);
+    inline.finish(1);
+    inline.cancel();
+    assertArrayEquals(new byte[] {1, 2, 3}, inline.readAllBytes());
   }
 }

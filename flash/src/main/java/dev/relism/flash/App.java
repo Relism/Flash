@@ -6,6 +6,7 @@ import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.RequestAction;
 import dev.relism.flash.http.RequestHandler;
+import dev.relism.flash.routing.AnyMethod;
 import dev.relism.flash.routing.ErrorHandler;
 import dev.relism.flash.routing.Errors;
 import dev.relism.flash.routing.ExchangeInterceptor;
@@ -80,15 +81,17 @@ public final class App {
     public App delete(String path, RequestAction handler, Middleware... middleware) { return route(HttpMethod.DELETE, path, handler, middleware); }
     public App delete(String path, Handler handler, Middleware... middleware) { return route(HttpMethod.DELETE, path, handler, middleware); }
 
-    /** {@code handler} under every method: for handlers indifferent to it, a proxy above all. */
+    /**
+     * {@code handler} under every method, the standard ones and any other token a client sends: for
+     * handlers indifferent to it, a proxy, or a protocol of methods of its own. One route; a route
+     * of a single method on the same path wins over it. Its {@link Route#method()} is {@code null}.
+     */
     public App any(String path, RequestAction handler, Middleware... middleware) {
-        for (HttpMethod method : HttpMethod.values()) route(method, path, handler, middleware);
-        return this;
+        return any(path, RequestHandler.of(Objects.requireNonNull(handler, "handler")), middleware);
     }
 
     public App any(String path, Handler handler, Middleware... middleware) {
-        for (HttpMethod method : HttpMethod.values()) route(method, path, handler, middleware);
-        return this;
+        return declare(null, true, path, Objects.requireNonNull(handler, "handler"), middleware);
     }
 
     public App route(HttpMethod method, String path, RequestAction handler, Middleware... middleware) {
@@ -96,25 +99,26 @@ public final class App {
     }
 
     public App route(HttpMethod method, String path, Handler handler, Middleware... middleware) {
-        return declare(method, path, Objects.requireNonNull(handler, "handler"), middleware);
+        return declare(method, false, path, Objects.requireNonNull(handler, "handler"), middleware);
     }
 
     /** A handler class the app builds, with its services as constructor arguments. */
     public App route(HttpMethod method, String path, Class<? extends Handler> handler, Middleware... middleware) {
-        return declare(method, path, Objects.requireNonNull(handler, "handler"), middleware);
+        return declare(method, false, path, Objects.requireNonNull(handler, "handler"), middleware);
     }
 
     public App ws(String path, WebSocketHandler handler, Middleware... middleware) {
-        return declare(null, path, Objects.requireNonNull(handler, "handler"), middleware);
+        return declare(null, false, path, Objects.requireNonNull(handler, "handler"), middleware);
     }
 
     public App ws(String path, Class<? extends WebSocketHandler> handler, Middleware... middleware) {
-        return declare(null, path, Objects.requireNonNull(handler, "handler"), middleware);
+        return declare(null, false, path, Objects.requireNonNull(handler, "handler"), middleware);
     }
 
     /**
      * Every concrete handler in {@code packageName} (and below) carrying a routing annotation
-     * ({@code @GET}, {@code @POST}, {@code @Ws}, …). A package with none of them fails the boot.
+     * ({@code @GET}, {@code @POST}, {@code @Ws}, …, or one marked {@link AnyMethod}, which routes
+     * like {@link #any}). A package with none of them fails the boot.
      */
     public App scan(String packageName) {
         int before = shared.routes.size();
@@ -127,7 +131,7 @@ public final class App {
                     throw new IllegalStateException(type.getName() + " carries two routing annotations: it answers one route");
                 if (!WebSocketHandler.class.isAssignableFrom(type))
                     throw new IllegalStateException(type.getName() + " carries @Ws but is not a WebSocketHandler");
-                declare(null, ws.value(), type, new Middleware[0]);
+                declare(null, false, ws.value(), type, new Middleware[0]);
                 continue;
             }
             if (annotation == null) continue;
@@ -136,7 +140,7 @@ public final class App {
             if (annotation.annotationType() == Sse.class && !SseHandler.class.isAssignableFrom(type))
                 throw new IllegalStateException(type.getName() + " carries @Sse but is not an SseHandler");
             Verb verb = annotation.annotationType().getAnnotation(Verb.class);
-            declare(verb.value(), pathOf(annotation), type, new Middleware[0]);
+            declare(verb == null ? null : verb.value(), verb == null, pathOf(annotation), type, new Middleware[0]);
         }
         if (shared.routes.size() == before)
             throw new IllegalStateException("scan(\"" + packageName + "\") found no handler with a routing annotation");
@@ -227,7 +231,7 @@ public final class App {
             boolean construct = route.handler instanceof Class<?>;
             Class<?> type = construct ? (Class<?>) route.handler : route.handler.getClass();
             Object built = construct ? services.create(type) : route.handler;
-            String label = (route.method == null ? "WS" : route.method.name()) + ' ' + route.path;
+            String label = (route.any ? "*" : route.method == null ? "WS" : route.method.name()) + ' ' + route.path;
 
             List<MiddlewareNode> nodes = new ArrayList<>();
             route.scope.collect(nodes);
@@ -236,7 +240,7 @@ public final class App {
             Middleware[] chain = MiddlewareGraph.order(label, nodes);
             @SuppressWarnings("unchecked")
             Class<? extends Handler> handlerType = (Class<? extends Handler>) type;
-            Route compiled = new Route(route.method == null ? HttpMethod.GET : route.method,
+            Route compiled = new Route(route.any ? null : route.method == null ? HttpMethod.GET : route.method,
                     route.path, handlerType, classesOf(chain));
 
             if (!(built instanceof Handler handler))
@@ -245,13 +249,18 @@ public final class App {
             Next prepared = MiddlewareGraph.compose(handler::prepare, chain);
             Next exchange = boundary(prepared, errors);
             if (!interceptors.isEmpty()) exchange = intercept(compiled, exchange, interceptors);
-            router.add(route.method, route.path, exchange);
+            if (route.any) router.any(route.path, exchange);
+            else router.add(route.method, route.path, exchange);
             for (RouteHook hook : hooks) hook.routed(compiled);
         }
 
         Handler notFound = shared.notFound != null ? shared.notFound : Errors.notFound(dev);
         notFound.initialize(services);
+        // a token no route names is a method this app does not implement, unless a route takes every method
+        boolean everyMethod = shared.routes.stream().anyMatch(Declared::any);
         Next miss = exchange -> {
+            if (exchange.request().method() == null && !everyMethod)
+                throw new HttpException(501, "Unsupported HTTP method");
             String allow = router.allowed(exchange.request());
             if (allow != null) throw HttpException.methodNotAllowed(allow);
             notFound.prepare(exchange);
@@ -270,15 +279,16 @@ public final class App {
 
     // -- Internals ---------------------------------------------------------------
 
-    private App declare(HttpMethod method, String path, Object handler, Middleware[] middleware) {
+    /** {@code method == null} is the WebSocket route key, or every method when {@code any}. */
+    private App declare(HttpMethod method, boolean any, String path, Object handler, Middleware[] middleware) {
         if (shared.compiled) throw new IllegalStateException("Routes are declared before the server starts");
         Class<?> type = handler instanceof Class<?> declared ? declared : handler.getClass();
         boolean websocket = WebSocketHandler.class.isAssignableFrom(type);
-        if (websocket != (method == null))
+        if (websocket != (method == null && !any))
             throw new IllegalArgumentException(websocket
                     ? "WebSocketHandler routes use ws(path, handler)"
                     : "only a WebSocketHandler can use the WebSocket route key");
-        shared.routes.add(new Declared(this, method, PathUtils.join(prefix, PathUtils.sanitize(path)), handler,
+        shared.routes.add(new Declared(this, method, any, PathUtils.join(prefix, PathUtils.sanitize(path)), handler,
                 middleware.clone()));
         return this;
     }
@@ -326,7 +336,8 @@ public final class App {
     private static Annotation verbOf(Class<?> type) {
         Annotation found = null;
         for (Annotation annotation : type.getAnnotations()) {
-            if (!annotation.annotationType().isAnnotationPresent(Verb.class)) continue;
+            if (!annotation.annotationType().isAnnotationPresent(Verb.class)
+                    && !annotation.annotationType().isAnnotationPresent(AnyMethod.class)) continue;
             if (found != null)
                 throw new IllegalStateException(type.getName() + " carries two routing annotations: it answers one route");
             found = annotation;
@@ -342,7 +353,7 @@ public final class App {
         }
     }
 
-    private record Declared(App scope, HttpMethod method, String path, Object handler,
+    private record Declared(App scope, HttpMethod method, boolean any, String path, Object handler,
                             Middleware[] middleware) {}
 
     /** What the root app and its mounts share. */

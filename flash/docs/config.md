@@ -50,6 +50,7 @@ Leave it off in production: the pages disclose internals.
 | Option | Default | Meaning |
 |---|---|---|
 | `maxBodySize` | 10 MiB | Largest request body, in bytes, on both protocols. See [request.md](request.md#body) |
+| `maxDiscardedBodySize` | 2 MiB | Largest body HTTP/1.1 discards, when the handler left it unread, to keep the connection open. See [http1.md](http1.md#unread-bodies) |
 | `maxHeaderBufferSize` | 64 KiB | Largest HTTP/1.1 request head. Above it: `431` |
 | `wsFrameBufferSize` | 64 KiB | Largest WebSocket message. Longer: close code 1009 |
 | `maxConnections` | `heap * 0.5 / 5 MiB`, at least 64 | Connections admitted at once across all listeners. `0` means unlimited |
@@ -67,7 +68,7 @@ All in milliseconds.
 |---|---|---|
 | `headerReadTimeoutMs` | 10,000 | Time to read a full HTTP/1.1 request head once its first byte arrived. Also the TLS handshake. It is an absolute deadline, so trickling one byte at a time does not extend it |
 | `idleKeepAliveTimeoutMs` | 60,000 | Time a keep-alive connection may wait for its next request. Also the wait for the cleartext HTTP/2 preface probe |
-| `bodyReadTimeoutMs` | 30,000 | Time to read a request body, by the handler or by the drain after it |
+| `bodyReadTimeoutMs` | 30,000 | Time to read a request body, by the handler or by the discard after it ([http1.md](http1.md#unread-bodies)) |
 | `shutdownDrainTimeoutMs` | 15,000 | How long `stop()` waits for in-flight requests before closing them |
 
 ## Protocol

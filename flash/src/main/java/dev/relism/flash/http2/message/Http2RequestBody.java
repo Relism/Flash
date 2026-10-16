@@ -32,6 +32,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
   private int inlineFlowControlledBytes;
   private boolean inlineMode;
   private boolean finished;
+  private boolean aborted; // cancelled before END_STREAM: what is left is not the whole body
   private boolean fullyRead;
   private boolean viewing; // head's bytes are lent out in place by fill(), until advance() releases it
 
@@ -49,6 +50,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     inlinePosition = 0;
     inlineFlowControlledBytes = 0;
     finished = false;
+    aborted = false;
     fullyRead = false;
     viewing = false;
     if (inlineMode && inline == null) inline = new byte[Http2Limits.INLINE_BODY_THRESHOLD];
@@ -131,6 +133,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     int discarded;
     lock.lock();
     try {
+      aborted |= !finished;
       finished = true;
       // A buffer lent out in place stays until its reader advances over it or the next begin():
       // back in the pool, another stream could overwrite it under the parser. Its credit goes now.
@@ -182,6 +185,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
         }
       }
       if (head == null) {
+        if (aborted) throw new IOException("request stream reset before its body ended");
         fullyRead = true;
         return -1;
       }
@@ -209,6 +213,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
     if (!finished) {
       throw new IOException("inline request body is not complete");
     }
+    if (aborted) throw new IOException("request stream reset before its body ended");
     if (inlinePosition == received) {
       fullyRead = true;
       return -1;
@@ -231,6 +236,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
   public int fill() throws IOException {
     if (inlineMode) {
       if (!finished) throw new IOException("inline request body is not complete");
+      if (aborted) throw new IOException("request stream reset before its body ended");
       int left = (int) (received - inlinePosition);
       if (left == 0) fullyRead = true;
       return left == 0 ? -1 : left;
@@ -246,6 +252,7 @@ public final class Http2RequestBody extends InputStream implements BodyCompletio
         }
       }
       if (head == null) {
+        if (aborted) throw new IOException("request stream reset before its body ended");
         fullyRead = true;
         return -1;
       }

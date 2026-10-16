@@ -57,6 +57,15 @@ public class ServerConfig {
   @Builder.Default long maxBodySize = 10L * 1024 * 1024;
 
   /**
+   * Largest request body, in bytes, that HTTP/1.1 discards for the connection to stay open when the
+   * handler left it unread. A larger one, or a chunked one, closes the connection instead: a client
+   * sends the whole body before it reads the answer, so it is not kept sending an upload the
+   * handler refused. Raise it for clients that report a closed connection as a network error
+   * instead of reading the answer, such as the Windows WebDAV client. Default: 2 MiB.
+   */
+  @Builder.Default long maxDiscardedBodySize = 2L * 1024 * 1024;
+
+  /**
    * Addresses of the proxies in front of this server. Only a connection from one of them has its
    * {@code X-Forwarded-For} believed by {@code Request#clientAddress()}; from anyone else the
    * header is whatever the client chose to send.

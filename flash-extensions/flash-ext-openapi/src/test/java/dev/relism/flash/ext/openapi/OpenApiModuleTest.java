@@ -30,6 +30,7 @@ class OpenApiModuleTest {
     static FlashTest app = FlashTest.of(() -> App.create()
             .install(new OpenApiModule("/api", "My API", "2.0.0", "desc"))
             .route(HttpMethod.GET, "/health", Health.class)
+            .any("/proxy/**", new Users())
             .mount("/api/v1", v1 -> v1.route(HttpMethod.GET, "/users", Users.class)));
 
     @RegisterExtension
@@ -50,6 +51,13 @@ class OpenApiModuleTest {
 
         String page = app.get("/api/docs").expectStatus(200).body();
         assertTrue(page.contains("SwaggerUIBundle") && page.contains("/api.json"), page);
+    }
+
+    /** OpenAPI 3.0 names eight methods; a route that takes any token cannot be one of its operations. */
+    @Test
+    void aRouteForEveryMethodIsLeftOut() {
+        String json = app.get("/api.json").body();
+        assertTrue(!json.contains("/proxy"), json);
     }
 
     @Test

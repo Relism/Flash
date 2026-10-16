@@ -57,6 +57,8 @@ class HttpServerTest {
             return res.body(body);
         });
 
+        app.post("/api/refuse", (req, res) -> res.status(413).body("refused"));
+
         server = Server.start(app, config1);
         port = server.port();
     }
@@ -259,6 +261,62 @@ class HttpServerTest {
             assertTrue(second.endsWith("streaming response body"));
             assertTrue(third.contains("Content-Length: 23"));
             assertTrue(third.endsWith("streaming response body"));
+        }
+    }
+
+    /** An upload refused before it was read: the answer arrives while the client still sends, and the connection closes. */
+    @Test
+    void aLargeBodyLeftUnreadIsNotReadAndTheConnectionCloses() throws Exception {
+        try (Socket socket = new Socket("127.0.0.1", port);
+             OutputStream out = socket.getOutputStream();
+             InputStream in = socket.getInputStream()) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            out.write(("POST /api/refuse HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + 8 * 1024 * 1024 + "\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            out.write(new byte[1024]);
+            out.flush();
+
+            String answer = readOneResponse(in);
+            assertTrue(answer.startsWith("HTTP/1.1 413") && answer.contains("Connection: close") && answer.endsWith("refused"), answer);
+            assertEquals(-1, in.read(), "closed without waiting for the other 8 MiB");
+        }
+    }
+
+    @Test
+    void aSmallBodyLeftUnreadIsDiscardedAndTheConnectionStays() throws Exception {
+        try (Socket socket = new Socket("127.0.0.1", port);
+             OutputStream out = socket.getOutputStream();
+             InputStream in = socket.getInputStream()) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            out.write("POST /api/refuse HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1024\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            out.write(new byte[1024]);
+            out.write("GET /api/ping HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+
+            assertTrue(readOneResponse(in).contains("Connection: keep-alive"));
+            assertTrue(readOneResponse(in).endsWith("pong"));
+        }
+    }
+
+    /** With a higher maxDiscardedBodySize, the same refused upload is read to its end and the connection stays. */
+    @Test
+    void aHigherDiscardLimitReadsTheUnreadBodyAndKeepsTheConnection() throws Exception {
+        Server lenient = Server.start(App.create().post("/api/refuse", (req, res) -> res.status(413).body("refused")),
+                ServerConfig.builder().port(0).host("127.0.0.1").maxDiscardedBodySize(8 * 1024 * 1024).build());
+        try (Socket socket = new Socket("127.0.0.1", lenient.port());
+             OutputStream out = socket.getOutputStream();
+             InputStream in = socket.getInputStream()) {
+            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            out.write(("POST /api/refuse HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + 8 * 1024 * 1024 + "\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            out.write(new byte[8 * 1024 * 1024]);
+            out.write("POST /api/refuse HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+
+            assertTrue(readOneResponse(in).contains("Connection: keep-alive"));
+            assertTrue(readOneResponse(in).endsWith("refused"));
+        } finally {
+            lenient.stop().join();
         }
     }
 }

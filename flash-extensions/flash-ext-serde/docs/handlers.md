@@ -72,9 +72,19 @@ The same four parameters for a protocol handler. It adds no framing and no cardi
 | `I decode(byte[] bytes, int offset, int length)` | Decode one message. Throws `IllegalStateException` when `I` is `Void` |
 | `void encode(O value, ByteWriter output)` | Encode one message into a buffer. Throws `IllegalStateException` when `O` is `Void` |
 
-Both bases also expose `static Type[] signature(Class<?> handler)`, which returns the four resolved
-arguments. Extensions use it at boot to validate a handler against something else, such as a
-protocol definition or an OpenAPI document.
+## TypeArguments
+
+`TypeArguments` reads a handler's signature at boot, for an extension that checks a handler against
+something else (a protocol definition, a document) or binds a base of its own:
+
+| Method | Returns |
+|---|---|
+| `TypeArguments.of(Class<?> handler, Class<?> base)` | The arguments `handler` gives `base`'s type parameters, in their order, resolved through every class between them. `IllegalStateException` when `handler` does not extend `base` with arguments |
+| `TypeArguments.open(Type type)` | Whether `type` still holds a type variable |
+
+```java
+Type[] types = TypeArguments.of(CreateUser.class, CodecRequestHandler.class); // Json, NewUser, Json, User
+```
 
 ## Rules for the generic signature
 

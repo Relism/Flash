@@ -2,7 +2,6 @@ package dev.relism.flash.ext.serde;
 
 import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.http.DuplexHandler;
-import java.lang.reflect.Type;
 
 /** Serde binding for protocol-specific duplex handlers; it defines no framing or cardinality. */
 public abstract class CodecDuplexHandler<CI extends Codec, I, CO extends Codec, O>
@@ -19,11 +18,6 @@ public abstract class CodecDuplexHandler<CI extends Codec, I, CO extends Codec, 
     }
 
     protected void onCodecInit() {}
-
-    /** The four resolved signature arguments, for protocol validation at boot. */
-    public static Type[] signature(Class<?> handler) {
-        return CodecBinding.arguments(handler, CodecDuplexHandler.class);
-    }
 
     @SuppressWarnings("unchecked")
     protected final I decode(byte[] bytes, int offset, int length) throws Exception {

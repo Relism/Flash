@@ -13,39 +13,77 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.concurrent.locks.ReentrantLock;
 import lombok.extern.slf4j.Slf4j;
 
-/** gRPC transport and protobuf binding shared by its four explicit cardinalities. */
+/**
+ * gRPC transport and protobuf binding shared by its four explicit cardinalities. The same route
+ * answers gRPC over HTTP/2 and gRPC-Web over any HTTP version, chosen by the request's content type.
+ */
 @Slf4j
 public abstract sealed class GrpcHandler<I, O>
         extends CodecDuplexHandler<Protobuf, I, Protobuf, O>
         permits GrpcUnary, GrpcServerStreaming, GrpcClientStreaming, GrpcBidiStreaming {
-    private static final byte[] CONTENT_TYPE = "application/grpc".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] HTTP_2 = "HTTP/2".getBytes(StandardCharsets.US_ASCII);
     static final int MAX_MESSAGE = 4 * 1024 * 1024;
+
+    /** How a call's messages travel: gRPC, gRPC-Web, or gRPC-Web in base64. */
+    enum Wire {
+        GRPC("application/grpc"), WEB("application/grpc-web+proto"), TEXT("application/grpc-web-text+proto");
+
+        final byte[] type;
+
+        Wire(String type) {
+            this.type = type.getBytes(StandardCharsets.US_ASCII);
+        }
+
+        /** How the request arrived; null for a message format other than protobuf. */
+        static Wire of(Request request) {
+            String type = request.header("content-type");
+            if (type == null) return null;
+            int parameters = type.indexOf(';');
+            return switch ((parameters < 0 ? type : type.substring(0, parameters)).strip().toLowerCase(Locale.ROOT)) {
+                case "application/grpc", "application/grpc+proto" -> GRPC;
+                case "application/grpc-web", "application/grpc-web+proto" -> WEB;
+                case "application/grpc-web-text", "application/grpc-web-text+proto" -> TEXT;
+                default -> null;
+            };
+        }
+
+        /** How the response leaves: as the request came, or in base64 when the client asks for it. */
+        Wire answer(Request request) {
+            String accept = request.header("accept");
+            return this == WEB && accept != null && accept.contains("application/grpc-web-text") ? TEXT : this;
+        }
+    }
 
     abstract void invoke(Request request, Call<I, O> call) throws Exception;
 
     @Override
     protected final void prepare(Request request, Response response) {
-        if (!http2(request.requestLine().getProtocol())) throw new HttpException(505, "gRPC runs over HTTP/2");
-        String type = request.header("content-type");
-        if (type == null || !(type.equals("application/grpc") || type.startsWith("application/grpc+proto")
-                || type.startsWith("application/grpc;")))
-            throw new HttpException(415, "gRPC carries application/grpc");
-        response.type(CONTENT_TYPE);
+        Wire wire = Wire.of(request);
+        if (wire == null) throw new HttpException(415, "gRPC carries application/grpc or application/grpc-web, in protobuf");
+        if (wire == Wire.GRPC && !http2(request.requestLine().getProtocol())) throw new HttpException(505, "gRPC runs over HTTP/2");
+        response.type(wire.answer(request).type);
     }
 
     /** A failure ends the call with its status in the trailers, and still fails the work for the scopes around it. */
     @Override
     protected final void handle(Request request, Response response, Duplex duplex) {
-        Call<I, O> call = new Call<>(this, duplex, response);
+        Wire wire = Wire.of(request);
+        Call<I, O> call = new Call<>(this, duplex, response, wire, wire.answer(request));
         try {
+            if (call.web && (this instanceof GrpcClientStreaming || this instanceof GrpcBidiStreaming))
+                throw new GrpcException(Status.UNIMPLEMENTED, "gRPC-Web carries unary and server-streaming calls");
             invoke(request, call);
             call.close(null);
         } catch (Throwable failure) {
-            call.close(failure);
+            try {
+                call.close(failure);
+            } catch (IOException gone) {
+                failure.addSuppressed(gone);
+            }
             throw new AnsweredFailure(failure);
         }
     }
@@ -57,21 +95,24 @@ public abstract sealed class GrpcHandler<I, O>
     }
 
     static final class Call<I, O> extends GrpcInput<I> {
-        private static final byte[] PREFIX = new byte[5];
-
         private final GrpcHandler<I, O> handler;
-        private final Duplex duplex;
+        private final Duplex source;
+        private final Duplex sink;
         private final Response response;
+        final boolean web;
         private final byte[] prefix = new byte[5];
         private final ReentrantLock lock = new ReentrantLock();
-        private final ByteWriter out = new ByteWriter(256);
+        private final ByteWriter out = new ByteWriter(256); // frames not yet written
         private byte[] gathered = new byte[0];
         private boolean closed;
 
-        Call(GrpcHandler<I, O> handler, Duplex duplex, Response response) {
+        Call(GrpcHandler<I, O> handler, Duplex duplex, Response response, Wire request, Wire answer) {
             this.handler = handler;
-            this.duplex = duplex;
+            Duplex text = answer == Wire.TEXT ? new GrpcWebText(duplex) : null;
+            this.source = request == Wire.TEXT ? text : duplex;
+            this.sink = text != null ? text : duplex;
             this.response = response;
+            this.web = answer != Wire.GRPC;
         }
 
         @Override
@@ -84,11 +125,11 @@ public abstract sealed class GrpcHandler<I, O>
                 throw new GrpcException(Status.RESOURCE_EXHAUSTED, "message exceeds " + MAX_MESSAGE + " bytes");
             int length = (int) size;
             try {
-                if (length == 0 || duplex.fill() >= length) {
-                    byte[] bytes = length == 0 ? prefix : duplex.array();
-                    int offset = length == 0 ? 0 : duplex.offset();
+                if (length == 0 || source.fill() >= length) {
+                    byte[] bytes = length == 0 ? prefix : source.array();
+                    int offset = length == 0 ? 0 : source.offset();
                     I value = handler.decode(bytes, offset, length);
-                    if (length != 0) duplex.advance(length);
+                    if (length != 0) source.advance(length);
                     return value;
                 }
                 if (gathered.length < length) gathered = new byte[Math.max(length, Math.max(256, gathered.length * 2))];
@@ -112,54 +153,89 @@ public abstract sealed class GrpcHandler<I, O>
         }
 
         void send(O value) throws IOException {
-            write(value, true);
-        }
-
-        /** The one reply of a unary or client-streaming call: the trailers follow at once, so no flush of its own. */
-        void reply(O value) throws IOException {
-            write(value, false);
-        }
-
-        private void write(O value, boolean flush) throws IOException {
             lock.lock();
             try {
-                if (closed) throw new IOException("the call has ended");
-                out.reset();
-                out.writeBytes(PREFIX);
-                try {
-                    handler.encode(value, out);
-                } catch (IOException | RuntimeException failure) {
-                    throw failure;
-                } catch (Exception failure) {
-                    throw new IOException(failure);
-                }
-                byte[] bytes = out.array();
-                int length = out.length() - PREFIX.length;
-                bytes[0] = 0;
-                bytes[1] = (byte) (length >>> 24);
-                bytes[2] = (byte) (length >>> 16);
-                bytes[3] = (byte) (length >>> 8);
-                bytes[4] = (byte) length;
-                duplex.write(bytes, 0, out.length());
-                if (flush) duplex.flush();
+                append(value);
+                drain();
+                sink.flush();
             } finally {
                 lock.unlock();
             }
         }
 
-        void close(Throwable cause) {
+        /** The one reply of a unary or client-streaming call: it leaves with the trailers, in one write. */
+        void reply(O value) throws IOException {
+            lock.lock();
+            try {
+                append(value);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private void append(O value) throws IOException {
+            if (closed) throw new IOException("the call has ended");
+            int start = out.reserve(5);
+            try {
+                handler.encode(value, out);
+            } catch (IOException | RuntimeException failure) {
+                out.reset();
+                throw failure;
+            } catch (Exception failure) {
+                out.reset();
+                throw new IOException(failure);
+            }
+            frame(start, 0);
+        }
+
+        private void frame(int start, int flags) {
+            byte[] bytes = out.array();
+            int length = out.length() - start - 5;
+            bytes[start] = (byte) flags;
+            bytes[start + 1] = (byte) (length >>> 24);
+            bytes[start + 2] = (byte) (length >>> 16);
+            bytes[start + 3] = (byte) (length >>> 8);
+            bytes[start + 4] = (byte) length;
+        }
+
+        private void drain() throws IOException {
+            int length = out.length();
+            if (length == 0) return;
+            out.reset(); // first, so a failed write is not repeated by close
+            sink.write(out.array(), 0, length);
+        }
+
+        /**
+         * Ends the call with its status: in the HTTP trailers for gRPC; for gRPC-Web in a last frame
+         * flagged {@code 0x80}, or in the headers when no message was sent (trailers-only).
+         */
+        void close(Throwable cause) throws IOException {
             lock.lock();
             try {
                 if (closed) return;
                 closed = true;
                 Status status = cause == null ? Status.OK : status(cause);
-                response.trailer("grpc-status", Integer.toString(status.ordinal()));
                 String message = cause == null ? null : message(cause);
-                if (message != null) response.trailer("grpc-message", percentEncoded(message));
                 if (status == Status.INTERNAL && message == null) {
                     if (cause instanceof IOException || cause instanceof UncheckedIOException)
                         log.debug("gRPC call ended by its transport", cause);
                     else log.error("gRPC handler failed", cause);
+                }
+                String code = Integer.toString(status.ordinal());
+                String detail = message == null ? null : percentEncoded(message);
+                if (!web) {
+                    drain();
+                    response.trailer("grpc-status", code);
+                    if (detail != null) response.trailer("grpc-message", detail);
+                } else if (out.length() == 0 && !response.isCommitted()) {
+                    response.header("grpc-status", code);
+                    if (detail != null) response.header("grpc-message", detail);
+                } else {
+                    int start = out.reserve(5);
+                    out.writeAscii("grpc-status: " + code + "\r\n");
+                    if (detail != null) out.writeAscii("grpc-message: " + detail + "\r\n");
+                    frame(start, 0x80);
+                    drain();
                 }
             } finally {
                 lock.unlock();
@@ -206,14 +282,14 @@ public abstract sealed class GrpcHandler<I, O>
         private boolean copy(byte[] into, int offset, int length, boolean endAllowed) throws IOException {
             int copied = 0;
             while (copied < length) {
-                int available = duplex.fill();
+                int available = source.fill();
                 if (available < 0) {
                     if (endAllowed && copied == 0) return false;
                     throw new EOFException("gRPC request ended mid-message");
                 }
                 int count = Math.min(available, length - copied);
-                System.arraycopy(duplex.array(), duplex.offset(), into, offset + copied, count);
-                duplex.advance(count);
+                System.arraycopy(source.array(), source.offset(), into, offset + copied, count);
+                source.advance(count);
                 copied += count;
             }
             return true;
