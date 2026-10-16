@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/Relism/Flash/compare/v3.0.0...v3.0.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **core:** declare ServerConfigBuilder so the aggregated JavaDoc builds ([#11](https://github.com/Relism/Flash/issues/11)) ([b0cdce9](https://github.com/Relism/Flash/commit/b0cdce9e471e4d99b8ff4c82539c24ecc5480f70))
+
 ## [3.0.0](https://github.com/Relism/Flash/compare/v2.0.0...v3.0.0) (2026-10-16)
 
 
