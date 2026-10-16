@@ -13,7 +13,7 @@
     <artifactId>flash-ext-openapi</artifactId>
 
     <properties>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
     </properties>
 
     <dependencies>

@@ -13,7 +13,7 @@
     <artifactId>flash-ext-view-thymeleaf</artifactId>
 
     <properties>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
     </properties>
 
     <dependencies>
@@ -25,7 +25,7 @@
         <dependency>
             <groupId>org.thymeleaf</groupId>
             <artifactId>thymeleaf</artifactId>
-            <version>3.1.2.RELEASE</version>
+            <version>3.1.5.RELEASE</version>
         </dependency>
 
         <dependency>
