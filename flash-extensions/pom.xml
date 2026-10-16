@@ -237,7 +237,7 @@
             <dependency>
                 <groupId>org.hibernate.orm</groupId>
                 <artifactId>hibernate-core</artifactId>
-                <version>6.6.35.Final</version>
+                <version>7.4.13.Final</version>
             </dependency>
             <dependency>
                 <groupId>org.testcontainers</groupId>
