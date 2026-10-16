@@ -6,7 +6,7 @@ those; use this module directly only to add another Jackson data format.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-jackson-core</artifactId>
 </dependency>
 ```

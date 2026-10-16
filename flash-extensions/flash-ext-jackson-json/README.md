@@ -5,7 +5,7 @@ JSON request bodies and responses through Jackson. Installs the `Json` codec and
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-jackson-json</artifactId>
 </dependency>
 ```

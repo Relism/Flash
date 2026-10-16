@@ -6,7 +6,7 @@ messages. Constraints are read by reflection at runtime, so the build needs noth
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-validation-jakarta</artifactId>
 </dependency>
 ```

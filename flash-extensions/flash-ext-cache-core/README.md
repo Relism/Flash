@@ -6,7 +6,7 @@ optional hit statistics. It contains no implementation. Install a backend such a
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-cache-core</artifactId>
 </dependency>
 ```

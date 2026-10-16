@@ -9,7 +9,7 @@ Transactions and repositories for relational data, independent of the access lib
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-data-core</artifactId>
 </dependency>
 ```

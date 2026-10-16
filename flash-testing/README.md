@@ -5,7 +5,7 @@ app is the one production builds. A fake replaces exactly one service.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-testing</artifactId>
     <scope>test</scope>
 </dependency>

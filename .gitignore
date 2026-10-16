@@ -8,12 +8,7 @@ target/
 .kotlin
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-.idea/workspace.xml
-.idea/inspectionProfiles/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -45,6 +40,7 @@ build/
 
 CLAUDE.md
 .claude/
+PLAN-*.md
 
 ### Local / scratch ###
 flash/src/main/java/dev/relism/Main.java

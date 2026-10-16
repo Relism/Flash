@@ -6,7 +6,7 @@ rules themselves come from an engine module.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-validation-core</artifactId>
 </dependency>
 ```

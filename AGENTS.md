@@ -5,7 +5,33 @@ when working on this repository. Read it entirely before making any change.
 
 ---
 
+## Repositories
+
+| Repository | What |
+|------------|------|
+| [Relism/Flash](https://github.com/Relism/Flash) | This repository |
+| [Relism/FastPathRouter](https://github.com/Relism/FastPathRouter) | `fpr-core`, the router `flash` depends on, released the same way |
+| [Relism/FlashDocs](https://github.com/Relism/FlashDocs) | The documentation site |
+
+Everything lives on GitHub and is published through JitPack. Nothing is built, published or
+resolved from Gitea.
+
+---
+
 ## Git Workflow
+
+### Day-to-day flow
+
+1. Branch from an up-to-date `master`, named as in the table below.
+2. Commit with Conventional Commits. Commits on a branch need not be signed: the squash merge
+   commit on `master` is created and signed by GitHub.
+3. Push and open a PR whose title is the Conventional Commit that should land on `master`.
+4. Wait for the required checks, then squash merge. Auto-merge can be armed while checks run.
+   The branch is deleted on merge.
+5. The change waits in the release PR that release-please keeps up to date, until a maintainer
+   releases it. See [Release Process](#release-process-for-maintainers-only).
+
+Dependabot PRs follow the same path: review the changelog of the update, merge once green.
 
 ### Branch Naming
 
@@ -13,14 +39,14 @@ when working on this repository. Read it entirely before making any change.
 |------|---------|---------|
 | New feature | `feature/<scope>/<short-description>` | `feature/ext-oidc/pkce-support` |
 | Bug fix | `fix/<scope>/<short-description>` | `fix/core/router-npe` |
-| Hotfix on released version | `hotfix/<version>/<short-description>` | `hotfix/2.0.1/auth-bypass` |
-| CI/infra changes | `feature/ci/<short-description>` | `feature/ci/add-snapshot-workflow` |
+| CI/infra changes | `feature/ci/<short-description>` | `feature/ci/dependabot-groups` |
 
 Rules:
 - Always branch from `master`.
 - Branch names are lowercase, words separated by `-`.
 - Never push directly to `master`.
-- Never create `develop`, `release/*`, or any other long-lived branch.
+- Never create `develop`, `release/*`, or any other long-lived branch. A fix for a released
+  version lands on `master` and ships in the next PATCH release.
 
 ### Commit Messages: Conventional Commits
 
@@ -47,17 +73,33 @@ Examples:
 feat(ext-oidc): add PKCE support
 fix(core): fix NPE in RouteHandler when path is null
 chore(deps): upgrade jackson to 2.18.0
-ci: add timeout to snapshot workflow
+ci: add timeout to the CI workflow
 chore(release): 2.1.0
 ```
 
+A breaking change marks the type with `!` (`feat(core)!: ...`) or adds a `BREAKING CHANGE:` footer.
+It makes the next release a MAJOR one.
+
 ### Pull Requests
 
-- Every branch must be merged via PR, never with a direct push.
-- PR title must follow Conventional Commits format.
-- CI (`ci.yml`) must be green before merging.
-- Squash merge is preferred for `feature/*` and `fix/*` to keep history clean.
-- Merge commit is preferred for hotfixes (preserves the fix commit intact).
+- Every branch is merged through a PR. A ruleset on `master` rejects direct pushes, force pushes
+  and deletion.
+- PRs are squash merged, the only merge method enabled. The PR title becomes the commit on
+  `master` and the changelog entry, so it must follow Conventional Commits. `pr-title.yml` checks it.
+- `Build & Test` (`ci.yml`) and `Conventional Commit title` (`pr-title.yml`) must pass before merging.
+
+### Repository settings
+
+Configured on GitHub, not in files. Change them only on explicit instruction.
+
+| Setting | Value |
+|---------|-------|
+| Merge methods | Squash only, commit title from the PR title, branch deleted on merge |
+| Ruleset `master` | PR required, the two checks above required, linear history, no force push, no deletion. Repository admins may bypass, only inside a PR |
+| Ruleset `release tags` | Tags `v*` cannot be moved or deleted |
+| Releases | Immutable once published |
+| Actions | GitHub-owned actions and `googleapis/release-please-action` only. The default token is read-only, workflows ask for more in `permissions:`. Actions may open PRs, which release-please needs |
+| Security | Dependabot alerts and security updates, secret scanning with push protection, CodeQL default setup, private vulnerability reporting |
 
 ---
 
@@ -69,17 +111,38 @@ chore(release): 2.1.0
   - MAJOR: breaking API changes
   - MINOR: new backward-compatible features
   - PATCH: backward-compatible bug fixes on an already-released version
-- During development, master always carries a `-SNAPSHOT` version.
-- **Never manually edit the version**: versions are bumped exclusively by the
-  `prepare-release` GitHub Actions workflow.
+- Between releases, `master` carries the last released version. Consumers only ever see release
+  tags, so there is no `-SNAPSHOT` phase (`skip-snapshot` in `release-please-config.json`).
+- **Never manually edit the project version**: versions are bumped exclusively by
+  [release-please](https://github.com/googleapis/release-please), configured in
+  `release-please-config.json` and `.release-please-manifest.json`.
 
 ### Release Process (for maintainers only)
 
-1. Ensure `master` is green (CI passing).
-2. Go to GitHub Actions → `Prepare Release` → `Run workflow`.
-3. Input `version` (e.g. `2.1.0`) and `next_version` (e.g. `2.2.0`).
-4. The workflow handles everything: bump, commit, tag, push.
-5. The `release` workflow then triggers automatically on the tag.
+1. release-please keeps a PR titled `chore(release): <version>` open. It bumps every `pom.xml` and
+   `CHANGELOG.md` from the Conventional Commits merged since the last release.
+2. Merging it tags `v<version>` and creates the GitHub Release. `release.yml` then builds the tag
+   on JitPack and publishes the JavaDoc.
+
+PRs opened by release-please do not trigger workflows, so their checks never report. A repository
+admin merges them through the ruleset bypass, which works only inside a PR.
+
+### Publishing
+
+Releases are served by [JitPack](https://jitpack.io/#Relism/Flash), which builds the tag with the
+JDK set in `jitpack.yml`. Every module is published as `dev.relism.Flash:<artifactId>:v<version>`.
+The `dev.relism` prefix comes from the DNS TXT record `git.relism.dev` pointing to
+`https://github.com/Relism`. JitPack also serves every tag as `com.github.Relism.Flash`, but builds
+each groupId separately, so `release.yml` requests the `dev.relism` build that consumers resolve.
+
+JitPack rewrites the groupId and version of every published POM, but not literal values inside
+`<dependencyManagement>`. Managed Flash modules are therefore declared with
+`<groupId>${project.groupId}</groupId>` and `<version>${project.version}</version>`, never
+`dev.relism`, so that importing `flash-parent` as a BOM works for consumers.
+
+The JitPack repository is also declared in the root `pom.xml`, because `fpr-core`
+(`dev.relism.FastPathRouter`) is published there too. To move to a newer FastPathRouter release,
+change the `fpr-core` version in the root `pom.xml` in a PR, or merge the Dependabot PR that does it.
 
 ---
 
@@ -95,7 +158,8 @@ chore(release): 2.1.0
 - When adding a new extension:
   1. Add the module to `flash-extensions/pom.xml` `<modules>`.
   2. Add the dependency to `flash-extensions/pom.xml` `<dependencyManagement>`.
-  3. Add the dependency to the root `pom.xml` `<dependencyManagement>`.
+  3. Add the dependency to the root `pom.xml` `<dependencyManagement>`. In both, use
+     `${project.groupId}` and `${project.version}`, as explained in [Publishing](#publishing).
   4. Do **not** declare a `<version>` in the new module's POM: it inherits from the parent.
   5. Expose it as a `Module`. What it adds to other modules goes through services (`RouteHook`,
      `OpenApiContributor`, `AuthenticationMechanism`), read with `Services.all`; a contribution to
@@ -115,9 +179,10 @@ documentation that describes it is updated in the same branch.
 
 | Where | What |
 |-------|------|
-| `README.md` | What Flash is, the module tables, the build commands. Nothing else |
+| `README.md` | What Flash is, how to install it, the module tables, the build commands. Nothing else |
 | `flash/docs/` | The core. One file per feature, `docs/README.md` is the index, `docs/http2/` holds HTTP/2 |
 | `flash-testing/` | `README.md` and `docs/` |
+| `flash-extensions/README.md` | What an extension is, how to depend on one, the layout of a module |
 | `flash-extensions/<module>/README.md` | What the extension is, the Maven coordinates, one minimal example, a table of its docs |
 | `flash-extensions/<module>/docs/` | One file per aspect of the extension, with descriptive lowercase names such as `usage.md` or `security.md` |
 
@@ -158,19 +223,23 @@ exists, and do not add a note that something changed: the documentation states t
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `ci.yml` | Push to any branch, PR to master | Compile and test, required gate |
-| `snapshot.yml` | Push to `master` | Deploy `-SNAPSHOT` to `maven.relism.dev/snapshots` |
-| `prepare-release.yml` | Manual `workflow_dispatch` | Bump version, commit, tag, push |
-| `release.yml` | Push of tag `v*` | GPG sign, deploy to `/releases`, JavaDoc to GitHub Pages, GitHub Release |
+| `ci.yml` | PR, push to `master` | Compile and test, required check `Build & Test` |
+| `pr-title.yml` | PR opened or edited | Conventional Commit title, required check |
+| `release.yml` | Push to `master` | release-please; after a release, the JitPack build and `docs.yml` |
+| `docs.yml` | Called by `release.yml`, or manual | Aggregated JavaDoc to the `gh-pages` branch |
 
-**Agents must never manually trigger `prepare-release` or modify version strings.**
+Dependabot (`.github/dependabot.yml`) opens weekly PRs for Maven and GitHub Actions updates, minor
+and patch updates grouped. CodeQL runs through GitHub's default setup.
+
+**Agents must never merge release PRs or modify version strings.**
 
 ---
 
 ## What Agents Must NOT Do
 
 - Push directly to `master` or `gh-pages`.
-- Manually edit `<version>` tags in any POM.
+- Manually edit the project `<version>` in any POM.
+- Merge a release-please PR, or create, move or delete a `v*` tag.
 - Add new `<repositories>` or `<distributionManagement>` entries without explicit instruction.
 - Modify `.github/workflows/*.yml` files without explicit instruction.
 - Commit generated files (`target/`, `*.class`, `*.versionsBackup`).

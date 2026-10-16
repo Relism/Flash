@@ -5,7 +5,7 @@ Builds a Vite project during `mvn package` and puts the result in the jar where
 
 ```xml
 <plugin>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-vite-maven-plugin</artifactId>
     <version>${flash.version}</version>
     <executions>
@@ -14,6 +14,18 @@ Builds a Vite project during `mvn package` and puts the result in the jar where
         </execution>
     </executions>
 </plugin>
+```
+
+The plugin is published on JitPack like the rest of Flash, so the build also needs JitPack as a
+plugin repository:
+
+```xml
+<pluginRepositories>
+    <pluginRepository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </pluginRepository>
+</pluginRepositories>
 ```
 
 | Page | Content |

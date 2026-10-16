@@ -15,7 +15,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>dev.relism</groupId>
+            <groupId>dev.relism.FastPathRouter</groupId>
             <artifactId>fpr-core</artifactId>
         </dependency>
         <dependency>

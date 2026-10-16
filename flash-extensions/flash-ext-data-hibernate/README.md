@@ -5,7 +5,7 @@ over a `SessionFactory`, and ready repositories for any mapped entity.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-data-hibernate</artifactId>
 </dependency>
 ```

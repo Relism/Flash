@@ -5,7 +5,7 @@ Plain JDBC for [`flash-ext-data-core`](../flash-ext-data-core/README.md): a `Jdb
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-data-jdbc</artifactId>
 </dependency>
 ```

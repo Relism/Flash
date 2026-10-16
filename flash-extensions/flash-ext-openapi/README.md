@@ -6,7 +6,7 @@ handlers; annotations add only what the code cannot say.
 
 ```xml
 <dependency>
-    <groupId>dev.relism</groupId>
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-openapi</artifactId>
 </dependency>
 ```
