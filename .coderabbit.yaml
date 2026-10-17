@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit also reads AGENTS.md as the code guidelines of this repository.
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - master
+    # release-please PRs only bump versions and the changelog
+    ignore_usernames:
+      - "github-actions[bot]"
+  path_filters:
+    - "!CHANGELOG.md"
+    - "!mvnw"
+    - "!mvnw.cmd"
+    - "!.mvn/wrapper/**"
+  path_instructions:
+    - path: "**/pom.xml"
+      instructions: |
+        When a dependency or plugin version changes, as in every Dependabot PR:
+        - Read the release notes between the old and the new version. List the behavior changes,
+          deprecations and removals that touch an API this repository uses, with the files that use it.
+        - Name every module that depends on the artifact, directly or transitively. Extensions are the
+          most exposed: a new version can serialize, validate or negotiate differently with green unit
+          tests, so point at the interop and integration tests that cover them.
+        - For a major version, check the Java baseline, the javax/jakarta namespace and removed APIs.
+        - Flag artifacts that must move together and are not managed together, such as the Jackson
+          modules (managed through jackson-bom), Netty, gRPC with protobuf, Hibernate with Jakarta
+          Persistence.
+        - Managed Flash modules must use ${project.groupId} and ${project.version}, never a literal
+          dev.relism groupId: JitPack does not rewrite literals inside dependencyManagement.
+    - path: "**/src/main/java/**/*.java"
+      instructions: |
+        - The HTTP/1 and HTTP/2 paths (parsing, routing, framing, HPACK) are allocation-free per request,
+          enforced by PerformanceGateTest. Flag allocations, boxing, capturing lambdas, iterators and
+          String building on those paths.
+        - A change to a public type, method, default, status code, header or log line needs the matching
+          documentation update in flash/docs or the extension's docs, as AGENTS.md requires.
+        - Lombok-generated types must not appear in public signatures unless declared in the source,
+          or javadoc cannot resolve them.
+    - path: "**/*.md"
+      instructions: |
+        Check documentation against the code: every default, limit, status code and name must match the
+        source. English, plain and concise, no em dashes, no marketing language, no benchmark numbers,
+        test counts or tool versions.
+    - path: ".github/**"
+      instructions: |
+        Workflows use the least permissions they need, only GitHub-owned actions and
+        googleapis/release-please-action, and never print secrets.
+
+knowledge_base:
+  linked_repositories:
+    - repository: "Relism/FastPathRouter"
+      instructions: "fpr-core, the router flash depends on; its match() is allocation-free per MatchResult."
