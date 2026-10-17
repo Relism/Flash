@@ -110,5 +110,6 @@ jobs:
             | sha256sum --check
           tar --extract --gzip --file /tmp/grpcurl.tgz --directory /tmp grpcurl
 
+      # test, not verify: the coverage checks cannot pass on a run of the interop tests alone
       - name: Interop tests
-        run: mvn -B -Pinterop -Dgrpcurl.executable=/tmp/grpcurl -Dcurl.executable=/usr/bin/curl clean verify
+        run: mvn -B -Pinterop -Dgrpcurl.executable=/tmp/grpcurl -Dcurl.executable=/usr/bin/curl clean test
