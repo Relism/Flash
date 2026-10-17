@@ -11,11 +11,13 @@ import dev.relism.flash.testing.FlashTest;
 import io.avaje.validation.constraints.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The same rules as the jakarta engine, checked by generated adapters: the types carry Avaje's
@@ -33,6 +35,37 @@ class AvajeValidationTest {
         engine.verify(new Bounded(5));
         ValidationException broken = assertThrows(ValidationException.class, () -> engine.verify(new Bounded(50)));
         assertEquals("n", broken.violations().get(0).path());
+    }
+
+    /** No constraint, so the generator writes no adapter for it, @Valid or not. */
+    @Valid
+    record Unconstrained(boolean source, String fallbackLocale) {}
+
+    /** A constraint without @Valid: no adapter either, and that one is a mistake. */
+    record Unmarked(@NotBlank String name) {}
+
+    @Test
+    void aTypeWithNoConstraintHasNothingToCheck() {
+        AvajeValidation engine = new AvajeValidation();
+        engine.verify(new Unconstrained(true, null));
+        engine.verify(new Unconstrained(false, "en"));
+    }
+
+    /** Its only rule is on a type argument, and it has no @Valid either. */
+    record UnmarkedList(java.util.List<@NotBlank String> names) {}
+
+    @Test
+    void aRuleOnATypeArgumentCountsAsAConstraint() {
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> new AvajeValidation().verify(new UnmarkedList(java.util.List.of("alice"))));
+        assertTrue(refused.getMessage().contains(UnmarkedList.class.getName()), refused.getMessage());
+    }
+
+    @Test
+    void aConstrainedTypeWithoutAnAdapterIsRefusedByName() {
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> new AvajeValidation().verify(new Unmarked("alice")));
+        assertTrue(refused.getMessage().contains(Unmarked.class.getName()), refused.getMessage());
     }
 
     /** Reads the body through the codec, which has the engine check it. */

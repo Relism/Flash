@@ -10,11 +10,20 @@ import dev.relism.flash.Module;
 import io.avaje.validation.ConstraintViolation;
 import io.avaje.validation.Validator;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedArrayType;
+import java.lang.reflect.AnnotatedParameterizedType;
+import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Avaje Validator: the same constraints, checked by adapters generated at build time.
@@ -26,12 +35,17 @@ import java.util.Map;
  * <p>No reflection at runtime, which is the reason to choose it — and the reason it asks something
  * of the build. {@code avaje-validator-generator} must run in the module that owns the validated
  * types, and each of those types carries {@code io.avaje.validation.constraints.Valid} so an adapter
- * is written for it; the constraints themselves may stay jakarta's. A type whose adapter is missing
- * is not skipped quietly: the engine refuses it by name on the first request.
+ * is written for it; the constraints themselves may stay jakarta's. A type that declares constraints
+ * but has no adapter is not skipped quietly: the engine refuses it by name on the first request,
+ * since either the annotation or the generator is missing. A type that declares none has nothing to
+ * check, and the generator writes no adapter for it.
  */
 public class AvajeValidation implements Module, Validation {
 
     private final Validator delegate;
+
+    /** Types with no adapter and no constraint, met once: nothing to check, so no further lookups. */
+    private final Set<Class<?>> unconstrained = ConcurrentHashMap.newKeySet();
 
     public AvajeValidation() {
         this(Validator.builder().build());
@@ -65,10 +79,76 @@ public class AvajeValidation implements Module, Validation {
     }
 
     private void check(Object value, String prefix, List<Violation> failures) {
-        if (value == null) return;
-        for (ConstraintViolation violation : delegate.check(value)) {
+        if (value == null || unconstrained.contains(value.getClass())) return;
+        Set<ConstraintViolation> broken;
+        try {
+            broken = delegate.check(value);
+        } catch (IllegalArgumentException missing) {
+            // Avaje's only signal that no adapter was generated for the type.
+            String message = missing.getMessage();
+            if (message == null || !message.startsWith("No ValidationAdapter for")) throw missing;
+            if (constrained(value.getClass())) throw new IllegalStateException(value.getClass().getName()
+                    + " declares constraints but has no generated adapter: it needs"
+                    + " io.avaje.validation.constraints.Valid, and avaje-validator-generator running in"
+                    + " the module that compiles it", missing);
+            unconstrained.add(value.getClass());
+            return;
+        }
+        for (ConstraintViolation violation : broken) {
             failures.add(new Violation(prefix + violation.path(), violation.message()));
         }
+    }
+
+    /**
+     * Whether a constraint, jakarta's or Avaje's or one built on them, sits anywhere Avaje reads
+     * one: on the type, a field, a getter or a record component, on a type argument of theirs
+     * ({@code List<@NotBlank String>}), or on the same in a superclass.
+     */
+    private static boolean constrained(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            if (constraint(c.getAnnotations())) return true;
+            for (Field field : c.getDeclaredFields()) {
+                if (constraint(field.getAnnotations()) || constrained(field.getAnnotatedType())) return true;
+            }
+            for (Method method : c.getDeclaredMethods()) {
+                if (constraint(method.getAnnotations()) || constrained(method.getAnnotatedReturnType())) return true;
+            }
+            if (c.isRecord()) {
+                for (RecordComponent component : c.getRecordComponents()) {
+                    if (constraint(component.getAnnotations()) || constrained(component.getAnnotatedType())) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean constrained(AnnotatedType type) {
+        if (constraint(type.getAnnotations())) return true;
+        if (type instanceof AnnotatedParameterizedType parameterized) {
+            for (AnnotatedType argument : parameterized.getAnnotatedActualTypeArguments()) {
+                if (constrained(argument)) return true;
+            }
+        }
+        return type instanceof AnnotatedArrayType array && constrained(array.getAnnotatedGenericComponentType());
+    }
+
+    private static boolean constraint(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            Class<? extends Annotation> kind = annotation.annotationType();
+            // Avaje's @Valid asks for an adapter; it is no rule. Class-retained today, never seen here.
+            if (kind.getName().equals("io.avaje.validation.constraints.Valid")) continue;
+            if (constraintPackage(kind.getPackageName())) return true;
+            for (Annotation meta : kind.getAnnotations()) {
+                if (meta.annotationType().getSimpleName().equals("Constraint")
+                        && constraintPackage(meta.annotationType().getPackageName())) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean constraintPackage(String name) {
+        return name.equals("jakarta.validation.constraints") || name.equals("jakarta.validation")
+                || name.equals("io.avaje.validation.constraints");
     }
 
     /**
