@@ -51,6 +51,16 @@ class AvajeValidationTest {
         engine.verify(new Unconstrained(false, "en"));
     }
 
+    /** Its only rule is on a type argument, and it has no @Valid either. */
+    record UnmarkedList(java.util.List<@NotBlank String> names) {}
+
+    @Test
+    void aRuleOnATypeArgumentCountsAsAConstraint() {
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> new AvajeValidation().verify(new UnmarkedList(java.util.List.of("alice"))));
+        assertTrue(refused.getMessage().contains(UnmarkedList.class.getName()), refused.getMessage());
+    }
+
     @Test
     void aConstrainedTypeWithoutAnAdapterIsRefusedByName() {
         IllegalStateException refused = assertThrows(IllegalStateException.class,
