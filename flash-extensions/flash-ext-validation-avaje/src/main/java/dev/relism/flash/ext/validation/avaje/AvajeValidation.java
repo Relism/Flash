@@ -10,11 +10,16 @@ import dev.relism.flash.Module;
 import io.avaje.validation.ConstraintViolation;
 import io.avaje.validation.Validator;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Avaje Validator: the same constraints, checked by adapters generated at build time.
@@ -26,12 +31,16 @@ import java.util.Map;
  * <p>No reflection at runtime, which is the reason to choose it — and the reason it asks something
  * of the build. {@code avaje-validator-generator} must run in the module that owns the validated
  * types, and each of those types carries {@code io.avaje.validation.constraints.Valid} so an adapter
- * is written for it; the constraints themselves may stay jakarta's. A type whose adapter is missing
- * is not skipped quietly: the engine refuses it by name on the first request.
+ * is written for it; the constraints themselves may stay jakarta's. A type that declares constraints
+ * but has no adapter is not skipped quietly: the engine refuses it by name on the first request. A
+ * type that declares none has nothing to check, and the generator writes no adapter for it.
  */
 public class AvajeValidation implements Module, Validation {
 
     private final Validator delegate;
+
+    /** Types with no adapter and no constraint, met once: nothing to check, so no further lookups. */
+    private final Set<Class<?>> unconstrained = ConcurrentHashMap.newKeySet();
 
     public AvajeValidation() {
         this(Validator.builder().build());
@@ -65,10 +74,54 @@ public class AvajeValidation implements Module, Validation {
     }
 
     private void check(Object value, String prefix, List<Violation> failures) {
-        if (value == null) return;
-        for (ConstraintViolation violation : delegate.check(value)) {
+        if (value == null || unconstrained.contains(value.getClass())) return;
+        Set<ConstraintViolation> broken;
+        try {
+            broken = delegate.check(value);
+        } catch (IllegalArgumentException missing) {
+            // Avaje's only signal that no adapter was generated for the type.
+            String message = missing.getMessage();
+            if (message == null || !message.startsWith("No ValidationAdapter for")) throw missing;
+            if (constrained(value.getClass())) throw new IllegalStateException(value.getClass().getName()
+                    + " declares constraints but has no generated adapter: annotate it with"
+                    + " io.avaje.validation.constraints.Valid", missing);
+            unconstrained.add(value.getClass());
+            return;
+        }
+        for (ConstraintViolation violation : broken) {
             failures.add(new Violation(prefix + violation.path(), violation.message()));
         }
+    }
+
+    /** Whether a constraint, jakarta's or Avaje's or one built on them, sits on the type or a field of it. */
+    private static boolean constrained(Class<?> type) {
+        if (constraint(type.getAnnotations())) return true;
+        for (Field field : type.getDeclaredFields()) {
+            if (constraint(field.getAnnotations()) || constraint(field.getAnnotatedType().getAnnotations())) return true;
+        }
+        if (type.isRecord()) {
+            for (RecordComponent component : type.getRecordComponents()) {
+                if (constraint(component.getAnnotations())) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean constraint(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            Class<? extends Annotation> kind = annotation.annotationType();
+            if (constraintPackage(kind.getPackageName())) return true;
+            for (Annotation meta : kind.getAnnotations()) {
+                if (meta.annotationType().getSimpleName().equals("Constraint")
+                        && constraintPackage(meta.annotationType().getPackageName())) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean constraintPackage(String name) {
+        return name.equals("jakarta.validation.constraints") || name.equals("jakarta.validation")
+                || name.equals("io.avaje.validation.constraints");
     }
 
     /**

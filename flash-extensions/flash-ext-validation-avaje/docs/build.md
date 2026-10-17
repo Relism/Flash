@@ -29,5 +29,9 @@ public record NewUser(@jakarta.validation.constraints.NotBlank String name) {}
 
 ## Failure mode
 
-A type without a generated adapter is not skipped. The engine refuses it by name when the first
-request for it is validated.
+A type that declares constraints, on itself or on its fields, but has no generated adapter is not
+skipped: it is missing `@Valid`, and the engine refuses it by name when the first request for it is
+validated.
+
+A type that declares no constraint has nothing to check and is accepted. The generator writes no
+adapter for it, even when it carries `@Valid`.
