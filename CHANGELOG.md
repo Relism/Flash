@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.4](https://github.com/Relism/Flash/compare/v3.0.3...v3.0.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ext-vite:** publish the Maven plugin under the groupId JitPack serves ([#23](https://github.com/Relism/Flash/issues/23)) ([665e754](https://github.com/Relism/Flash/commit/665e75423245ce83d60bd93e55f38b3056d68aab))
+
 ## [3.0.3](https://github.com/Relism/Flash/compare/v3.0.2...v3.0.3) (2026-10-17)
 
 
