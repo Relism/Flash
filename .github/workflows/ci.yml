@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+    # labeled: adding the dependencies label runs the interop job on a PR that already exists
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -75,3 +77,39 @@ jobs:
           name: test-results
           path: '**/target/surefire-reports/*.xml'
           retention-days: 7
+
+  interop:
+    name: Interop
+    # Real clients (curl, grpcurl, Node, WebDAV clients in containers) against the transports and
+    # extensions. A dependency update is what most often changes how an extension behaves, so every
+    # dependency PR runs them, and so does master.
+    if: >-
+      github.event_name == 'push'
+      || github.event.pull_request.user.login == 'dependabot[bot]'
+      || contains(github.event.pull_request.labels.*.name, 'dependencies')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Temurin 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Install grpcurl 1.9.3
+        run: |
+          curl --fail --location --silent --show-error \
+            --output /tmp/grpcurl.tgz \
+            https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/grpcurl_1.9.3_linux_x86_64.tar.gz
+          echo "a926b62a85787ccf73ef8736b3ae554f1242e39d92bb8767a79d6dd23b11d1d5  /tmp/grpcurl.tgz" \
+            | sha256sum --check
+          tar --extract --gzip --file /tmp/grpcurl.tgz --directory /tmp grpcurl
+
+      # test, not verify: the coverage checks cannot pass on a run of the interop tests alone
+      - name: Interop tests
+        run: mvn -B -Pinterop -Dgrpcurl.executable=/tmp/grpcurl -Dcurl.executable=/usr/bin/curl clean test
