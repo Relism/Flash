@@ -43,26 +43,26 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <lombok.version>1.18.44</lombok.version>
-        <slf4j.version>2.0.16</slf4j.version>
-        <maven.javadoc.plugin.version>3.11.2</maven.javadoc.plugin.version>
-        <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
+        <lombok.version>1.18.48</lombok.version>
+        <slf4j.version>2.0.20</slf4j.version>
+        <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+        <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
         <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
-        <maven.versions.plugin.version>2.18.0</maven.versions.plugin.version>
+        <maven.versions.plugin.version>2.23.0</maven.versions.plugin.version>
         <jmh.version>1.37</jmh.version>
-        <junit.version>5.11.0</junit.version>
-        <caffeine.version>3.1.8</caffeine.version>
+        <junit.version>6.1.3</junit.version>
+        <caffeine.version>3.3.1</caffeine.version>
         <micrometer.version>1.17.1</micrometer.version>
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
-        <hibernate.validator.version>9.1.0.Final</hibernate.validator.version>
+        <hibernate.validator.version>9.1.5.Final</hibernate.validator.version>
         <expressly.version>6.0.0</expressly.version>
         <avaje.validator.version>2.18</avaje.validator.version>
         <avaje.jsonb.version>3.16</avaje.jsonb.version>
         <protobuf.version>4.36.2</protobuf.version>
-        <grpc.version>1.84.0</grpc.version>
+        <grpc.version>1.84.3</grpc.version>
         <protovalidate.version>1.3.0</protovalidate.version>
-        <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
-        <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+        <build.helper.plugin.version>3.6.2</build.helper.plugin.version>
+        <maven.compiler.plugin.version>3.16.0</maven.compiler.plugin.version>
     </properties>
 
     <repositories>
@@ -381,7 +381,7 @@
             <dependency>
                 <groupId>com.google.jimfs</groupId>
                 <artifactId>jimfs</artifactId>
-                <version>1.3.0</version>
+                <version>1.3.2</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
@@ -398,7 +398,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.2.5</version>
+                    <version>3.6.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -446,7 +446,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-deploy-plugin</artifactId>
-                    <version>3.1.2</version>
+                    <version>3.2.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
