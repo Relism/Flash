@@ -11,7 +11,7 @@
     <artifactId>flash-ext-view-jte</artifactId>
 
     <properties>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
     </properties>
 
     <dependencies>
@@ -22,7 +22,7 @@
         <dependency>
             <groupId>gg.jte</groupId>
             <artifactId>jte</artifactId>
-            <version>3.2.3</version>
+            <version>3.2.4</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
