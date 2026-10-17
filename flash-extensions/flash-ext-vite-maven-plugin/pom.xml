@@ -8,13 +8,21 @@
         <version>3.0.3</version>
     </parent>
 
+    <!--
+      The groupId JitPack serves Flash under, not the inherited dev.relism: JitPack rewrites the
+      groupId in every POM it serves but not in the plugin descriptor inside this jar, and Maven
+      refuses a plugin whose descriptor names another groupId than the one it was resolved by.
+    -->
+    <groupId>dev.relism.Flash</groupId>
     <artifactId>flash-ext-vite-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
 
     <dependencies>
+        <!-- The other modules keep the parent's groupId, which managed entries no longer match here. -->
         <dependency>
-            <groupId>dev.relism</groupId>
+            <groupId>${project.parent.groupId}</groupId>
             <artifactId>flash-ext-vite</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.maven</groupId>
