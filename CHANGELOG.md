@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.3](https://github.com/Relism/Flash/compare/v3.0.2...v3.0.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ext-validation:** accept a type with no constraints under Avaje Validator ([#22](https://github.com/Relism/Flash/issues/22)) ([9accf8a](https://github.com/Relism/Flash/commit/9accf8a655c6591381c9806af01db973d390bc06))
+
+
+### Miscellaneous Chores
+
+* **deps:** release the dependency and security updates ([#20](https://github.com/Relism/Flash/issues/20)) ([c55158b](https://github.com/Relism/Flash/commit/c55158b4ff26d66b5b95ef1567a538125779264d))
+
 ## [3.0.2](https://github.com/Relism/Flash/compare/v3.0.1...v3.0.2) (2026-10-16)
 
 
