@@ -41,6 +41,20 @@ class JdbcTxManagerTest {
         manager.rollback(outer);
     }
 
+    /** Ending a transaction joined inside a REQUIRES_NEW leaves the new one current, not the one it suspended. */
+    @Test
+    void a_join_inside_requires_new_keeps_the_new_transaction_current() {
+        TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
+        TxStatus inner = manager.begin(TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRES_NEW));
+        manager.commit(manager.begin(TxDefinition.DEFAULTS));
+        TxStatus next = manager.begin(TxDefinition.DEFAULTS);
+        assertSame(inner.resource(Connection.class), next.resource(Connection.class));
+        manager.commit(next);
+        manager.commit(inner);
+        assertSame(outer.resource(Connection.class), manager.begin(TxDefinition.DEFAULTS).resource(Connection.class));
+        manager.rollback(outer);
+    }
+
     @Test
     void rollback_on_joined_marks_outer_rollback_only() {
         TxStatus outer = manager.begin(TxDefinition.DEFAULTS);

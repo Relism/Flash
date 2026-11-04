@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import dev.relism.flash.Bound;
 import dev.relism.flash.Services;
 import dev.relism.flash.bytes.ByteWriter;
@@ -17,7 +18,11 @@ import dev.relism.flash.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * One Jackson mapper, in the shape a handler needs it.
@@ -36,6 +41,8 @@ public abstract class JacksonCodec implements Codec, Bound {
 
     private final ObjectMapper mapper;
     private final ContentType contentType;
+    /** Java member to wire name, per class, worked out once at boot. */
+    private final Map<Class<?>, Map<String, String>> written = new ConcurrentHashMap<>();
 
     /** The engine that checks what is read, or null when none is installed; written once at boot. */
     private Validation validation;
@@ -94,6 +101,17 @@ public abstract class JacksonCodec implements Codec, Bound {
     @Override
     public ContentType contentType() {
         return contentType;
+    }
+
+    /** The name the mapper writes {@code field} under: {@code @JsonProperty}, then the naming strategy. */
+    @Override
+    public String wireName(Field field) {
+        return written.computeIfAbsent(field.getDeclaringClass(), type -> {
+            Map<String, String> names = new HashMap<>();
+            for (BeanPropertyDefinition property : mapper.getSerializationConfig().introspect(mapper.constructType(type)).findProperties())
+                names.put(property.getInternalName(), property.getName());
+            return names;
+        }).getOrDefault(field.getName(), field.getName());
     }
 
     /** The mapper itself, for what a handler does with it beyond reading and writing a body. */

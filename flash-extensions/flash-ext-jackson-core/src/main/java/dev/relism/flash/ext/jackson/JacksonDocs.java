@@ -11,27 +11,33 @@ import java.util.Arrays;
 import java.util.Map;
 
 /**
- * What Jackson's annotations say a field is on the wire, told to the published document: its name
- * ({@code @JsonProperty}), whether it is there at all ({@code @JsonIgnore},
- * {@code @JsonIgnoreProperties}), and its direction ({@code access}).
+ * What a Jackson format writes a field as, told to the published document: its name, as the codec's
+ * mapper writes it ({@code @JsonProperty}, then the naming strategy), whether it is there at all
+ * ({@code @JsonIgnore}, {@code @JsonIgnoreProperties}), and its direction ({@code access}).
  */
 public final class JacksonDocs {
 
     private JacksonDocs() {}
 
-    /** The contributor, when flash-ext-openapi is on the classpath; nothing otherwise. */
-    public static Module module() {
+    /** The contributor of {@code codec}, when flash-ext-openapi is on the classpath; nothing otherwise. */
+    public static Module module(JacksonCodec codec) {
         return Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor",
-                () -> app -> app.add(OpenApiContributor.class, Fields.class));
+                () -> app -> app.add(OpenApiContributor.class, new Fields(codec)));
     }
 
-    /** Loaded only through {@link #module()}, so a format works without flash-ext-openapi. */
+    /** Loaded only through {@link #module}, so a format works without flash-ext-openapi. */
     static final class Fields implements OpenApiContributor {
 
+        private final JacksonCodec codec;
+
+        Fields(JacksonCodec codec) {
+            this.codec = codec;
+        }
+
+        /** The codec's own name for the field, so the document and the wire agree. */
         @Override
         public String name(Field field) {
-            JsonProperty property = field.getAnnotation(JsonProperty.class);
-            return property == null || property.value().isEmpty() ? null : property.value();
+            return codec.wireName(field);
         }
 
         @Override

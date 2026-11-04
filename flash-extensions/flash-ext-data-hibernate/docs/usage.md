@@ -23,8 +23,9 @@ transaction, `tx.resource(Session.class)` is the session in use.
 | Operation | Implementation |
 |---|---|
 | `findById` | `session.get` |
-| `findAll(query)` | HQL `from <EntitySimpleName> [where <spec>] [order by <sort>]` with named parameters `:p1`, `:p2`, with `setFirstResult` and `setMaxResults` for pages |
-| `findPage` | The query plus a `select count(*)` with the same condition |
+| `findAll(query)` | HQL `from <EntitySimpleName> [where <spec>] [order by <sort>]` with named parameters `:p1`, `:p2`, with `setMaxResults` for a limit |
+| `findPage` | `findAll` over the keyset, `size + 1` rows. The id is the entity's `@Id` property |
+| `count(spec)` | HQL `select count(*) from <EntitySimpleName> where <spec>` |
 | `save` | `persist` |
 | `saveAll` | `persist` each, with a flush and clear every 50 entities |
 | `update` | `merge`, returning the managed entity |

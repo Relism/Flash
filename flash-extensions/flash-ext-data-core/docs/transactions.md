@@ -42,7 +42,7 @@ status). A checked exception from `call` is wrapped in `TxException`.
 ```java
 TxDefinition.DEFAULTS.withPropagation(TransactionPropagation.REQUIRES_NEW)
                      .withIsolation(TransactionIsolation.SERIALIZABLE)
-                     .withReadOnly(true);
+                     .asReadOnly();
 ```
 
 | Propagation | Behavior |

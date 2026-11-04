@@ -35,6 +35,7 @@ public class JsonModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Json.class, new Json(mapper)).install(JacksonDocs.module());
+        Json codec = new Json(mapper);
+        app.add(Json.class, codec).install(JacksonDocs.module(codec));
     }
 }

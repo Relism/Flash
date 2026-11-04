@@ -32,6 +32,13 @@ class JsonTest {
     record Unmapped(String text) {}
 
     @Test
+    void aFieldIsNamedAsTheGeneratedAdapterWritesIt() throws Exception {
+        assertEquals("user_name", json.wireName(Account.class.getDeclaredField("name")));
+        assertEquals("id", json.wireName(Order.class.getDeclaredField("id")));
+        assertEquals("text", json.wireName(Unmapped.class.getDeclaredField("text")), "no adapter: the Java name");
+    }
+
+    @Test
     void aBodyIsReadAsTheTypeAsked() throws Exception {
         assertEquals(new Order("o1", 3), json.read(request("{\"id\":\"o1\",\"quantity\":3}"), Order.class));
     }

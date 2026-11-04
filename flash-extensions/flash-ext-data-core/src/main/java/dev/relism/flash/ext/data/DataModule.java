@@ -52,6 +52,7 @@ public final class DataModule implements Module {
             @Override public List<MiddlewareNode> middleware(Class<?> handler) { return transactional(handler); }
         });
         if (data != null) app.add(Data.class, data);
+        app.install(PageModules.serde(), PageModules.openapi());
     }
 
     /** {@link Transactional} on the handler class: the whole request in one transaction, as it says. */

@@ -27,16 +27,15 @@ its own on JDBC) and a write opens a read-write transaction. Wrap several calls 
 | Method | Returns |
 |---|---|
 | `findById(id)`, `findOne(spec)` | `Optional<T>` |
-| `existsById(id)`, `count()` | `boolean`, `long` |
-| `findAll()`, `findAll(spec)`, `findAll(query)`, `findAll(sort)`, `findAll(page, size[, sort])` | `List<T>` |
-| `findPage(query)`, `findPage(page, size[, sort])` | `Page<T>`. A page request is required |
+| `existsById(id)`, `count()`, `count(spec)` | `boolean`, `long` |
+| `findAll()`, `findAll(spec)`, `findAll(sort)`, `findAll(query)` | `List<T>` |
+| `findPage(request)`, `findPage(request, scope)` | `Page<T>`: the page a `PageRequest` asks for. See [paging.md](paging.md) |
 | `save(entity)`, `saveAll(entities)` | The saved entity or entities |
 | `update(entity)` | The updated entity |
 | `delete(entity)`, `deleteById(id)`, `deleteAll(entities)` | `void` |
 | `deleteAll(spec)` | Number of rows deleted |
 | `updateAll(spec, patch)` | Number of rows. Not provided by the bundled backends |
 
-Pages are zero-based.
 
 ## Spec
 
@@ -54,13 +53,13 @@ type witness. `Spec.all()` matches everything and `Spec.none()` nothing.
 **Column names and sort columns are written into the statement as given.** Only values are bound as
 parameters. Never pass user input as a column name.
 
-## Query, Sort, Page
+## Query, Sort
 
 ```java
-Query<User> query = Query.<User>all().where(active).orderBy(Sort.by("name").thenDesc("createdAt")).page(0, 20);
-Page<User> page = users.findPage(query);
+Query<User> query = Query.<User>all().where(active).orderBy(Sort.by("name").thenDesc("createdAt")).limit(20);
+List<User> rows = users.findAll(query);
 ```
 
 `Sort.by(column)`, `Sort.desc(column)`, `Sort.by(column, asc)` and `then`/`thenDesc` build an ordering.
-`Page` holds `content`, `page`, `size` and `total`, with `totalPages()`, `hasNext()`, `hasPrev()`
-and `isEmpty()`. Computing a page runs a count query with the same condition.
+`limit(n)` reads at most `n` rows; `0`, the default, reads them all. There is no offset: for pages a
+client walks, use [paging](paging.md), whose cost does not grow with the position.

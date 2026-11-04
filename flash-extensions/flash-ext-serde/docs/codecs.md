@@ -9,6 +9,7 @@ public interface Codec {
     Object write(Response response, Object value) throws Exception;
     ContentType contentType();
     default <T> T read(Request request, Type type) throws Exception { ... }
+    default String wireName(Field field) { return field.getName(); }
 }
 ```
 
@@ -19,6 +20,7 @@ public interface Codec {
 | `write(response, value)` | Sets the response content type and returns the body bytes. For handlers that write directly |
 | `contentType()` | Media type the codec reads and writes. OpenAPI uses it |
 | `read(request, type)` | Decodes a request body of an arbitrary type. The default builds a decoder every call; override it if you use it often |
+| `wireName(field)` | The name a field has in this format, for whatever matches names a client sends against a type's fields. Asked at boot only. The Jackson codecs answer as the mapper writes the field (`@JsonProperty`, then the naming strategy), the Avaje codec as its generated adapter does |
 
 ```java
 public interface Decoder {

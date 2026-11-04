@@ -38,6 +38,7 @@ Built with `OpenApiOperationContribution.builder()`:
 | `allResponses(OpenApiResponseContribution)` | Headers merged into every response of the operation |
 | `consumes(ContentType)`, `produces(ContentType)` | Media types, taking priority over annotations. Either one also makes a `DuplexHandler` route documented |
 | `requestType(Type)`, `responseType(Type)` | Types for the body schemas, taking priority over what `handle` returns |
+| `parameter(Map)` | A parameter object (`name`, `in`, `schema`, ...), listed after the path's and the annotations' |
 
 `OpenApiResponseContribution.builder().description(...).header(name, schemaMap).build()` describes a
 response. An explicit `@APIResponse` description always wins over a contributed one for the same
@@ -54,3 +55,4 @@ status. A status above 399 added by a contributor with no body gets the error ob
 | `flash-ext-security-core` | Security schemes and requirements, `401` and `403` |
 | `flash-ext-limiter` | Rate limit headers and `429` |
 | `flash-ext-ndjson` | `application/x-ndjson` bodies of `NdjsonHandler`s, with the schema of one line |
+| `flash-ext-data-core` | The `size`, `sort` and `after` parameters and the `400` of a handler that takes a `PageRequest` |

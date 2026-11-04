@@ -3,29 +3,24 @@ package dev.relism.flash.ext.data.core;
 public record TxDefinition(
         TransactionPropagation propagation,
         TransactionIsolation    isolation,
-        boolean                 readOnly,
-        String                  label
+        boolean                 readOnly
 ) {
     public static final TxDefinition DEFAULTS = new TxDefinition(
             TransactionPropagation.REQUIRED,
             TransactionIsolation.DEFAULT,
-            false,
-            null
+            false
     );
 
     public TxDefinition withPropagation(TransactionPropagation p) {
-        return new TxDefinition(p, isolation, readOnly, label);
+        return new TxDefinition(p, isolation, readOnly);
     }
 
     public TxDefinition withIsolation(TransactionIsolation i) {
-        return new TxDefinition(propagation, i, readOnly, label);
+        return new TxDefinition(propagation, i, readOnly);
     }
 
-    public TxDefinition withReadOnly(boolean ro) {
-        return new TxDefinition(propagation, isolation, ro, label);
-    }
 
     public TxDefinition asReadOnly() {
-        return new TxDefinition(propagation, isolation, true, label);
+        return new TxDefinition(propagation, isolation, true);
     }
 }

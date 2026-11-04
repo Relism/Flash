@@ -7,6 +7,8 @@ import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -14,10 +16,12 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,9 +46,9 @@ final class Schemas {
             UUID.class, LocalDate.class, LocalDateTime.class, OffsetDateTime.class, Instant.class
     );
 
-    private final Map<Class<?>, String> names = new LinkedHashMap<>();
+    private final Map<Type, String> names = new LinkedHashMap<>();
     private final Map<String, Map<String, Object>> docs = new LinkedHashMap<>();
-    private final Set<Class<?>> resolving = new HashSet<>();
+    private final Set<Type> resolving = new HashSet<>();
 
     Map<String, Object> referenceFor(Class<?> type) {
         return schemaFor(type);
@@ -77,6 +81,7 @@ final class Schemas {
                 Type value = p.getActualTypeArguments().length > 1 ? p.getActualTypeArguments()[1] : Object.class;
                 return Map.of("type", "object", "additionalProperties", schemaFor(value));
             }
+            if (raw != null && !open(p)) return Map.of("$ref", "#/components/schemas/" + registerPojo(p, raw));
             if (raw != null) return schemaFor(raw);
         }
 
@@ -90,28 +95,32 @@ final class Schemas {
         Map<String, Object> simple = simpleSchema(cls);
         if (simple != null) return simple;
 
-        return Map.of("$ref", "#/components/schemas/" + registerPojo(cls));
+        return Map.of("$ref", "#/components/schemas/" + registerPojo(cls, cls));
     }
 
-    private String registerPojo(Class<?> cls) {
-        String existing = names.get(cls);
+    /**
+     * A class, or a generic class with every argument known: {@code Page<User>} is its own schema,
+     * {@code PageUser}, whose fields read {@code User} wherever the class declares its variable.
+     */
+    private String registerPojo(Type type, Class<?> cls) {
+        String existing = names.get(type);
         if (existing != null) return existing;
 
-        String base = schemaName(cls);
+        String base = schemaName(type);
         String name = base;
         int i = 2;
         while (docs.containsKey(name)) name = base + i++;
-        names.put(cls, name);
+        names.put(type, name);
 
-        if (resolving.contains(cls)) return name;
+        if (resolving.contains(type)) return name;
 
-        resolving.add(cls);
-        docs.put(name, buildPojoSchema(cls));
-        resolving.remove(cls);
+        resolving.add(type);
+        docs.put(name, buildPojoSchema(cls, bindings(type, cls)));
+        resolving.remove(type);
         return name;
     }
 
-    private Map<String, Object> buildPojoSchema(Class<?> cls) {
+    private Map<String, Object> buildPojoSchema(Class<?> cls, Map<TypeVariable<?>, Type> bindings) {
         Schema typeSchema = cls.getAnnotation(Schema.class);
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -135,7 +144,7 @@ final class Schemas {
 
             if (sp != null && !sp.name().isEmpty()) name = sp.name();
 
-            Map<String, Object> property = new LinkedHashMap<>(schemaFor(f.getGenericType()));
+            Map<String, Object> property = new LinkedHashMap<>(schemaFor(bind(f.getGenericType(), bindings)));
             if (ps != null) applySchemaHints(property, ps);
             if (sp != null) applySchemaHints(property, sp);
             if (array != null) applyArrayHints(property, array);
@@ -221,10 +230,61 @@ final class Schemas {
         if (array.maxItems() >= 0) property.put("maxItems", array.maxItems());
     }
 
-    private static String schemaName(Class<?> cls) {
+    /** A class's own name, or a generic one's followed by its arguments' names: {@code PageUser}. */
+    private static String schemaName(Type type) {
+        if (type instanceof ParameterizedType p) {
+            StringBuilder name = new StringBuilder(schemaName(rawType(p)));
+            for (Type argument : p.getActualTypeArguments()) name.append(schemaName(argument));
+            return name.toString();
+        }
+        Class<?> cls = rawType(type);
+        if (cls == null) return "Object";
         Schema schema = cls.getAnnotation(Schema.class);
         if (schema != null && !schema.name().isEmpty()) return schema.name();
         return cls.getSimpleName();
+    }
+
+    private static Map<TypeVariable<?>, Type> bindings(Type type, Class<?> cls) {
+        if (!(type instanceof ParameterizedType p)) return Map.of();
+        Map<TypeVariable<?>, Type> bindings = new HashMap<>();
+        TypeVariable<?>[] variables = cls.getTypeParameters();
+        Type[] arguments = p.getActualTypeArguments();
+        for (int i = 0; i < variables.length; i++) bindings.put(variables[i], arguments[i]);
+        return bindings;
+    }
+
+    /** {@code type} with the class's variables replaced by what the schema's arguments say they are. */
+    private static Type bind(Type type, Map<TypeVariable<?>, Type> bindings) {
+        if (bindings.isEmpty()) return type;
+        if (type instanceof TypeVariable<?> variable) return bindings.getOrDefault(variable, variable);
+        if (!(type instanceof ParameterizedType p)) return type;
+        Type[] arguments = p.getActualTypeArguments();
+        boolean changed = false;
+        for (int i = 0; i < arguments.length; i++) {
+            Type bound = bind(arguments[i], bindings);
+            changed |= bound != arguments[i];
+            arguments[i] = bound;
+        }
+        return changed ? new BoundType(rawType(p), arguments, p.getOwnerType()) : type;
+    }
+
+    private static boolean open(Type type) {
+        if (type instanceof TypeVariable<?> || type instanceof WildcardType) return true;
+        if (type instanceof ParameterizedType p)
+            for (Type argument : p.getActualTypeArguments()) if (open(argument)) return true;
+        return false;
+    }
+
+    /** A parameterized type built here, equal to the JDK's own for the same raw type and arguments. */
+    private record BoundType(Class<?> raw, Type[] arguments, Type owner) implements ParameterizedType {
+        @Override public Type[] getActualTypeArguments() { return arguments.clone(); }
+        @Override public Type getRawType() { return raw; }
+        @Override public Type getOwnerType() { return owner; }
+        @Override public boolean equals(Object other) {
+            return other instanceof ParameterizedType type && Objects.equals(owner, type.getOwnerType())
+                    && raw.equals(type.getRawType()) && Arrays.equals(arguments, type.getActualTypeArguments());
+        }
+        @Override public int hashCode() { return Arrays.hashCode(arguments) ^ Objects.hashCode(owner) ^ raw.hashCode(); }
     }
 
     private static Map<String, Object> simpleSchema(Class<?> cls) {

@@ -3,13 +3,14 @@ package dev.relism.flash.ext.openapi;
 import dev.relism.flash.Services;
 import dev.relism.flash.ext.serde.Codec;
 import dev.relism.flash.ext.serde.CodecRequestHandler;
+import dev.relism.flash.ext.serde.FromRequest;
 import dev.relism.flash.ext.serde.TypeArguments;
 import dev.relism.flash.http.ContentType;
 import java.lang.reflect.Type;
 
 /**
  * Tells the document what a {@code CodecRequestHandler} reads and writes: the two types from its signature,
- * and the media type each codec reports. Nothing is declared twice, and nothing is guessed from the
+ * and the media type each codec reports. An input that is {@link FromRequest} is not a body. Nothing is declared twice, and nothing is guessed from the
  * handler's methods. Installed by {@link OpenApiModule}.
  */
 final class CodecDocs implements OpenApiContributor {
@@ -24,7 +25,8 @@ final class CodecDocs implements OpenApiContributor {
     public OpenApiOperationContribution operationFor(Class<?> handler) {
         if (!CodecRequestHandler.class.isAssignableFrom(handler)) return OpenApiOperationContribution.empty();
         Type[] signature = TypeArguments.of(handler, CodecRequestHandler.class);
-        boolean reads = signature[1] != Void.class;
+        Class<?> input = Schemas.rawType(signature[1]);
+        boolean reads = input != Void.class && !input.isAnnotationPresent(FromRequest.class);
         return OpenApiOperationContribution.builder()
                 .consumes(reads ? contentType(signature[0]) : null)
                 .produces(contentType(signature[2]))

@@ -21,8 +21,4 @@ final class JdbcSpecContext implements SpecContext {
             ps.setObject(i + 1, params.get(i));
         }
     }
-
-    int size() {
-        return params.size();
-    }
 }

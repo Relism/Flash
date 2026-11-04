@@ -14,6 +14,10 @@ import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import java.lang.reflect.Type;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -100,6 +104,50 @@ class CodecBindingTest {
                 () -> start(App.create().add(Probe.class, new Probe())
                         .route(HttpMethod.POST, "/", Open.class)));
         assertTrue(open.getMessage().contains("open"), open.getMessage());
+    }
+
+    @FromRequest
+    record Search(String q) {}
+
+    static final class Echo extends CodecRequestHandler<Probe, Search, Probe, String> {
+        @Override protected String handle(Request request, Response response, Search input) { return input.q(); }
+    }
+
+    /** Reads a {@link Search} from the query parameter {@code q}. */
+    static final class FromQuery implements InputBinder {
+        final List<Type> asked = new ArrayList<>();
+
+        @Override public Reader reader(Type type, Codec codec) {
+            asked.add(type);
+            return type == Search.class ? request -> new Search(request.query("q")) : null;
+        }
+    }
+
+    @Test
+    void aFromRequestInputIsReadByItsBinderAndNoOtherIsOffered() throws Exception {
+        Probe probe = new Probe();
+        FromQuery binder = new FromQuery();
+        Server server = start(App.create().add(Probe.class, probe).add(InputBinder.class, binder)
+                .route(HttpMethod.GET, "/echo", Echo.class)
+                .route(HttpMethod.POST, "/request", Strings.class));
+        try {
+            HttpResponse<String> answer = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/echo?q=bound")).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals("bound", answer.body());
+            assertEquals(List.of(Search.class), binder.asked, "a body type is never offered to a binder");
+            assertEquals(List.of("java.util.List<java.lang.String>"), probe.decoded.stream().map(Type::getTypeName).toList(),
+                    "the codec prepares only the body");
+        } finally {
+            server.stop().join();
+        }
+    }
+
+    @Test
+    void aFromRequestInputNoBinderReadsFailsTheBoot() {
+        IllegalStateException unread = assertThrows(IllegalStateException.class,
+                () -> start(App.create().add(Probe.class, new Probe()).route(HttpMethod.GET, "/echo", Echo.class)));
+        assertTrue(unread.getMessage().contains("no installed module reads it"), unread.getMessage());
     }
 
     private static Server start(App app) {

@@ -30,6 +30,7 @@ public class XmlModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Xml.class, new Xml(mapper)).install(JacksonDocs.module());
+        Xml codec = new Xml(mapper);
+        app.add(Xml.class, codec).install(JacksonDocs.module(codec));
     }
 }

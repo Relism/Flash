@@ -37,7 +37,6 @@ public final class Data {
     public <T> T read(Tx.TxCallable<T> work) { return tx.read(work); }
     public void write(Tx.TxRunnable work) { tx.run(work); }
     public <T> T write(Tx.TxCallable<T> work) { return tx.call(work); }
-    /** Transitional low-level access for infrastructure that needs an explicit definition. */
 
     /** Registers work that runs only after the enclosing write transaction commits. */
     public void afterCommit(Runnable work) {

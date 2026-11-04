@@ -22,5 +22,5 @@ final class Convert extends CodecRequestHandler<Xml, Order, Json, Receipt> {
 
 | Page | Content |
 |---|---|
-| [docs/handlers.md](docs/handlers.md) | `CodecRequestHandler`, `CodecDuplexHandler`, type resolution |
+| [docs/handlers.md](docs/handlers.md) | `CodecRequestHandler`, `CodecDuplexHandler`, `InputBinder`, type resolution |
 | [docs/codecs.md](docs/codecs.md) | The `Codec` contract and how to write one |

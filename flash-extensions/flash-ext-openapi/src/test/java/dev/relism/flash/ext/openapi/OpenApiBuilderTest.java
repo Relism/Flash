@@ -661,6 +661,53 @@ class OpenApiBuilderTest {
         assertEquals("Authentication required", resp401.get("description"));
     }
 
+    record Thing(String name) {}
+    record Box<T>(List<T> items, T first, String note) {}
+
+    @GET("/boxes")
+    static class BoxHandler extends RequestHandler {
+        @Override public Box<Thing> handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void a_generic_type_with_known_arguments_is_its_own_schema() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.addOperation(routeOf(BoxHandler.class), null, BoxHandler.class);
+
+        Map<String, Object> spec = b.build();
+        Map<String, Object> resp200 = cast(cast(getOperation(spec, "/boxes", "get").get("responses"), "200"));
+        Map<String, Object> schema = cast(cast(resp200.get("content"), "application/json"));
+        assertEquals(Map.of("$ref", "#/components/schemas/BoxThing"), schema.get("schema"));
+
+        Map<String, Object> schemas = cast(cast(spec.get("components"), "schemas"));
+        Map<String, Object> properties = cast(cast(schemas.get("BoxThing"), "properties"));
+        assertEquals(Map.of("type", "array", "items", Map.of("$ref", "#/components/schemas/Thing")), properties.get("items"));
+        assertEquals(Map.of("$ref", "#/components/schemas/Thing"), properties.get("first"));
+        assertEquals(Map.of("type", "string"), properties.get("note"));
+        assertTrue(schemas.containsKey("Thing"));
+    }
+
+    @Test
+    void a_contributor_adds_parameters_after_the_path_s_own() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.contributors(List.of(new OpenApiContributor() {
+            @Override public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                return OpenApiOperationContribution.builder()
+                        .parameter(Map.of("name", "size", "in", "query", "schema", Map.of("type", "integer")))
+                        .build();
+            }
+        }));
+        b.addOperation(routeOf(GetUserHandler.class), null, GetUserHandler.class);
+
+        List<Map<String, Object>> parameters = cast(getOperation(b.build(), "/users/{id}", "get").get("parameters"));
+        assertEquals(List.of("id", "expand", "size"), parameters.stream().map(p -> p.get("name")).toList());
+        assertEquals(Map.of("type", "integer"), parameters.get(2).get("schema"));
+    }
+
+    private static Object cast(Object map, String key) {
+        return ((Map<?, ?>) map).get(key);
+    }
+
     private static Map<String, Object> getOperation(Map<String, Object> spec, String path, String method) {
         Map<String, Object> paths = cast(spec.get("paths"));
         Map<String, Object> pathItem = cast(paths.get(path));
