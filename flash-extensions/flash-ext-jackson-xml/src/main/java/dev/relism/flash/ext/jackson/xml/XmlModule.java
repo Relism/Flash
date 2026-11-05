@@ -4,7 +4,7 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import dev.relism.flash.ext.jackson.JacksonDocs;
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
-import dev.relism.flash.http.ContentType;
+import dev.relism.flash.ext.serde.Codec;
 
 /**
  * XML for an application: the {@link Xml} codec.
@@ -30,6 +30,6 @@ public class XmlModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Xml.class, new Xml(mapper)).install(JacksonDocs.module());
+        app.install(Codec.module(Xml.class, new Xml(mapper)), JacksonDocs.module());
     }
 }

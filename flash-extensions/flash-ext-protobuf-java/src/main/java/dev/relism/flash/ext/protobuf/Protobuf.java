@@ -5,17 +5,13 @@ import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
-import dev.relism.flash.Bound;
-import dev.relism.flash.Services;
 import dev.relism.flash.bytes.ByteWriter;
 import dev.relism.flash.ext.serde.Codec;
 import dev.relism.flash.ext.serde.Decoder;
 import dev.relism.flash.ext.serde.Encoder;
-import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.Response;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -25,10 +21,9 @@ import java.lang.reflect.Type;
  * and parsed from the array, which beats parsing a stream: that allocates a buffer per call. A
  * message is written straight into the protocol's buffer, its length known up front.
  */
-public final class Protobuf implements Codec, Bound {
+public final class Protobuf implements Codec {
 
     private final ExtensionRegistryLite extensions;
-    private ProtobufValidation validation;
 
     private final ClassValue<Parser<? extends Message>> parsers = new ClassValue<>() {
         @Override
@@ -61,14 +56,11 @@ public final class Protobuf implements Codec, Bound {
     public Decoder decoder(Type type) {
         Parser<? extends Message> parser = parser(type);
         return (bytes, offset, length) -> {
-            Message value;
             try {
-                value = parser.parseFrom(bytes, offset, length, extensions);
+                return parser.parseFrom(bytes, offset, length, extensions);
             } catch (InvalidProtocolBufferException malformed) {
                 throw HttpException.badRequest("Invalid protobuf message: " + malformed.getMessage());
             }
-            if (validation != null) validation.verify(value);
-            return value;
         };
     }
 
@@ -107,13 +99,6 @@ public final class Protobuf implements Codec, Bound {
     @Override
     public ContentType contentType() {
         return ContentType.PROTOBUF;
-    }
-
-    @Override
-    public void bind(Services services) {
-        validation = Validation.family(services, ProtobufValidation.class).orElse(null);
-        if (validation == null) LoggerFactory.getLogger(Protobuf.class)
-                .info("No ProtobufValidation installed: {} bodies are parsed and not checked", ContentType.PROTOBUF);
     }
 
     private Parser<? extends Message> parser(Type type) {

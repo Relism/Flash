@@ -14,8 +14,9 @@ routes.
 | Part | Source |
 |---|---|
 | Path parameters | `{name}` segments of the route, as required string parameters |
-| Request body | The first type argument of a `CodecRequestHandler`, with the media type of its input codec |
-| Success response | The type returned by `handle`, or the last type argument of a `CodecRequestHandler`. Media type from its output codec, or JSON |
+| Other parameters | `@Parameter`, then what contributors add, such as the paging parameters of flash-ext-data-core for an input read from the request |
+| Request body | The input type a contributor states, such as the second type argument of a `CodecRequestHandler` with the media type of its input codec, unless it is `@FromRequest` |
+| Success response | The type a contributor states, such as the last type argument of a `CodecRequestHandler` with the media type of its output codec, or else the type returned by `handle` with JSON |
 | `4xx` and `5xx` responses | The shape Flash answers failures with: `{"error": string, "status": integer}`, as `application/json` |
 | Security, rate limits | Contributed by the modules that enforce them. See [contributors.md](contributors.md) |
 

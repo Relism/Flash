@@ -36,4 +36,5 @@ final class Convert extends CodecRequestHandler<Xml, Order, Json, Receipt> { ...
 
 ## Direct use
 
-`Xml` is a service with `read(request, type)`, `write(response, value)` and `mapper()`.
+`Xml` is a service with `decoder(type)`, `write(response, value)` and `mapper()`. A plain handler
+parses through `Decoder.of(xml, type, services())`, which applies the installed validation engine.

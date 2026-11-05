@@ -20,6 +20,7 @@
         <dependency>
             <groupId>dev.relism</groupId>
             <artifactId>flash-ext-validation-core</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.avaje</groupId>
@@ -28,7 +29,7 @@
         <dependency>
             <groupId>dev.relism</groupId>
             <artifactId>flash-ext-openapi</artifactId>
-            <optional>true</optional>
+            <scope>test</scope>
         </dependency>
 
         <dependency>

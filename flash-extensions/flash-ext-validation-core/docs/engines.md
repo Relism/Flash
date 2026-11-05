@@ -5,7 +5,11 @@ An engine implements `Validation`, usually also `Module`, and installs itself:
 ```java
 public class MyValidation implements Module, Validation {
     @Override public void install(App app) {
-        app.add(Validation.class, this).install(Validation.docs());
+        app.install(Validation.module(this));
+    }
+
+    @Override public boolean checks(Class<?> type) {
+        return hasRules(type);   // asked once per decoded type, at boot
     }
 
     @Override public void verify(Object value) {
@@ -15,19 +19,18 @@ public class MyValidation implements Module, Validation {
 }
 ```
 
-`Validation.docs()` returns a module that adds the engine's rules to the OpenAPI document when
-`flash-ext-openapi` is on the classpath, and does nothing otherwise.
+`Validation.module(engine)` adds the engine as a `Validation`. When `flash-ext-serde` is on the
+classpath it also checks every decoded value of a type the engine `checks`, and when
+`flash-ext-openapi` is, it adds the engine's rules to the published document. Each is skipped when
+its module is absent.
 
-## Codec families
+## Several engines
 
-A codec whose values the generic engines cannot check defines a sub-interface of `Validation`. The
-protobuf codec defines `ProtobufValidation`. The engine is registered under the sub-interface, and
-the codec looks it up with:
+An engine that answers `checks` precisely lives beside others. Protovalidate checks only protobuf
+messages; the Jakarta and Avaje engines check a type that declares a constraint or a cascade, so a
+generated message is not theirs. One application therefore has a Jakarta engine for JSON and a
+Protovalidate engine for protobuf without any configuration.
 
-```java
-Validation.family(services, ProtobufValidation.class)   // Optional<ProtobufValidation>
-```
-
-`family` fails the boot if a `ProtobufValidation` was registered as a plain `Validation`, where its
-codec would never ask it. As a result one application can have a Jakarta engine for JSON and a
-Protovalidate engine for protobuf at the same time.
+Two engines that both check one type fail the boot at the first handler that decodes it, naming
+both. `checks` defaults to `true`, so two engines that keep the default are refused as soon as a body
+is decoded.

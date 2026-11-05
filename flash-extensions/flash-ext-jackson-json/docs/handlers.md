@@ -40,16 +40,19 @@ Neither reaches `handle`. Both are `HttpException`s, so the default error handle
 final class Import extends RequestHandler {
     private final Json json;
     private final Archive archive;
+    private Decoder manifests;
     Import(Json json, Archive archive) { this.json = json; this.archive = archive; }
 
+    @Override protected void onInit() { manifests = Decoder.of(json, Manifest.class, services()); }
+
     @Override protected Object handle(Request req, Response res) throws Exception {
-        return json.write(res, archive.store(json.read(req, Manifest.class)));
+        return json.write(res, archive.store((Manifest) manifests.decode(req)));
     }
 }
 ```
 
-`read(request, type)` parses and validates like a typed handler. `write(response, value)` sets
-`Content-Type: application/json` and returns the bytes.
+`Decoder.of` parses and validates like a typed handler, with a reader prepared once.
+`write(response, value)` sets `Content-Type: application/json` and returns the bytes.
 
 ## Mixing formats
 

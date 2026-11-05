@@ -45,7 +45,7 @@ public abstract class NdjsonHandler<I, O> extends DuplexHandler {
             throw new IllegalStateException(name + " leaves its NdjsonHandler types open");
         Codec codec = services().find(NdjsonModule.class).orElseThrow(() -> new IllegalStateException(
                 name + " is an NdjsonHandler: install new NdjsonModule(Json.class) with the app's JSON codec")).codec(services());
-        decoder = types[0] == Void.class ? null : codec.decoder(types[0]);
+        decoder = types[0] == Void.class ? null : Decoder.of(codec, types[0], services());
         encoder = types[1] == Void.class ? null : codec.encoder(types[1]);
     }
 

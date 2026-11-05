@@ -115,7 +115,7 @@ groupId `dev.relism.Flash` and the release version as its version, which is the 
 | [flash-ext-scheduler](flash-extensions/flash-ext-scheduler/README.md) | Interval and cron jobs |
 | [flash-ext-cache-core](flash-extensions/flash-ext-cache-core/README.md) | Cache contract |
 | [flash-ext-cache-caffeine](flash-extensions/flash-ext-cache-caffeine/README.md) | In-process cache with Caffeine |
-| [flash-ext-data-core](flash-extensions/flash-ext-data-core/README.md) | Transactions and repositories |
+| [flash-ext-data-core](flash-extensions/flash-ext-data-core/README.md) | Transactions, repositories and keyset paging |
 | [flash-ext-data-jdbc](flash-extensions/flash-ext-data-jdbc/README.md) | JDBC backend |
 | [flash-ext-data-hibernate](flash-extensions/flash-ext-data-hibernate/README.md) | Hibernate backend |
 | [flash-ext-micrometer](flash-extensions/flash-ext-micrometer/README.md) | HTTP server metrics |

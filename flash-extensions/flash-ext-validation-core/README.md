@@ -1,7 +1,7 @@
 # flash-ext-validation-core
 
-One contract for checking a value against the rules its type declares. Codecs call it on a body
-they have just read, so a request that breaks a rule is a `422` and never reaches the handler. The
+One contract for checking a value against the rules its type declares. Every value a codec decodes
+passes through it, so a request that breaks a rule is a `422` and never reaches the handler. The
 rules themselves come from an engine module.
 
 ```xml
@@ -11,7 +11,8 @@ rules themselves come from an engine module.
 </dependency>
 ```
 
-Applications install exactly one engine for JSON and XML bodies:
+Applications install an engine for each kind of type they check; each type goes to the engine that
+checks it:
 
 | Engine | Module |
 |---|---|
@@ -25,6 +26,6 @@ app.install(new JsonModule(), new JakartaValidation());
 
 | Page | Content |
 |---|---|
-| [docs/contract.md](docs/contract.md) | `Validation`, `ValidationException`, how codecs use them |
-| [docs/engines.md](docs/engines.md) | Writing an engine, codec families |
+| [docs/contract.md](docs/contract.md) | `Validation`, `ValidationException`, who calls them |
+| [docs/engines.md](docs/engines.md) | Writing an engine, several engines in one app |
 | [docs/openapi.md](docs/openapi.md) | How rules reach the OpenAPI document |

@@ -1,6 +1,8 @@
 package dev.relism.flash.ext.jackson.json;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import dev.relism.flash.http.HttpException;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
@@ -20,17 +22,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JsonTest {
 
+    record Named(@JsonProperty("display") String name, String createdAt) {}
+
+    @Test
+    void a_field_is_named_as_the_mapper_writes_it() throws Exception {
+        Json plain = new Json(new ObjectMapper());
+        assertEquals("display", plain.wireName(Named.class.getDeclaredField("name")));
+        assertEquals("createdAt", plain.wireName(Named.class.getDeclaredField("createdAt")));
+
+        Json snake = new Json(new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
+        assertEquals("created_at", snake.wireName(Named.class.getDeclaredField("createdAt")));
+        assertEquals("display", snake.wireName(Named.class.getDeclaredField("name")), "an explicit name wins");
+    }
+
     @Test
     void body_parses_valid_json_and_maps_bad_payload_to_http_400() throws Exception {
         Json json = new Json(new ObjectMapper());
 
         Request ok = request("{\"id\":\"u1\",\"name\":\"alice\"}");
-        UserDto dto = json.read(ok, UserDto.class);
+        UserDto dto = (UserDto) json.decoder(UserDto.class).decode(ok);
         assertEquals("u1", dto.id);
         assertEquals("alice", dto.name);
 
         Request bad = request("not-json");
-        HttpException ex = assertThrows(HttpException.class, () -> json.read(bad, UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.decoder(UserDto.class).decode(bad));
         assertEquals(400, ex.status());
         assertTrue(ex.getMessage().startsWith("Invalid request body:"));
     }
@@ -39,7 +54,7 @@ class JsonTest {
     void a_truncated_body_is_a_bad_request_too() throws Exception {
         Json json = new Json(new ObjectMapper());
 
-        HttpException ex = assertThrows(HttpException.class, () -> json.read(request("["), UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.decoder(UserDto.class).decode(request("[")));
 
         assertEquals(400, ex.status());
     }

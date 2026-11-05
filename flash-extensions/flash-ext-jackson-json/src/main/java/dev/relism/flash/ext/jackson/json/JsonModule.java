@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.relism.flash.ext.jackson.JacksonDocs;
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
-import dev.relism.flash.http.ContentType;
+import dev.relism.flash.ext.serde.Codec;
 
 /**
  * JSON for an application: the {@link Json} codec over this module's mapper.
@@ -35,6 +35,6 @@ public class JsonModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Json.class, new Json(mapper)).install(JacksonDocs.module());
+        app.install(Codec.module(Json.class, new Json(mapper)), JacksonDocs.module());
     }
 }

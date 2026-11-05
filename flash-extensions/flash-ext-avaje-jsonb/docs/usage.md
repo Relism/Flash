@@ -26,15 +26,19 @@ new JsonModule(Jsonb.builder().serializeNulls(true).failOnUnknown(true).build())
 
 ## Direct use
 
-`Json` is a service: `read(request, type)`, `write(response, value)`, `contentType()` and `jsonb()`.
+`Json` is a service: `decoder(type)`, `write(response, value)`, `contentType()` and `jsonb()`. A
+plain handler parses through `Decoder.of`, which applies the installed validation engine:
 
 ```java
 final class Import extends RequestHandler {
     private final Json json;
+    private Decoder manifests;
     Import(Json json) { this.json = json; }
 
+    @Override protected void onInit() { manifests = Decoder.of(json, Manifest.class, services()); }
+
     @Override protected Object handle(Request req, Response res) throws Exception {
-        return json.write(res, store(json.read(req, Manifest.class)));
+        return json.write(res, store((Manifest) manifests.decode(req)));
     }
 }
 ```

@@ -2,7 +2,8 @@
 
 Transactions and repositories for relational data, independent of the access library. It provides
 `Tx` (run work in a transaction), `Data` (repositories and read/write helpers), a small query model
-(`Spec`, `Sort`, `Page`), and `@Transactional` for handler classes. The access library is a
+(`Spec`, `Sort`, `Query`), keyset paging (`PageRequest`, `Page`), and `@Transactional` for handler
+classes. The access library is a
 `TxManager` and a repository base from a backend module:
 [`flash-ext-data-jdbc`](../flash-ext-data-jdbc/README.md) or
 [`flash-ext-data-hibernate`](../flash-ext-data-hibernate/README.md).
@@ -18,15 +19,22 @@ Transactions and repositories for relational data, independent of the access lib
 TxManager manager = new HibernateTxManager(sessionFactory);
 app.install(new DataModule(manager, HibernateData.create(manager)));
 
-final class ListUsers extends RequestHandler {
+@Entity
+class User { @Id long id; @Sortable String name; }
+
+@GET("/users")
+final class ListUsers extends JsonHandler<PageRequest<User>, Page<User>> {
     private final Repository<User, Long> users;
     ListUsers(Data data) { this.users = data.repository(User.class); }
-    @Override protected Object handle(Request req, Response res) { return users.findAll(); }
+    @Override protected Page<User> handle(Request req, Response res, PageRequest<User> page) {
+        return users.findPage(page);
+    }
 }
 ```
 
 | Page | Content |
 |---|---|
 | [docs/transactions.md](docs/transactions.md) | `Tx`, propagation, rollback, callbacks, `@Transactional` |
-| [docs/repositories.md](docs/repositories.md) | `Data`, `Repository`, `Spec`, `Sort`, `Page` |
+| [docs/repositories.md](docs/repositories.md) | `Data`, `Repository`, `Spec`, `Sort`, `Query` |
+| [docs/paging.md](docs/paging.md) | `Pager`, `PageRequest`, `Page`, `@Sortable`, and paging through serde and OpenAPI |
 | [docs/backends.md](docs/backends.md) | What a backend implements |

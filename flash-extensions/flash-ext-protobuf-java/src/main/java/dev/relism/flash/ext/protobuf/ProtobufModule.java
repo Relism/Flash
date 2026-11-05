@@ -3,6 +3,7 @@ package dev.relism.flash.ext.protobuf;
 import com.google.protobuf.ExtensionRegistryLite;
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
+import dev.relism.flash.ext.serde.Codec;
 
 /** Installs binary Protocol Buffer bodies through Google's protobuf-java runtime. */
 public final class ProtobufModule implements Module {
@@ -23,6 +24,6 @@ public final class ProtobufModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Protobuf.class, protobuf).install(ProtobufDocs.module());
+        app.install(Codec.module(Protobuf.class, protobuf), ProtobufDocs.module());
     }
 }

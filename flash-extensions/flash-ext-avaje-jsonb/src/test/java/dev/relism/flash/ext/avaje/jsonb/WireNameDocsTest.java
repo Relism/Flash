@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The document names a field the way Jsonb writes it. */
-class JsonbDocsTest {
+class WireNameDocsTest {
 
     public static final class Open extends JsonHandler<Account, Account> {
         @Override protected Account handle(Request request, Response response, Account account) { return account; }

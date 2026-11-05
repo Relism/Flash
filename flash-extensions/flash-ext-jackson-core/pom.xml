@@ -18,10 +18,6 @@
             <artifactId>flash-ext-serde</artifactId>
         </dependency>
         <dependency>
-            <groupId>dev.relism</groupId>
-            <artifactId>flash-ext-validation-core</artifactId>
-        </dependency>
-        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>

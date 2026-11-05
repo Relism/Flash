@@ -25,5 +25,5 @@ per property when the document is built, not on a request.
 | `describe(sentence)` | Appends a sentence to the description. Ignored if blank or a message-bundle key (starts with `{`). A full stop is added if missing |
 | `required()` | Lists the property under `required` |
 
-`Validation.docs()` installs the walk that applies registered rules to every annotated field. It is
-loaded only when `flash-ext-openapi` is present.
+`Validation.module(engine)` installs the walk that applies every engine's registered rules to every
+annotated field. It is loaded only when `flash-ext-openapi` is present.

@@ -1,14 +1,11 @@
 package dev.relism.flash.ext.openapi;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.Route;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -54,6 +51,8 @@ public final class OpenApiBuilder {
     private final Map<String, Map<String, Class<?>>> operationHandlers = new LinkedHashMap<>();
     private final Schemas schemas = new Schemas();
     private List<OpenApiContributor> contributors = List.of();
+    /** What every contributor says of a handler, asked once. */
+    private final Map<Class<?>, List<OpenApiOperationContribution>> contributions = new HashMap<>();
     private boolean errorsDocumented;
     private int revision;
     private int builtRevision = -1;
@@ -65,6 +64,7 @@ public final class OpenApiBuilder {
     /** Whoever adds to the document: security schemes, rate-limit headers, a validation engine's rules. */
     void contributors(List<OpenApiContributor> contributors) {
         this.contributors = List.copyOf(contributors);
+        this.contributions.clear();
         schemas.contributors(this.contributors);
     }
 
@@ -104,7 +104,6 @@ public final class OpenApiBuilder {
         Map<String, Object> cached = cachedSpec;
         if (cached != null && builtRevision == current) return cached;
 
-        List<OpenApiContributor> contributors = contributors();
         Map<String, Object> renderedPaths = new LinkedHashMap<>();
         for (var path : paths.entrySet()) {
             Map<String, Class<?>> handlers = operationHandlers.getOrDefault(path.getKey(), Map.of());
@@ -114,7 +113,7 @@ public final class OpenApiBuilder {
                 Map<String, Object> declared = (Map<String, Object>) method.getValue();
                 Map<String, Object> operation = new LinkedHashMap<>(declared);
                 Class<?> handler = handlers.get(method.getKey());
-                if (handler != null && !contributors.isEmpty()) applyContributorSecurity(operation, handler, contributors);
+                if (handler != null) applyContributorSecurity(operation, handler);
                 pathItem.put(method.getKey(), operation);
             }
             renderedPaths.put(path.getKey(), pathItem);
@@ -182,6 +181,13 @@ public final class OpenApiBuilder {
             if (declared.examples().length > 0) parameter.put("examples", examples(declared.examples()));
             parameters.add(parameter);
         }
+
+        // A declared parameter wins over a contributed one with its name and location, as a declared response does.
+        Set<String> declared = new HashSet<>();
+        for (Map<String, Object> parameter : parameters) declared.add(parameter.get("in") + " " + parameter.get("name"));
+        for (OpenApiOperationContribution contribution : contributions(handlerClass))
+            for (Map<String, Object> parameter : contribution.parameters())
+                if (declared.add(parameter.get("in") + " " + parameter.get("name"))) parameters.add(parameter);
 
         if (!parameters.isEmpty()) operation.put("parameters", parameters);
     }
@@ -299,9 +305,7 @@ public final class OpenApiBuilder {
 
     /** A handler whose codecs are in its signature is described by them, not by an annotation. */
     private ContentType contributedMediaType(Class<?> handlerClass, boolean request) {
-        for (OpenApiContributor contributor : contributors()) {
-            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
-            if (contribution == null) continue;
+        for (OpenApiOperationContribution contribution : contributions(handlerClass)) {
             ContentType contributed = request ? contribution.consumes() : contribution.produces();
             if (contributed != null) return contributed;
         }
@@ -314,7 +318,7 @@ public final class OpenApiBuilder {
         if (returned == null) returned = returnTypeOf(handlerClass);
         Class<?> raw = Schemas.rawType(returned);
         if (raw == null || raw == Object.class || raw == Void.class || raw == void.class) return null;
-        if (raw.getName().equals("dev.relism.flash.http.Response")) return null;
+        if (Response.class.isAssignableFrom(raw)) return null;
 
         Map<String, Object> schema = schemas.schemaForType(returned);
         return schema == null || schema.isEmpty() ? null : schema;
@@ -322,9 +326,7 @@ public final class OpenApiBuilder {
 
     /** The type a contributor states for one end, or null. */
     private Type contributedType(Class<?> handlerClass, boolean request) {
-        for (OpenApiContributor contributor : contributors()) {
-            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
-            if (contribution == null) continue;
+        for (OpenApiOperationContribution contribution : contributions(handlerClass)) {
             Type contributed = request ? contribution.requestType() : contribution.responseType();
             if (contributed != null) return contributed;
         }
@@ -353,16 +355,31 @@ public final class OpenApiBuilder {
 
     // ── Contributors ──────────────────────────────────────────────────────────
 
-    private List<OpenApiContributor> contributors() {
-        return contributors;
+    private List<OpenApiOperationContribution> contributions(Class<?> handlerClass) {
+        return contributions.computeIfAbsent(handlerClass, handler -> {
+            List<OpenApiOperationContribution> said = new ArrayList<>(contributors.size());
+            for (OpenApiContributor contributor : contributors) {
+                OpenApiOperationContribution contribution = contributor.operationFor(handler);
+                if (contribution != null) said.add(contribution);
+            }
+            // An input read from the request is described by whoever describes its type.
+            for (int i = 0, stated = said.size(); i < stated; i++) {
+                OpenApiOperationContribution reads = said.get(i);
+                if (reads.requestParameters() == null) continue;
+                for (OpenApiContributor contributor : contributors) {
+                    OpenApiOperationContribution described = contributor.parameters(reads.requestParameters(), reads.requestNames());
+                    if (described == null) continue;
+                    said.add(described);
+                    break;
+                }
+            }
+            return said;
+        });
     }
 
     private void applyContributorResponses(Map<Integer, Map<String, Object>> byStatus, Class<?> handlerClass,
                                            Set<Integer> declaredStatuses) {
-        for (OpenApiContributor contributor : contributors()) {
-            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
-            if (contribution == null) continue;
-
+        for (OpenApiOperationContribution contribution : contributions(handlerClass)) {
             for (var contributed : contribution.responses().entrySet()) {
                 if (contributed.getValue() == null) continue;
                 int status = contributed.getKey();
@@ -395,11 +412,9 @@ public final class OpenApiBuilder {
         }   // Flash answers a failure in JSON whatever the route produces
     }
 
-    private void applyContributorSecurity(Map<String, Object> operation, Class<?> handlerClass,
-                                          List<OpenApiContributor> contributors) {
-        for (OpenApiContributor contributor : contributors) {
-            OpenApiOperationContribution contribution = contributor.operationFor(handlerClass);
-            if (contribution == null || contribution.security().isEmpty()) continue;
+    private void applyContributorSecurity(Map<String, Object> operation, Class<?> handlerClass) {
+        for (OpenApiOperationContribution contribution : contributions(handlerClass)) {
+            if (contribution.security().isEmpty()) continue;
             @SuppressWarnings("unchecked")
             List<Map<String, List<String>>> security =
                     (List<Map<String, List<String>>>) operation.computeIfAbsent("security", s -> new ArrayList<>());

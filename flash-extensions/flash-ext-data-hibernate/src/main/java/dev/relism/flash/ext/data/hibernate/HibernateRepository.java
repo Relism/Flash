@@ -2,6 +2,7 @@ package dev.relism.flash.ext.data.hibernate;
 
 import dev.relism.flash.ext.data.core.*;
 import jakarta.persistence.TypedQuery;
+import org.hibernate.Hibernate;
 import org.hibernate.Session;
 import org.hibernate.query.MutationQuery;
 
@@ -33,32 +34,17 @@ public abstract class HibernateRepository<T, ID extends Serializable> extends Re
     @Override
     protected List<T> doFind(Query<T> query) {
         HibernateSpecContext ctx = new HibernateSpecContext();
-        String where = query.spec() != null ? " where " + query.spec().toFragment(ctx) : "";
-        String order = query.sort() != null && query.sort().isSorted() ? " order by " + orderClause(query.sort()) : "";
-
-        TypedQuery<T> q = session().createQuery("from " + type.getSimpleName() + where + order, type);
+        String order = query.sort().isSorted() ? " order by " + orderClause(query.sort()) : "";
+        TypedQuery<T> q = session().createQuery("from " + type.getSimpleName() + " where " + query.spec().toFragment(ctx) + order, type);
         ctx.applyParameters(q);
-
-        if (query.isPaged()) {
-            q.setFirstResult(query.page() * query.size());
-            q.setMaxResults(query.size());
-        }
+        if (query.limit() > 0) q.setMaxResults(query.limit());
         return q.getResultList();
     }
 
+    /** A row the session already held as a proxy has its values on the instance behind it. */
     @Override
-    protected Optional<T> doFindOne(Spec<T> spec) {
-        return doFind(Query.<T>all().where(spec).page(0, 1)).stream().findFirst();
-    }
-
-    @Override
-    protected Page<T> doFindPage(Query<T> query) {
-        if (!query.isPaged()) {
-            throw new IllegalArgumentException("Paged query requires page and size");
-        }
-        long total = countWhere(query.spec());
-        List<T> content = doFind(query);
-        return new Page<>(content, query.page(), query.size(), total);
+    protected Object loaded(T entity) {
+        return Hibernate.unproxy(entity);
     }
 
     @Override
@@ -67,8 +53,12 @@ public abstract class HibernateRepository<T, ID extends Serializable> extends Re
     }
 
     @Override
-    protected long doCount() {
-        return countWhere(Spec.all());
+    protected long doCount(Spec<T> spec) {
+        HibernateSpecContext ctx = new HibernateSpecContext();
+        TypedQuery<Long> q = session().createQuery("select count(*) from " + type.getSimpleName()
+                + " where " + spec.toFragment(ctx), Long.class);
+        ctx.applyParameters(q);
+        return q.getSingleResult();
     }
 
     @Override
@@ -145,18 +135,6 @@ public abstract class HibernateRepository<T, ID extends Serializable> extends Re
             params.accept(q);
             return q.executeUpdate();
         });
-    }
-
-    protected Class<T> entityType() {
-        return type;
-    }
-
-    private long countWhere(Spec<T> spec) {
-        HibernateSpecContext ctx = new HibernateSpecContext();
-        String where = spec != null ? " where " + spec.toFragment(ctx) : "";
-        TypedQuery<Long> q = session().createQuery("select count(*) from " + type.getSimpleName() + where, Long.class);
-        ctx.applyParameters(q);
-        return q.getResultStream().findFirst().orElse(0L);
     }
 
     private String orderClause(Sort sort) {

@@ -2,6 +2,7 @@ package dev.relism.flash.ext.protobuf;
 
 import com.google.protobuf.StringValue;
 import dev.relism.flash.App;
+import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.ext.validation.ValidationException;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
@@ -29,10 +30,10 @@ class ProtobufHttpTest {
     @RegisterExtension
     static FlashTest app = FlashTest.of(() -> App.create()
             .install(new ProtobufModule())
-            .add(ProtobufValidation.class, value -> {
+            .install(Validation.module(value -> {
                 if (value instanceof StringValue text && text.getValue().equals("bad"))
                     throw new ValidationException(List.of(new ValidationException.Violation("value", "must not be bad")));
-            })
+            }))
             .scan("dev.relism.flash.ext.protobuf"));
 
     @Test

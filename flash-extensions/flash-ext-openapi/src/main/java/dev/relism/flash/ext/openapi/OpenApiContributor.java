@@ -3,6 +3,7 @@ package dev.relism.flash.ext.openapi;
 import java.lang.reflect.Field;
 import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.function.Function;
 
 public interface OpenApiContributor {
 
@@ -28,6 +29,16 @@ public interface OpenApiContributor {
 
     default OpenApiOperationContribution operationFor(Class<?> handlerClass) {
         return OpenApiOperationContribution.empty();
+    }
+
+    /**
+     * The parameters, and what else the operation adds, of an input of {@code type} that a contributor
+     * said an operation reads from the request ({@link OpenApiOperationContribution#requestParameters});
+     * null to leave it to another. {@code names} gives a field the name whatever reads the input gives
+     * it, null for one it does not read. Asked once per operation.
+     */
+    default OpenApiOperationContribution parameters(Type type, Function<Field, String> names) {
+        return null;
     }
 
     /** The name {@code field} has on the wire, or null to leave it to another contributor or the field. */

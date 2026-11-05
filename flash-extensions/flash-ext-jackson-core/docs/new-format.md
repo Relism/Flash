@@ -12,7 +12,7 @@ public abstract class CborHandler<I, O> extends CodecRequestHandler<Cbor, I, Cbo
 
 public class CborModule implements Module {
     @Override public void install(App app) {
-        app.add(Cbor.class, new Cbor(new CBORMapper())).install(JacksonDocs.module());
+        app.install(Codec.module(Cbor.class, new Cbor(new CBORMapper())), JacksonDocs.module());
     }
 }
 ```

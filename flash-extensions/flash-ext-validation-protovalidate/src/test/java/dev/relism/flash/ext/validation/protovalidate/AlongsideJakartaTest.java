@@ -79,13 +79,4 @@ class AlongsideJakartaTest {
                 HttpResponse.BodyHandlers.ofByteArray());
     }
 
-    @Test
-    void protovalidateWithoutTheProtobufCodecFailsTheBoot() {
-        FlashTest alone = FlashTest.of(() -> App.create().install(new ProtovalidateValidation(RULES)));
-
-        StringBuilder said = new StringBuilder();
-        for (Throwable cause = assertThrows(RuntimeException.class, alone::services); cause != null; cause = cause.getCause())
-            said.append(cause.getMessage()).append(' ');
-        assertTrue(said.toString().contains("no ProtobufModule is installed"), said.toString());
-    }
 }

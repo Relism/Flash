@@ -52,38 +52,15 @@ public abstract class JdbcRepository<T, ID> extends Repository<T, ID> {
         return queryOne("select " + columns() + " from " + table + " where " + idColumn + " = ?", ps -> ps.setObject(1, id));
     }
 
+    /** A limit is a row limit of JDBC itself ({@code setMaxRows}), which every driver honours. */
     @Override
     protected List<T> doFind(Query<T> query) {
         JdbcSpecContext ctx = new JdbcSpecContext();
-        String where = query.spec() != null ? " where " + query.spec().toFragment(ctx) : "";
-        String order = query.sort() != null && query.sort().isSorted() ? " order by " + orderClause(query.sort()) : "";
-        String paging = query.isPaged() ? " limit ? offset ?" : "";
-
-        return queryMany("select " + columns() + " from " + table + where + order + paging, ps -> {
-            if (query.isPaged()) {
-                ctx.applyParameters(ps);
-                int base = ctx.size();
-                ps.setInt(base + 1, query.size());
-                ps.setInt(base + 2, query.page() * query.size());
-                return;
-            }
+        String order = query.sort().isSorted() ? " order by " + orderClause(query.sort()) : "";
+        return queryMany("select " + columns() + " from " + table + " where " + query.spec().toFragment(ctx) + order, ps -> {
             ctx.applyParameters(ps);
+            ps.setMaxRows(query.limit());
         });
-    }
-
-    @Override
-    protected Optional<T> doFindOne(Spec<T> spec) {
-        return doFind(Query.<T>all().where(spec).page(0, 1)).stream().findFirst();
-    }
-
-    @Override
-    protected Page<T> doFindPage(Query<T> query) {
-        if (!query.isPaged()) {
-            throw new IllegalArgumentException("Paged query requires page and size");
-        }
-        long total = countWhere(query.spec());
-        List<T> content = doFind(query);
-        return new Page<>(content, query.page(), query.size(), total);
     }
 
     @Override
@@ -92,8 +69,10 @@ public abstract class JdbcRepository<T, ID> extends Repository<T, ID> {
     }
 
     @Override
-    protected long doCount() {
-        return queryOne("select count(*) from " + table, ps -> {}, rs -> rs.getLong(1)).orElse(0L);
+    protected long doCount(Spec<T> spec) {
+        JdbcSpecContext ctx = new JdbcSpecContext();
+        return queryOne("select count(*) from " + table + " where " + spec.toFragment(ctx), ctx::applyParameters,
+                rs -> rs.getLong(1)).orElse(0L);
     }
 
     @Override
@@ -190,16 +169,6 @@ public abstract class JdbcRepository<T, ID> extends Repository<T, ID> {
 
     protected void applyGeneratedKey(PreparedStatement ps, T entity) throws SQLException {
         // override when entity has a generated PK
-    }
-
-    protected Class<T> entityType() {
-        return null;
-    }
-
-    private long countWhere(Spec<T> spec) {
-        JdbcSpecContext ctx = new JdbcSpecContext();
-        String where = spec != null ? " where " + spec.toFragment(ctx) : "";
-        return queryOne("select count(*) from " + table + where, ctx::applyParameters, rs -> rs.getLong(1)).orElse(0L);
     }
 
     private String orderClause(Sort sort) {

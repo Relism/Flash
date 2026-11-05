@@ -1,6 +1,7 @@
 package dev.relism.flash.ext.avaje.jsonb;
 
 import dev.relism.flash.http.HttpException;
+import dev.relism.flash.ext.serde.Decoder;
 import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.ext.validation.ValidationException;
 import dev.relism.flash.App;
@@ -32,13 +33,21 @@ class JsonTest {
     record Unmapped(String text) {}
 
     @Test
+    void aFieldIsNamedAsTheGeneratedAdapterWritesIt() throws Exception {
+        assertEquals("user_name", json.wireName(Account.class.getDeclaredField("name")));
+        assertEquals("id", json.wireName(Order.class.getDeclaredField("id")));
+        assertEquals("text", json.wireName(Unmapped.class.getDeclaredField("text")), "no adapter: the Java name");
+        assertEquals("enabled", json.wireName(Flag.class.getDeclaredField("active")), "read through isActive()");
+    }
+
+    @Test
     void aBodyIsReadAsTheTypeAsked() throws Exception {
-        assertEquals(new Order("o1", 3), json.read(request("{\"id\":\"o1\",\"quantity\":3}"), Order.class));
+        assertEquals(new Order("o1", 3), json.decoder(Order.class).decode(request("{\"id\":\"o1\",\"quantity\":3}")));
     }
 
     @Test
     void aMalformedBodyIsABadRequest() {
-        HttpException refused = assertThrows(HttpException.class, () -> json.read(request("not json"), Order.class));
+        HttpException refused = assertThrows(HttpException.class, () -> json.decoder(Order.class).decode(request("not json")));
 
         assertEquals(400, refused.status());
         assertTrue(refused.getMessage().startsWith("Invalid request body:"), refused.getMessage());
@@ -46,8 +55,8 @@ class JsonTest {
 
     @Test
     void aTruncatedOrEmptyBodyIsABadRequestToo() {
-        assertEquals(400, assertThrows(HttpException.class, () -> json.read(request("{\"id\":"), Order.class)).status());
-        assertEquals(400, assertThrows(HttpException.class, () -> json.read(request(""), Order.class)).status());
+        assertEquals(400, assertThrows(HttpException.class, () -> json.decoder(Order.class).decode(request("{\"id\":"))).status());
+        assertEquals(400, assertThrows(HttpException.class, () -> json.decoder(Order.class).decode(request(""))).status());
     }
 
     @Test
@@ -73,14 +82,15 @@ class JsonTest {
     }
 
     @RegisterExtension
-    static FlashTest checked = FlashTest.of(() -> App.create().install(new JsonModule()).add(Validation.class, value -> {
+    static FlashTest checked = FlashTest.of(() -> App.create().install(new JsonModule(), Validation.module(value -> {
         throw new ValidationException(List.of(new ValidationException.Violation("quantity", "must be positive")));
-    }));
+    })));
 
     @Test
     void theInstalledEngineChecksWhatIsRead() {
         ValidationException refused = assertThrows(ValidationException.class,
-                () -> checked.services().get(Json.class).read(request("{\"id\":\"o3\",\"quantity\":0}"), Order.class));
+                () -> Decoder.of(checked.services().get(Json.class), Order.class, checked.services())
+                        .decode(request("{\"id\":\"o3\",\"quantity\":0}")));
 
         assertEquals(422, refused.status());
     }

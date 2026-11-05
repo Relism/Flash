@@ -19,6 +19,7 @@ second gets a numeric suffix (`User2`).
 | `Collection<T>`, arrays | `array` of `T`. A raw collection has object items |
 | `Map<K, V>` | `object` with `additionalProperties` of `V` |
 | `Object` | `object` |
+| a generic class with known arguments | Its own `object` schema, named after the class and its arguments: `Page<User>` is `PageUser`, with `User` wherever the class declares its variable |
 | anything else | An `object` schema from the type's fields, as a `$ref` |
 
 Fields are read by reflection from the class's declared fields. Static and `transient` fields are

@@ -1,8 +1,8 @@
 # flash-ext-validation-protovalidate
 
-[Protovalidate](https://github.com/bufbuild/protovalidate-java) as the `ProtobufValidation` engine.
-Rules are declared in `.proto` files and checked against each message the protobuf codec reads, so
-a message that breaks a rule is a `422`.
+[Protovalidate](https://github.com/bufbuild/protovalidate-java) as the validation engine for
+protobuf messages. Rules are declared in `.proto` files and checked against each message a codec
+decodes, so a message that breaks a rule is a `422`.
 
 ```xml
 <dependency>

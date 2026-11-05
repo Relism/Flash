@@ -8,13 +8,13 @@ import java.lang.reflect.Type;
 /** A request handler whose input and output formats are fixed by its signature. */
 public abstract class CodecRequestHandler<CI extends Codec, I, CO extends Codec, O>
         extends RequestHandler {
-    private Decoder decoder;
+    private InputBinder.Reader input;
     private Codec writer;
 
     @Override
     protected final void onInit() {
         CodecBinding binding = CodecBinding.resolve(services(), getClass(), CodecRequestHandler.class);
-        decoder = binding.inType == Void.class ? null : binding.in.decoder(binding.inType);
+        input = binding.input(services(), getClass());
         writer = passThrough(binding.outType) ? null : binding.out;
         if (writer != null) writer.encoder(binding.outType);
         onCodecInit();
@@ -27,8 +27,8 @@ public abstract class CodecRequestHandler<CI extends Codec, I, CO extends Codec,
     @Override
     protected final Object handle(Request request, Response response) throws Exception {
         @SuppressWarnings("unchecked")
-        I input = decoder == null ? null : (I) decoder.decode(request);
-        O answer = handle(request, response, input);
+        I value = input == null ? null : (I) input.read(request);
+        O answer = handle(request, response, value);
         return writer == null || answer == null ? answer : writer.write(response, answer);
     }
 

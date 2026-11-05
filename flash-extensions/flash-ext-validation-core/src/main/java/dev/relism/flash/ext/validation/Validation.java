@@ -1,22 +1,18 @@
 package dev.relism.flash.ext.validation;
 
 import dev.relism.flash.Module;
-import dev.relism.flash.Services;
 import dev.relism.flash.ext.openapi.OpenApiContributor;
-
-import java.util.Optional;
+import dev.relism.flash.ext.serde.Check;
 
 /**
  * Verifies that a value satisfies the rules its own type declares.
  *
- * <p>One method, because that is the whole of what an engine does. An implementation wraps a
- * validation library — {@code flash-ext-validation-jakarta}, {@code flash-ext-validation-avaje} —
- * and an application installs exactly one of them: it is added as {@code Validation}, so a second
- * one fails the boot naming both. What a rule means, which annotations exist and
- * how they are enforced is the engine's business; this module knows only when to ask.
- *
- * <p>A format's codec calls it on a body it has just read, so a request that breaks a rule is a 422
- * and never reaches a handler.
+ * <p>An implementation wraps a validation library ({@code flash-ext-validation-jakarta},
+ * {@code flash-ext-validation-avaje}, {@code flash-ext-validation-protovalidate}) and installs itself
+ * through {@link #module}. Several engines live in one application: each type a codec decodes is
+ * checked by the one engine that {@link #checks} it, whatever the codec, so a request that breaks a
+ * rule is a 422 and never reaches a handler. What a rule means, which annotations exist and how they
+ * are enforced is the engine's business; this module knows only when to ask.
  */
 public interface Validation {
 
@@ -28,6 +24,16 @@ public interface Validation {
     void verify(Object value);
 
     /**
+     * Whether this engine has rules for values of {@code type}, asked once per type at boot: a type
+     * no engine checks is decoded and handed over with no call at all. A type whose values may be of
+     * a subclass with rules (an interface, an abstract class) is one the engine checks. Every type
+     * by default.
+     */
+    default boolean checks(Class<?> type) {
+        return true;
+    }
+
+    /**
      * Declares what this engine's rules mean, for the published document.
      *
      * <p>Called once per app, when the document is first built. Each engine speaks its own vocabulary — the
@@ -37,27 +43,21 @@ public interface Validation {
     default void describe(Constraints constraints) {}
 
     /**
-     * The engine of a codec family, empty when none is installed. A family is a sub-interface of
-     * {@code Validation} that its codec's module defines, for values the generic engines cannot
-     * check; the codec asks for it here when it binds.
+     * What an engine's module installs: the engine as a {@code Validation}, its checks on everything a
+     * codec decodes when flash-ext-serde is on the classpath, and its rules in the published document
+     * when flash-ext-openapi is.
      *
-     * @throws IllegalStateException when an engine of the family was added as plain
-     *         {@code Validation}, where its codec would never ask it, or when two were added
+     * <pre>{@code
+     * @Override public void install(App app) {
+     *     app.install(Validation.module(this));
+     * }
+     * }</pre>
      */
-    static <F extends Validation> Optional<F> family(Services services, Class<F> family) {
-        for (Validation engine : services.all(Validation.class)) {
-            if (family.isInstance(engine)) throw new IllegalStateException(engine.getClass().getName() + " is a "
-                    + family.getSimpleName() + ": add it as " + family.getSimpleName() + ", not as Validation");
-        }
-        return services.find(family);
-    }
-
-    /**
-     * What an engine's module installs beside it: the engine's rules in the published document,
-     * when flash-ext-openapi is on the classpath.
-     */
-    static Module docs() {
-        return Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor",
-                () -> app -> app.add(OpenApiContributor.class, ValidationDocs.class));
+    static Module module(Validation engine) {
+        return app -> app.add(Validation.class, engine).install(
+                Module.ifPresent("dev.relism.flash.ext.serde.Check",
+                        () -> checks -> checks.add(Check.class, ValidationCheck.class)),
+                Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor",
+                        () -> docs -> docs.add(OpenApiContributor.class, ValidationDocs.class)));
     }
 }

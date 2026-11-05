@@ -20,6 +20,7 @@
         <dependency>
             <groupId>dev.relism</groupId>
             <artifactId>flash-ext-validation-core</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>
