@@ -1,5 +1,34 @@
 # Changelog
 
+## [4.0.0](https://github.com/Relism/Flash/compare/v3.0.4...v4.0.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ext-data-core:** ResourceTxManager is the base of the JDBC and Hibernate managers; RepositorySupport, JdbcTxStatus, HibernateTxStatus, TxDefinition.label and withReadOnly are removed
+* **ext-serde:** Codec.module(type, codec) installs a codec, and Decoder.of is the one decode path, running every installed Check; Codec.read is removed and Codec.wireName returns null for a field the format does not carry
+* **ext-openapi:** openapi no longer depends on serde; an input read from the request is described through OpenApiContributor.parameters, and field names come from the codecs
+* **ext-validation:** engines install through Validation.module and each decoded type goes to the engine that checks it, whatever the codec; Validation.docs, Validation.family and ProtobufValidation are removed
+* **ext-jackson:** field names and exclusions follow the mapper's property model; JacksonDocs.module() takes no argument
+* **ext-avaje-jsonb:** JsonbDocs is removed; field names come from the codec
+* **ext-data-core:** keyset paging with PageRequest, Page and @Sortable; findPage takes a PageRequest and the offset Query.page and findAll(page, size) are removed
+
+### Features
+
+* **ext-avaje-jsonb:** JsonbDocs is removed; field names come from the codec ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-data-core:** keyset paging with PageRequest, Page and @Sortable; findPage takes a PageRequest and the offset Query.page and findAll(page, size) are removed ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-data-core:** ResourceTxManager is the base of the JDBC and Hibernate managers; RepositorySupport, JdbcTxStatus, HibernateTxStatus, TxDefinition.label and withReadOnly are removed ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-jackson:** field names and exclusions follow the mapper's property model; JacksonDocs.module() takes no argument ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-openapi:** openapi no longer depends on serde; an input read from the request is described through OpenApiContributor.parameters, and field names come from the codecs ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-serde:** Codec.module(type, codec) installs a codec, and Decoder.of is the one decode path, running every installed Check; Codec.read is removed and Codec.wireName returns null for a field the format does not carry ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-validation:** engines install through Validation.module and each decoded type goes to the engine that checks it, whatever the codec; Validation.docs, Validation.family and ProtobufValidation are removed ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+
+
+### Bug Fixes
+
+* **ext-data-core:** a REQUIRED that ended inside a REQUIRES_NEW no longer makes the suspended outer transaction current ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+* **ext-data-jdbc:** a connection returns with its read-only and isolation restored, and Instant binds as a UTC OffsetDateTime ([45c17c1](https://github.com/Relism/Flash/commit/45c17c16b1d9771733811fdc9eb2304e7ea153b1))
+
 ## [3.0.4](https://github.com/Relism/Flash/compare/v3.0.3...v3.0.4) (2026-10-17)
 
 
