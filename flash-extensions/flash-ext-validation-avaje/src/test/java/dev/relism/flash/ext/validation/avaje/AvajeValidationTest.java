@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,23 @@ class AvajeValidationTest {
         engine.verify(new Bounded(5));
         ValidationException broken = assertThrows(ValidationException.class, () -> engine.verify(new Bounded(50)));
         assertEquals("n", broken.violations().get(0).path());
+    }
+
+    /** Its only rule is a cascade through Avaje's own @Valid, which is not kept at runtime: the adapter says it. */
+    @Valid
+    record Shipment(@Valid Address to) {}
+
+    @Test
+    void aTypeWhoseOnlyRuleIsACascadeIsChecked() {
+        AvajeValidation engine = new AvajeValidation();
+
+        assertTrue(engine.checks(Shipment.class));
+        assertThrows(ValidationException.class, () -> engine.verify(new Shipment(new Address(""))));
+    }
+
+    @Test
+    void aTypeWithNeitherARuleNorAnAdapterIsNotChecked() {
+        assertFalse(new AvajeValidation().checks(Unconstrained.class));
     }
 
     /** No constraint, so the generator writes no adapter for it, @Valid or not. */

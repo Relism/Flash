@@ -75,7 +75,7 @@ public interface InputBinder {
 `codec` is the handler's input codec, for a binder that names fields as the format does. Paging in
 [flash-ext-data-core](../../flash-ext-data-core/docs/paging.md) is one: it reads `PageRequest<T>`.
 OpenAPI documents no request body for a `@FromRequest` input: the operation names the type as
-`requestParameters`, and the contributor that describes the type says its parameters.
+`requestParameters` with its input codec's names, and the contributor that describes the type says its parameters.
 
 ## CodecDuplexHandler
 

@@ -5,13 +5,15 @@ import dev.relism.flash.ext.serde.Check;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * Hands each type a codec decodes to the one engine that checks it; a collection or an array goes
- * by its element. Installed by {@link Validation#module}, and loaded only when flash-ext-serde is there.
+ * by its element, and an array reaches the engine as a list. Installed by {@link Validation#module},
+ * and loaded only when flash-ext-serde is there.
  */
 final class ValidationCheck implements Check {
 
@@ -32,7 +34,14 @@ final class ValidationCheck implements Check {
                     + engine.getClass().getName() + " both check " + checked.getName() + ": a type is checked by one engine");
             found = engine;
         }
-        return found == null ? null : found::verify;
+        if (found == null) return null;
+        Validation engine = found;
+        // Engines walk a collection element by element; an array is handed over as one.
+        return array(type) ? value -> engine.verify(value instanceof Object[] items ? Arrays.asList(items) : value) : engine::verify;
+    }
+
+    private static boolean array(Type type) {
+        return type instanceof GenericArrayType || type instanceof Class<?> c && c.isArray();
     }
 
     /** What the values of {@code type} are checked as: {@code User} for a {@code List<User>} or a {@code User[]}. */

@@ -91,7 +91,10 @@ class JdbcTxManagerTest {
     void a_second_manager_leaves_the_first_one_s_transaction_bound() {
         JdbcTxManager other = new JdbcTxManager(new TestDataSource());
         TxStatus outer = manager.begin(TxDefinition.DEFAULTS);
-        other.commit(other.begin(TxDefinition.DEFAULTS));
+        TxStatus foreign = other.begin(TxDefinition.DEFAULTS);
+        assertTrue(foreign.isNewTransaction(), "a manager does not join another's transaction");
+        assertNotSame(outer.resource(Connection.class), foreign.resource(Connection.class));
+        other.commit(foreign);
         TxStatus joined = manager.begin(TxDefinition.DEFAULTS);
         assertFalse(joined.isNewTransaction());
         assertSame(outer.resource(Connection.class), joined.resource(Connection.class));
@@ -125,6 +128,25 @@ class JdbcTxManagerTest {
         pooled.commit(pooled.begin(TxDefinition.DEFAULTS.withIsolation(TransactionIsolation.SERIALIZABLE).asReadOnly()));
         assertFalse(real.isReadOnly());
         assertEquals(isolation, real.getTransactionIsolation());
+        real.close();
+    }
+
+    /** A setting that fails after another was applied still puts the first one back. */
+    @Test
+    void a_connection_returns_restored_when_a_setting_fails_half_way() throws Exception {
+        Connection real = new TestDataSource().getConnection();
+        Connection refusing = (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "close" -> null;
+                    case "setTransactionIsolation" -> throw new java.sql.SQLException("level not supported");
+                    default -> method.invoke(real, args);
+                });
+        JdbcTxManager pooled = new JdbcTxManager(new TestDataSource() {
+            @Override public Connection getConnection() { return refusing; }
+        });
+        assertThrows(RuntimeException.class, () ->
+                pooled.begin(TxDefinition.DEFAULTS.withIsolation(TransactionIsolation.SERIALIZABLE).asReadOnly()));
+        assertFalse(real.isReadOnly());
         real.close();
     }
 

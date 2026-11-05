@@ -34,8 +34,8 @@ public interface OpenApiContributor {
     /**
      * The parameters, and what else the operation adds, of an input of {@code type} that a contributor
      * said an operation reads from the request ({@link OpenApiOperationContribution#requestParameters});
-     * null to leave it to another. {@code names} gives a field the name the document gives it, null
-     * for one it leaves out. Asked once per operation.
+     * null to leave it to another. {@code names} gives a field the name whatever reads the input gives
+     * it, null for one it does not read. Asked once per operation.
      */
     default OpenApiOperationContribution parameters(Type type, Function<Field, String> names) {
         return null;

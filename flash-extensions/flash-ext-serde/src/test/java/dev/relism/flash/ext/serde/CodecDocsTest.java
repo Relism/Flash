@@ -27,7 +27,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
  */
 class CodecDocsTest {
 
-    record Order(String reference, String internal) {}
+    record Order(String reference, String internal, String secret) {}
     record Receipt(String number) {}
 
     @ApiOperation(summary = "Takes XML, answers JSON")
@@ -38,10 +38,11 @@ class CodecDocsTest {
     }
 
     static final class Xmlish implements Codec {
-        @Override public Decoder decoder(Type type) { return (bytes, offset, length) -> new Order("A-1", null); }
+        @Override public Decoder decoder(Type type) { return (bytes, offset, length) -> new Order("A-1", null, null); }
         @Override public Encoder encoder(Type type) { throw new UnsupportedOperationException(); }
         @Override public Object write(Response response, Object value) { throw new UnsupportedOperationException(); }
         @Override public ContentType contentType() { return ContentType.XML; }
+        @Override public String wireName(Field field) { return field.getName().equals("secret") ? null : field.getName(); }
     }
 
     static final class Jsonish implements Codec {
@@ -61,9 +62,9 @@ class CodecDocsTest {
             return java.util.Arrays.copyOf(out.array(), out.length());
         }
         @Override public ContentType contentType() { return ContentType.JSON; }
-        /** Writes {@code Receipt.number} as {@code receipt_no}, and nothing of {@code Order.internal}. */
+        /** Writes {@code Receipt.number} as {@code receipt_no}, and neither {@code Order.internal} nor {@code Order.secret}. */
         @Override public String wireName(Field field) {
-            if (field.getName().equals("internal")) return null;
+            if (field.getName().equals("internal") || field.getName().equals("secret")) return null;
             return field.getName().equals("number") ? "receipt_no" : field.getName();
         }
     }
@@ -125,10 +126,11 @@ class CodecDocsTest {
     }
 
     @Test
-    void aFieldIsNamedAsTheCodecWritesItAndLeftOutWhenItIsNot() {
+    void aFieldIsNamedAsTheCodecWritesItAndLeftOutOnlyWhenNoCodecCarriesIt() {
         String document = app.get("/openapi.json").expectStatus(200).body();
 
         assertTrue(document.contains("\"receipt_no\""), document);
-        assertFalse(document.contains("\"internal\""), document);
+        assertTrue(document.contains("\"internal\""), "the XML codec carries it: " + document);
+        assertFalse(document.contains("\"secret\""), document);
     }
 }

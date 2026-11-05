@@ -46,8 +46,7 @@ public class JdbcTxManager extends ResourceTxManager<Connection> {
         // Asked only when a level is: some drivers answer getTransactionIsolation with a round trip.
         int level = definition.isolation().level();
         int was = definition.isolation() == TransactionIsolation.DEFAULT ? level : connection.getTransactionIsolation();
-        if (readOnly) connection.setReadOnly(true);
-        if (was != level) connection.setTransactionIsolation(level);
+        // Registered first: a setting that fails after another was applied still leaves the way back.
         if (readOnly || was != level) restore.put(connection, () -> {
             try {
                 if (readOnly) connection.setReadOnly(false);
@@ -55,6 +54,8 @@ public class JdbcTxManager extends ResourceTxManager<Connection> {
             } catch (SQLException ignored) {   // the connection is being given up
             }
         });
+        if (readOnly) connection.setReadOnly(true);
+        if (was != level) connection.setTransactionIsolation(level);
     }
 
     @Override

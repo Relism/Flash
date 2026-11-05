@@ -364,10 +364,10 @@ public final class OpenApiBuilder {
             }
             // An input read from the request is described by whoever describes its type.
             for (int i = 0, stated = said.size(); i < stated; i++) {
-                Type input = said.get(i).requestParameters();
-                if (input == null) continue;
+                OpenApiOperationContribution reads = said.get(i);
+                if (reads.requestParameters() == null) continue;
                 for (OpenApiContributor contributor : contributors) {
-                    OpenApiOperationContribution described = contributor.parameters(input, schemas::name);
+                    OpenApiOperationContribution described = contributor.parameters(reads.requestParameters(), reads.requestNames());
                     if (described == null) continue;
                     said.add(described);
                     break;

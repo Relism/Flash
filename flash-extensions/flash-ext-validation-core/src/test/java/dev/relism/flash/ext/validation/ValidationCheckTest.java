@@ -72,6 +72,15 @@ class ValidationCheckTest {
     }
 
     @Test
+    void anArrayReachesTheEngineOfItsElementAsAList() {
+        Engine orders = new Engine(Order.class);
+
+        check(orders).of(Order[].class).accept(new Order[] {new Order("o1"), new Order("o2")});
+
+        assertEquals(List.of(List.of(new Order("o1"), new Order("o2"))), orders.seen());
+    }
+
+    @Test
     void twoEnginesForOneTypeFailNamingBoth() {
         Check check = check(new Engine(Order.class), new Everything());
 

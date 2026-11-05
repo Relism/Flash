@@ -63,11 +63,21 @@ public class AvajeValidation implements Module, Validation {
         app.install(Validation.module(this));
     }
 
-    /** A type that declares a constraint, or one whose values may be of a subclass that does. */
+    /**
+     * A type the generator wrote an adapter for, which covers a cascade through Avaje's own
+     * {@code @Valid}; one that declares a constraint without an adapter, refused by name on the first
+     * request; and one whose values may be of a subclass that does either.
+     */
     @Override
     public boolean checks(Class<?> type) {
         if (type.isPrimitive()) return false;
-        return type.isInterface() || Modifier.isAbstract(type.getModifiers()) || constrained(type);
+        if (type.isInterface() || Modifier.isAbstract(type.getModifiers()) || constrained(type)) return true;
+        try {
+            delegate.context().adapter(type);
+            return true;
+        } catch (IllegalArgumentException noAdapter) {
+            return false;
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package dev.relism.flash.ext.openapi;
 
 import dev.relism.flash.http.ContentType;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Type;
 
 import java.util.ArrayList;
@@ -9,10 +10,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 public final class OpenApiOperationContribution {
     private static final OpenApiOperationContribution EMPTY =
-            new OpenApiOperationContribution(List.of(), Map.of(), null, null, null, null, null, null, List.of());
+            new OpenApiOperationContribution(List.of(), Map.of(), null, null, null, null, null, null, null, List.of());
 
     private final List<Map<String, List<String>>> security;
     private final Map<Integer, OpenApiResponseContribution> responses;
@@ -21,6 +23,7 @@ public final class OpenApiOperationContribution {
     private final ContentType produces;
     private final Type requestType;
     private final Type requestParameters;
+    private final Function<Field, String> requestNames;
     private final Type responseType;
     private final List<Map<String, Object>> parameters;
 
@@ -31,6 +34,7 @@ public final class OpenApiOperationContribution {
                                          ContentType produces,
                                          Type requestType,
                                          Type requestParameters,
+                                         Function<Field, String> requestNames,
                                          Type responseType,
                                          List<Map<String, Object>> parameters) {
         this.security = List.copyOf(security);
@@ -40,6 +44,7 @@ public final class OpenApiOperationContribution {
         this.produces = produces;
         this.requestType = requestType;
         this.requestParameters = requestParameters;
+        this.requestNames = requestNames;
         this.responseType = responseType;
         this.parameters = List.copyOf(parameters);
     }
@@ -79,6 +84,11 @@ public final class OpenApiOperationContribution {
         return requestParameters;
     }
 
+    /** The names the reader of {@link #requestParameters} gives fields, null for one it does not read. */
+    public Function<Field, String> requestNames() {
+        return requestNames;
+    }
+
     /** The type the operation answers with, same. */
     public Type responseType() {
         return responseType;
@@ -111,6 +121,7 @@ public final class OpenApiOperationContribution {
         private ContentType produces;
         private Type requestType;
         private Type requestParameters;
+        private Function<Field, String> requestNames;
         private Type responseType;
         private final List<Map<String, Object>> parameters = new ArrayList<>();
 
@@ -144,8 +155,10 @@ public final class OpenApiOperationContribution {
             return this;
         }
 
-        public Builder requestParameters(Type type) {
+        /** An input read from the request, and the names whatever reads it gives fields: a codec's {@code wireName}. */
+        public Builder requestParameters(Type type, Function<Field, String> names) {
             this.requestParameters = type;
+            this.requestNames = names;
             return this;
         }
 
@@ -162,7 +175,7 @@ public final class OpenApiOperationContribution {
 
         public OpenApiOperationContribution build() {
             return new OpenApiOperationContribution(security, responses, allResponses,
-                    consumes, produces, requestType, requestParameters, responseType, parameters);
+                    consumes, produces, requestType, requestParameters, requestNames, responseType, parameters);
         }
     }
 }

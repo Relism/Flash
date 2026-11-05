@@ -116,8 +116,8 @@ for a raw `PageRequest`, and for one over a type that cannot be paged.
 
 ## With flash-ext-openapi
 
-For such a handler the document lists `size`, `sort` (with every accepted value, under the names the
-document gives the fields) and `after`, a `400` response, and no request body. The handler's codecs
+For such a handler the document lists `size`, `sort` (with every accepted value, under the names of the
+handler's input codec, as the binder reads them) and `after`, a `400` response, and no request body. The handler's codecs
 say that the input is read from the request; `DataModule` answers for `PageRequest`, wherever an
 operation reads one. `Page<User>` is the schema `PageUser`, with `content` required and
 `next` nullable.

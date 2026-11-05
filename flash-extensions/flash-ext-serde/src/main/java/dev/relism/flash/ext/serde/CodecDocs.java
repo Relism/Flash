@@ -3,7 +3,6 @@ package dev.relism.flash.ext.serde;
 import dev.relism.flash.Services;
 import dev.relism.flash.ext.openapi.OpenApiContributor;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
-import dev.relism.flash.http.ContentType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Type;
 import java.util.List;
@@ -11,9 +10,9 @@ import java.util.List;
 /**
  * Tells the published document what the codecs say. A {@code CodecRequestHandler}'s two types come
  * from its signature and each end's media type from its codec; an input that is {@link FromRequest}
- * is left to whoever describes its parameters. A field is named by the first codec that renames it
- * and left out by the first that does not carry it. Installed by {@link Codec#module}, and loaded
- * only when flash-ext-openapi is there.
+ * is left to whoever describes its parameters, with its codec's names. A schema is shared by every
+ * codec: a field is named by the first codec that renames it, and left out only when no codec carries
+ * it. Installed by {@link Codec#module}, and loaded only when flash-ext-openapi is there.
  */
 final class CodecDocs implements OpenApiContributor {
 
@@ -31,13 +30,14 @@ final class CodecDocs implements OpenApiContributor {
         Type[] signature = TypeArguments.of(handler, CodecRequestHandler.class);
         boolean parameters = CodecBinding.fromRequest(signature[1]);
         boolean body = !parameters && signature[1] != Void.class;
-        return OpenApiOperationContribution.builder()
-                .consumes(body ? contentType(signature[0]) : null)
-                .produces(contentType(signature[2]))
+        OpenApiOperationContribution.Builder operation = OpenApiOperationContribution.builder()
+                .consumes(body ? codec(signature[0]).contentType() : null)
+                .produces(codec(signature[2]).contentType())
                 .requestType(body ? signature[1] : null)
-                .requestParameters(parameters ? signature[1] : null)
-                .responseType(signature[3])
-                .build();
+                .responseType(signature[3]);
+        // Named as the binder reads it: with the input codec's names.
+        if (parameters) operation.requestParameters(signature[1], codec(signature[0])::wireName);
+        return operation.build();
     }
 
     @Override
@@ -51,17 +51,20 @@ final class CodecDocs implements OpenApiContributor {
         return wireName(field) == null;
     }
 
-    /** The first codec's name that is not the Java one, null when one does not carry the field. */
+    /** The first rename among the codecs that carry the field, its Java name, or null when none carries it. */
     private String wireName(Field field) {
+        String name = null;
         for (Codec codec : codecs) {
-            String name = codec.wireName(field);
-            if (name == null || !name.equals(field.getName())) return name;
+            String said = codec.wireName(field);
+            if (said == null) continue;
+            if (!said.equals(field.getName())) return said;
+            name = said;
         }
-        return field.getName();
+        return name;
     }
 
     @SuppressWarnings("unchecked")
-    private ContentType contentType(Type codec) {
-        return services.get((Class<? extends Codec>) codec).contentType();
+    private Codec codec(Type codec) {
+        return services.get((Class<? extends Codec>) codec);
     }
 }
