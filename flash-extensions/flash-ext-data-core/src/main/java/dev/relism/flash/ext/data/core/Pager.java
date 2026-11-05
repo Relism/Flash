@@ -65,20 +65,34 @@ public final class Pager<T> {
         this.first = new PageRequest<>(this, DEFAULT_SIZE, 0, null);
     }
 
-    /** The pager of {@code type}, its fields named as in Java. */
+    /**
+     * The pager of {@code type}, its fields named as in Java.
+     *
+     * @throws IllegalStateException if the type has no id, an unsupported key type, a static
+     *         {@link Sortable} field, or duplicate key names
+     */
     public static <T> Pager<T> of(Class<T> type) {
         return of(type, Field::getName);
     }
 
-    /** The pager of {@code type}, its fields named by {@code names}: a codec's wire names. */
+    /**
+     * The pager of {@code type}, its fields named by {@code names}: a codec's wire names.
+     *
+     * @throws IllegalStateException if the type has no id, an unsupported key type, a static
+     *         {@link Sortable} field, or duplicate key names
+     */
     public static <T> Pager<T> of(Class<T> type, Function<Field, String> names) {
         return new Pager<>(type, names);
     }
 
     /**
-     * The page {@code request} asks for. Absent or empty parameters take their default; anything
-     * else that is not a size from 1 to {@link #MAX_SIZE}, a sortable name, or a token this pager
-     * issued for the same sort is a 400.
+     * The page {@code request} asks for. The first non-empty value of each parameter counts.
+     * Size defaults to {@link #DEFAULT_SIZE}, sort to the id ascending, and after to the first page.
+     * A leading {@code -} reverses the sort. A continuation token is not signed.
+     *
+     * @throws HttpException with status 400 for a non-numeric size, a size outside 1 to
+     *         {@link #MAX_SIZE} or more than three digits, an unknown sort, a malformed token,
+     *         or a token for a different sort
      */
     public PageRequest<T> read(Request request) {
         ByteView query = request.rawQuery();
@@ -107,7 +121,7 @@ public final class Pager<T> {
         return new PageRequest<>(this, size, sort, after(request, sort));
     }
 
-    /** What {@code sort} accepts, in order: {@code id}, {@code -id}, then each sortable field. */
+    /** The accepted wire names for {@code sort}: the id, then each sortable field, each followed by its descending form. */
     public List<String> sorts() {
         List<String> sorts = new ArrayList<>(keys.length * 2);
         for (Key key : keys) {

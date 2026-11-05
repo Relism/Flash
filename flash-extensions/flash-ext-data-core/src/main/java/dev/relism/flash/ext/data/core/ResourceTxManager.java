@@ -45,6 +45,13 @@ public abstract class ResourceTxManager<R> implements TxManager {
         }
     }
 
+    /**
+     * Opens or joins a scope according to {@code definition}.
+     *
+     * @throws IllegalStateException if propagation is mandatory and no transaction is active
+     * @throws TxException if a write attempts to join a read-only transaction, or a resource hook
+     *         throws a checked exception
+     */
     @Override
     public TxStatus begin(TxDefinition definition) {
         Status<R> joined = bound(current);
@@ -113,6 +120,11 @@ public abstract class ResourceTxManager<R> implements TxManager {
         return outer;
     }
 
+    /**
+     * Commits a new transaction, or rolls it back if marked rollback-only. An exception before or
+     * during commit triggers a rollback attempt; a rollback exception is suppressed on the original.
+     * Completion callbacks can also throw. Completing a joined scope leaves the transaction open.
+     */
     @Override
     public void commit(TxStatus status) {
         Status<R> s = cast(status);
@@ -150,6 +162,7 @@ public abstract class ResourceTxManager<R> implements TxManager {
         }
     }
 
+    /** Rolls back a new transaction; a joined scope marks its transaction rollback-only. */
     @Override
     public void rollback(TxStatus status) {
         Status<R> s = cast(status);

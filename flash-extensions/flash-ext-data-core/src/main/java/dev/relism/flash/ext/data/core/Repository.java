@@ -36,6 +36,7 @@ public abstract class Repository<T, ID> {
         return count(Spec.all());
     }
 
+    /** Counts the entities matched by {@code spec}. */
     public long count(Spec<T> spec) {
         return roQuery(() -> doCount(spec));
     }
@@ -56,6 +57,7 @@ public abstract class Repository<T, ID> {
         return roQuery(() -> doFind(query));
     }
 
+    /** Returns the first matching entity, or an empty result if there is none. */
     public Optional<T> findOne(Spec<T> spec) {
         return roQuery(() -> doFind(Query.<T>all().where(spec).limit(1)).stream().findFirst());
     }
@@ -65,7 +67,10 @@ public abstract class Repository<T, ID> {
         return findPage(request, Spec.all());
     }
 
-    /** The same, among the entities {@code scope} matches: a tenant's, a user's. */
+    /**
+     * The same, among the entities {@code scope} matches: a tenant's, a user's. Apply the scope
+     * on every request; the continuation token does not contain it.
+     */
     public Page<T> findPage(PageRequest<T> request, Spec<T> scope) {
         return roQuery(() -> keyset(request, scope));
     }

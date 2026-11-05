@@ -24,7 +24,12 @@ final class CodecBinding {
                 services.get(codec(arguments[2])), concrete(arguments[3], handler));
     }
 
-    /** What produces the input: the input codec, or for a {@link FromRequest} type the first binder that reads it; null for {@code Void}. */
+    /**
+     * What produces the input: the input codec, or for a {@link FromRequest} type the first binder
+     * that reads it; null for {@code Void}.
+     *
+     * @throws IllegalStateException if no installed binder reads a {@code FromRequest} type
+     */
     InputBinder.Reader input(Services services, Class<?> handler) {
         if (inType == Void.class) return null;
         if (!fromRequest(inType)) return in.decoder(inType)::decode;
