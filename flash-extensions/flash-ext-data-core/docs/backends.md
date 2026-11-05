@@ -46,7 +46,9 @@ returns the placeholder for a value (`?`, `:p1`).
 for `size + 1` rows with a `Spec` and a `Sort` of its own, using `is null`, `is not null`, `=`, `<`,
 `>`, `and` and `or`. Its first page also runs `doFind` once with every sortable column in the order
 and a condition that matches nothing, so a wrong column fails there, whichever sort it belongs to. The columns come from `column(property)`, which returns the property's name
-unless the backend or the application overrides it.
+unless the backend or the application overrides it. The token of a page reads the last row through
+`loaded(entity)`, the entity itself by default; a backend that hands out proxies returns the instance
+behind one, as Hibernate does with `Hibernate.unproxy`.
 
 A `RepositoryFactory` creates one repository for an entity type:
 

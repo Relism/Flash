@@ -7,12 +7,16 @@ import dev.relism.flash.ext.data.core.TxDefinition;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** One connection per transaction, from a {@link DataSource}. */
 public class JdbcTxManager extends ResourceTxManager<Connection> {
 
     private final DataSource ds;
+    /** What a transaction changed on a connection, put back before it returns to the data source. */
+    private final Map<Connection, Runnable> restore = new ConcurrentHashMap<>();
 
     public JdbcTxManager(DataSource ds) {
         this.ds = Objects.requireNonNull(ds);
@@ -38,9 +42,19 @@ public class JdbcTxManager extends ResourceTxManager<Connection> {
     @Override
     protected void begin(Connection connection, TxDefinition definition) throws SQLException {
         connection.setAutoCommit(false);
-        if (definition.readOnly()) connection.setReadOnly(true);
-        if (definition.isolation() != TransactionIsolation.DEFAULT)
-            connection.setTransactionIsolation(definition.isolation().level());
+        boolean readOnly = definition.readOnly() && !connection.isReadOnly();
+        // Asked only when a level is: some drivers answer getTransactionIsolation with a round trip.
+        int level = definition.isolation().level();
+        int was = definition.isolation() == TransactionIsolation.DEFAULT ? level : connection.getTransactionIsolation();
+        if (readOnly) connection.setReadOnly(true);
+        if (was != level) connection.setTransactionIsolation(level);
+        if (readOnly || was != level) restore.put(connection, () -> {
+            try {
+                if (readOnly) connection.setReadOnly(false);
+                if (was != level) connection.setTransactionIsolation(was);
+            } catch (SQLException ignored) {   // the connection is being given up
+            }
+        });
     }
 
     @Override
@@ -55,6 +69,8 @@ public class JdbcTxManager extends ResourceTxManager<Connection> {
 
     @Override
     protected void release(Connection connection) throws SQLException {
+        Runnable back = restore.remove(connection);
+        if (back != null) back.run();
         connection.close();
     }
 

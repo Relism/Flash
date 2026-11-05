@@ -1,7 +1,6 @@
 package dev.relism.flash.ext.data;
 
 import dev.relism.flash.Module;
-import dev.relism.flash.Services;
 import dev.relism.flash.ext.data.core.Page;
 import dev.relism.flash.ext.data.core.PageRequest;
 import dev.relism.flash.ext.data.core.Pager;
@@ -9,20 +8,19 @@ import dev.relism.flash.ext.openapi.OpenApiContributor;
 import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.ext.openapi.OpenApiResponseContribution;
 import dev.relism.flash.ext.serde.Codec;
-import dev.relism.flash.ext.serde.CodecRequestHandler;
 import dev.relism.flash.ext.serde.InputBinder;
-import dev.relism.flash.ext.serde.TypeArguments;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * What paging adds to flash-ext-serde and flash-ext-openapi when they are on the classpath: a
- * {@code PageRequest<T>} read from the query of a typed handler, and its parameters in the document.
- * Each nested class is loaded only by its {@link Module#ifPresent}, so data-core needs neither.
+ * {@code PageRequest<T>} read from the query of a typed handler, and its parameters wherever the
+ * document meets one. Each nested class is loaded only by its {@link Module#ifPresent}, so data-core needs neither.
  */
 final class PageModules {
 
@@ -60,21 +58,11 @@ final class PageModules {
     /** {@code size}, {@code sort} and {@code after} on every operation that takes a {@code PageRequest}. */
     static final class Docs implements OpenApiContributor {
 
-        private final Services services;
-
-        Docs(Services services) {
-            this.services = services;
-        }
-
         @Override
-        @SuppressWarnings("unchecked")
-        public OpenApiOperationContribution operationFor(Class<?> handler) {
-            if (!CodecRequestHandler.class.isAssignableFrom(handler)) return OpenApiOperationContribution.empty();
-            Type[] signature = TypeArguments.of(handler, CodecRequestHandler.class);
-            Class<?> entity = paged(signature[1]);
-            if (entity == null) return OpenApiOperationContribution.empty();
-            Codec codec = services.get((Class<? extends Codec>) signature[0]);
-            Pager<?> pager = Pager.of(entity, codec::wireName);
+        public OpenApiOperationContribution parameters(Type type, Function<Field, String> names) {
+            Class<?> entity = paged(type);
+            if (entity == null) return null;
+            Pager<?> pager = Pager.of(entity, names);
             return OpenApiOperationContribution.builder()
                     .parameter(query("size", "How many items the page holds", Map.of(
                             "type", "integer", "minimum", 1, "maximum", Pager.MAX_SIZE, "default", Pager.DEFAULT_SIZE)))

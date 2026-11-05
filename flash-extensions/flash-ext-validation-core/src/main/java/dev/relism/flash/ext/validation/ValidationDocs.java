@@ -5,15 +5,16 @@ import dev.relism.flash.ext.openapi.OpenApiContributor;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
 /**
- * Carries what the installed engine said about its rules into the published document.
+ * Carries what the installed engines said about their rules into the published document.
  *
  * <p>The walk is here because it is the same for every engine — a property, its annotations, the
  * facts they add. Which annotations exist and what they mean is never here: it arrives through
- * {@link Constraints} from the engine. Installed by {@link Validation#docs()}, and loaded only when
+ * {@link Constraints} from the engine. Installed by {@link Validation#module}, and loaded only when
  * flash-ext-openapi is there.
  *
  * <p>Built once per document revision, so nothing on this path is on a request.
@@ -22,8 +23,8 @@ final class ValidationDocs implements OpenApiContributor {
 
     private final Declared declared = new Declared();
 
-    ValidationDocs(Validation validation) {
-        validation.describe(declared);
+    ValidationDocs(List<Validation> engines) {
+        for (Validation engine : engines) engine.describe(declared);
     }
 
     @Override

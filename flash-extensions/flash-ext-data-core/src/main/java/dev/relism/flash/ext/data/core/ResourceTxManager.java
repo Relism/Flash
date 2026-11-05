@@ -71,21 +71,23 @@ public abstract class ResourceTxManager<R> implements TxManager {
         // What is registered already belongs to an enclosing transaction: see ResourceRegistry#fireSynchronizations.
         int baseline = ResourceRegistry.synchronizationCount();
         Status<R> outer = suspend();
+        R resource = null;
+        boolean begun = false;
         try {
-            R resource = acquire();
-            try {
-                begin(resource, definition);
-            } catch (Exception failure) {
-                discard(resource);
-                throw failure;
-            }
-            Status<R> status = new Status<>(resource, true, definition.readOnly(), outer, new boolean[1], baseline);
-            ResourceRegistry.bind(current, status);
-            return status;
+            resource = acquire();
+            begin(resource, definition);
+            begun = true;
         } catch (Exception failure) {
-            resume(outer);
             throw unchecked(failure);
+        } finally {
+            if (!begun) {   // an Error too: the outer transaction comes back, the resource goes
+                resume(outer);
+                discard(resource);
+            }
         }
+        Status<R> status = new Status<>(resource, true, definition.readOnly(), outer, new boolean[1], baseline);
+        ResourceRegistry.bind(current, status);
+        return status;
     }
 
     private Status<R> join(Status<R> existing, TxDefinition definition) {
@@ -131,7 +133,7 @@ public abstract class ResourceTxManager<R> implements TxManager {
         if (endReads(s)) return;
         if (!s.newTransaction) {
             resume(s.outer);
-            cleanupIfIdle();
+            ResourceRegistry.cleanupIfIdle();
             return;
         }
         TxOutcome outcome = null;
@@ -146,17 +148,17 @@ public abstract class ResourceTxManager<R> implements TxManager {
                 commitResource(s.resource);
                 outcome = TxOutcome.COMMITTED;
             }
-        } catch (Exception failure) {
+        } catch (Exception | Error failure) {
             // Nothing was committed: undo the work, and tell the callbacks it rolled back. A failure
             // to roll back is attached to the exception that explains what went wrong.
-            RuntimeException thrown = unchecked(failure);
             try {
                 rollbackResource(s.resource);
             } catch (Exception suppressed) {
-                thrown.addSuppressed(suppressed);
+                failure.addSuppressed(suppressed);
             }
             outcome = TxOutcome.ROLLED_BACK;
-            throw thrown;
+            if (failure instanceof Error error) throw error;
+            throw unchecked((Exception) failure);
         } finally {
             complete(s, outcome);
         }
@@ -170,7 +172,7 @@ public abstract class ResourceTxManager<R> implements TxManager {
         if (!s.newTransaction) {
             s.markRollbackOnly();
             resume(s.outer);
-            cleanupIfIdle();
+            ResourceRegistry.cleanupIfIdle();
             return;
         }
         try {
@@ -183,15 +185,19 @@ public abstract class ResourceTxManager<R> implements TxManager {
     }
 
     /**
-     * Unbinds and releases first, so a callback that opens a transaction gets a fresh one instead of
-     * joining the finished one; fires before {@link #cleanupIfIdle}, which drops the pending list.
+     * Fires the callbacks with this transaction unbound and the one it suspended still suspended, so
+     * a callback that opens a transaction gets a new one, joining neither; then resumes, and fires
+     * before {@link ResourceRegistry#cleanupIfIdle}, which drops the pending list.
      */
     private void complete(Status<R> s, TxOutcome outcome) {
         ResourceRegistry.unbind(current);
         discard(s.resource);
-        resume(s.outer);
-        if (outcome != null) ResourceRegistry.fireSynchronizations(outcome, s.baseline);
-        cleanupIfIdle();
+        try {
+            if (outcome != null) ResourceRegistry.fireSynchronizations(outcome, s.baseline);
+        } finally {
+            resume(s.outer);
+            ResourceRegistry.cleanupIfIdle();
+        }
     }
 
     /** Ends the scope {@link #outside} opened, when {@code s} is the status that opened it. */
@@ -199,7 +205,7 @@ public abstract class ResourceTxManager<R> implements TxManager {
         if (bound(reads) != s) return false;
         ResourceRegistry.unbind(reads);
         discard(s.resource);
-        cleanupIfIdle();
+        ResourceRegistry.cleanupIfIdle();
         return true;
     }
 
@@ -207,11 +213,6 @@ public abstract class ResourceTxManager<R> implements TxManager {
         if (outer == null) return;
         ResourceRegistry.unbind(suspended);
         ResourceRegistry.bind(current, outer);
-    }
-
-    private void cleanupIfIdle() {
-        if (!ResourceRegistry.isBound(current) && !ResourceRegistry.isBound(suspended) && !ResourceRegistry.isBound(reads))
-            ResourceRegistry.cleanup();
     }
 
     @SuppressWarnings("unchecked")

@@ -3,6 +3,7 @@ package dev.relism.flash.ext.protobuf;
 import com.google.protobuf.StringValue;
 import dev.relism.flash.App;
 import dev.relism.flash.bytes.FastPathViews;
+import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.ext.validation.ValidationException;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.Http1HeaderMap;
@@ -39,7 +40,7 @@ class ProtobufTest {
     void readsFromTheRequestStreamAndWritesTheFinalArray() throws Exception {
         StringValue message = StringValue.of("flash");
 
-        assertEquals(message, protobuf.read(request(message.toByteArray()), StringValue.class));
+        assertEquals(message, protobuf.decoder(StringValue.class).decode(request(message.toByteArray())));
 
         Response response = new Response(200, ContentType.TEXT_PLAIN);
         assertArrayEquals(message.toByteArray(), protobuf.write(response, message));
@@ -61,7 +62,7 @@ class ProtobufTest {
     @Test
     void malformedWireDataIsABadRequest() {
         HttpException failure = assertThrows(HttpException.class,
-                () -> protobuf.read(request(new byte[] {10, 5, 'x'}), StringValue.class));
+                () -> protobuf.decoder(StringValue.class).decode(request(new byte[] {10, 5, 'x'})));
 
         assertEquals(400, failure.status());
     }
@@ -85,10 +86,10 @@ class ProtobufTest {
     @RegisterExtension
     static FlashTest checked = FlashTest.of(() -> App.create()
             .install(new ProtobufModule())
-            .add(ProtobufValidation.class, value -> {
+            .install(Validation.module(value -> {
                 throw new ValidationException(List.of(
                         new ValidationException.Violation("value", "must not be flash")));
-            }));
+            })));
 
     @Test
     void theInstalledValidationEngineChecksParsedMessages() {
@@ -99,38 +100,6 @@ class ProtobufTest {
                         .invoke(request(message.toByteArray()), new Response(200, ContentType.NONE)));
 
         assertEquals(422, failure.status());
-    }
-
-    static final class Engine implements ProtobufValidation {
-        @Override public void verify(Object value) {}
-    }
-
-    static final class OtherEngine implements ProtobufValidation {
-        @Override public void verify(Object value) {}
-    }
-
-    @Test
-    void anEngineForProtobufAddedAsValidationFailsTheBootNamingIt() {
-        FlashTest misplaced = FlashTest.of(() -> App.create().install(new ProtobufModule())
-                .add(dev.relism.flash.ext.validation.Validation.class, new Engine()));
-
-        assertTrue(failure(() -> misplaced.services()).contains("Engine"));
-    }
-
-    @Test
-    void twoEnginesForProtobufFailTheBootNamingBoth() {
-        FlashTest twice = FlashTest.of(() -> App.create().install(new ProtobufModule())
-                .add(ProtobufValidation.class, new Engine()).add(ProtobufValidation.class, new OtherEngine()));
-
-        String message = failure(() -> twice.services());
-        assertTrue(message.contains("Engine") && message.contains("OtherEngine"), message);
-    }
-
-    private static String failure(Runnable boot) {
-        StringBuilder said = new StringBuilder();
-        for (Throwable cause = assertThrows(RuntimeException.class, boot::run); cause != null; cause = cause.getCause())
-            said.append(cause.getMessage()).append(' ');
-        return said.toString();
     }
 
     private static Request request(byte[] body) {

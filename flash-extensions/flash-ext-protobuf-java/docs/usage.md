@@ -25,19 +25,20 @@ the given `ExtensionRegistryLite`. `new ProtobufModule(protobuf)` takes a `Proto
 
 ## Validation
 
-`Protobuf` asks for a `ProtobufValidation` service, not for `Validation`. This lets one application
-have a validation engine for JSON or XML and a different one for protobuf. Without a
-`ProtobufValidation`, bodies are parsed and not checked; the codec logs one info line at boot. The
-engine for protobuf is
-[flash-ext-validation-protovalidate](../../flash-ext-validation-protovalidate/README.md).
-
-A `ProtobufValidation` that was added as a plain `Validation` (or two registered) fails the boot.
+`Protobuf` only parses. A message is checked by the validation engine that checks its type, as any
+decoded value is; see [flash-ext-validation-core](../../flash-ext-validation-core/README.md). The
+engine for protobuf messages is
+[flash-ext-validation-protovalidate](../../flash-ext-validation-protovalidate/README.md), and it lives
+beside a Jakarta or Avaje engine for JSON and XML. Without an engine that checks messages, they are
+parsed and not checked.
 
 ## Direct use
 
-`Protobuf` is a service with `read(request, type)`, `write(response, value)` and `contentType()`:
+`Protobuf` is a service with `decoder(type)`, `write(response, value)` and `contentType()`. A plain
+handler parses through `Decoder.of`, prepared once in `onInit`, which applies the engine:
 
 ```java
-Order order = protobuf.read(request, Order.class);
+orders = Decoder.of(protobuf, Order.class, services());   // in onInit
+Order order = (Order) orders.decode(request);
 return protobuf.write(response, reply);
 ```

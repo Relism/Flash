@@ -6,7 +6,7 @@
 [transactions](../../flash-ext-data-core/docs/transactions.md) over one connection per transaction:
 
 - A new transaction takes a connection, sets auto-commit off, applies `readOnly` and the isolation
-  level (unless `DEFAULT`).
+  level (unless `DEFAULT`), and puts back what it changed before it closes the connection.
 - `REQUIRES_NEW` and `NOT_SUPPORTED` suspend the current transaction's connection and restore it
   afterwards.
 - `SUPPORTS` with no transaction to join takes one connection in auto-commit for its scope, shared by
@@ -68,3 +68,5 @@ from your own repository methods, wrapped in `roQuery` (joins, or runs as `SUPPO
 (joins, or opens a read-write transaction).
 
 Column names used in a `Spec` or `Sort` are written into the SQL as given: do not pass user input.
+Values are bound with `setObject`; an `Instant` is bound as an `OffsetDateTime` in UTC, the type
+JDBC 4.2 requires every driver to take.

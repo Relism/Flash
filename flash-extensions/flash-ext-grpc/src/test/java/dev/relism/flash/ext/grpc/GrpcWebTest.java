@@ -14,11 +14,11 @@ import dev.relism.flash.ext.limiter.Limit;
 import dev.relism.flash.ext.limiter.LimiterModule;
 import dev.relism.flash.ext.micrometer.MicrometerModule;
 import dev.relism.flash.ext.protobuf.ProtobufModule;
-import dev.relism.flash.ext.protobuf.ProtobufValidation;
 import dev.relism.flash.ext.security.Authenticated;
 import dev.relism.flash.ext.security.AuthenticationMechanism;
 import dev.relism.flash.ext.security.Principal;
 import dev.relism.flash.ext.security.SecurityModule;
+import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.ext.validation.ValidationException;
 import dev.relism.flash.http.Duplex;
 import dev.relism.flash.http.HttpMethod;
@@ -228,11 +228,11 @@ class GrpcWebTest {
     /** Interop 8.2: a protobuf validation engine's 422 becomes INVALID_ARGUMENT, as it does for gRPC. */
     @Test
     void aValidationViolationIsInvalidArgument() throws Exception {
-        ProtobufValidation rejectsBad = value -> {
+        Validation rejectsBad = value -> {
             if (value instanceof StringValue text && text.getValue().equals("bad"))
                 throw new ValidationException(List.of(new ValidationException.Violation("value", "must not be bad")));
         };
-        start(App.create().add(ProtobufValidation.class, rejectsBad));
+        start(App.create().install(Validation.module(rejectsBad)));
 
         HttpResponse<byte[]> bad = post("/flash.test.Echo/Unary", "application/grpc-web+proto", H2c.framed(GrpcTest.text("bad")));
         assertEquals(String.valueOf(Status.INVALID_ARGUMENT.ordinal()), bad.headers().firstValue("grpc-status").orElseThrow());

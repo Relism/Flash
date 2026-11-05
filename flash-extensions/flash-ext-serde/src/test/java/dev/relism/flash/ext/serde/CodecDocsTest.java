@@ -1,22 +1,23 @@
-package dev.relism.flash.ext.openapi;
+package dev.relism.flash.ext.serde;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.relism.flash.App;
 import dev.relism.flash.bytes.ByteWriter;
-import dev.relism.flash.ext.serde.Codec;
-import dev.relism.flash.ext.serde.Decoder;
-import dev.relism.flash.ext.serde.Encoder;
-import dev.relism.flash.ext.serde.CodecRequestHandler;
-import dev.relism.flash.ext.serde.FromRequest;
-import dev.relism.flash.ext.serde.InputBinder;
+import dev.relism.flash.ext.openapi.ApiOperation;
+import dev.relism.flash.ext.openapi.OpenApiContributor;
+import dev.relism.flash.ext.openapi.OpenApiModule;
+import dev.relism.flash.ext.openapi.OpenApiOperationContribution;
 import dev.relism.flash.http.ContentType;
 import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.testing.FlashTest;
+import java.lang.reflect.Field;
 import java.lang.reflect.Type;
+import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -26,7 +27,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
  */
 class CodecDocsTest {
 
-    record Order(String reference) {}
+    record Order(String reference, String internal) {}
     record Receipt(String number) {}
 
     @ApiOperation(summary = "Takes XML, answers JSON")
@@ -37,7 +38,7 @@ class CodecDocsTest {
     }
 
     static final class Xmlish implements Codec {
-        @Override public Decoder decoder(Type type) { return (bytes, offset, length) -> new Order("A-1"); }
+        @Override public Decoder decoder(Type type) { return (bytes, offset, length) -> new Order("A-1", null); }
         @Override public Encoder encoder(Type type) { throw new UnsupportedOperationException(); }
         @Override public Object write(Response response, Object value) { throw new UnsupportedOperationException(); }
         @Override public ContentType contentType() { return ContentType.XML; }
@@ -60,6 +61,11 @@ class CodecDocsTest {
             return java.util.Arrays.copyOf(out.array(), out.length());
         }
         @Override public ContentType contentType() { return ContentType.JSON; }
+        /** Writes {@code Receipt.number} as {@code receipt_no}, and nothing of {@code Order.internal}. */
+        @Override public String wireName(Field field) {
+            if (field.getName().equals("internal")) return null;
+            return field.getName().equals("number") ? "receipt_no" : field.getName();
+        }
     }
 
     @FromRequest
@@ -78,10 +84,21 @@ class CodecDocsTest {
         }
     }
 
+    /** Says what a {@link Lookup} is read from, as the module that reads it would. */
+    static final class LookupDocs implements OpenApiContributor {
+        @Override public OpenApiOperationContribution parameters(Type type, Function<Field, String> names) {
+            if (type != Lookup.class) return null;
+            return OpenApiOperationContribution.builder()
+                    .parameter(Map.of("name", "reference", "in", "query", "schema", Map.of("type", "string")))
+                    .build();
+        }
+    }
+
     @RegisterExtension
     static FlashTest app = FlashTest.of(() -> App.create()
-            .add(Xmlish.class, new Xmlish()).add(Jsonish.class, new Jsonish())
+            .install(Codec.module(Xmlish.class, new Xmlish()), Codec.module(Jsonish.class, new Jsonish()))
             .add(InputBinder.class, FromQuery.class)
+            .add(OpenApiContributor.class, LookupDocs.class)
             .install(new OpenApiModule("/openapi", "Orders", "1.0.0"))
             .route(HttpMethod.POST, "/orders", PlaceOrder.class)
             .route(HttpMethod.GET, "/orders", FindOrder.class));
@@ -94,6 +111,7 @@ class CodecDocsTest {
         find = find.substring(0, find.indexOf("\"responses\""));
         assertTrue(orders.substring(0, orders.indexOf("\"get\"")).contains("requestBody"), "the POST still has its body");
         assertFalse(find.contains("requestBody"), find);
+        assertTrue(find.contains("\"name\":\"reference\""), "its parameters come from whoever describes the type: " + find);
         app.get("/orders?reference=A-7").expectStatus(200).expectBodyContains("A-7");
     }
 
@@ -104,5 +122,13 @@ class CodecDocsTest {
         String requestBody = document.substring(document.indexOf("\"requestBody\""));
         assertTrue(requestBody.startsWith("\"requestBody\":{\"required\":true,\"content\":{\"application/xml\""), requestBody);
         assertTrue(document.contains("\"200\":{\"description\":\"OK\",\"content\":{\"application/json\""), document);
+    }
+
+    @Test
+    void aFieldIsNamedAsTheCodecWritesItAndLeftOutWhenItIsNot() {
+        String document = app.get("/openapi.json").expectStatus(200).body();
+
+        assertTrue(document.contains("\"receipt_no\""), document);
+        assertFalse(document.contains("\"internal\""), document);
     }
 }

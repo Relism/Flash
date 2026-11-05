@@ -2,6 +2,7 @@ package dev.relism.flash.ext.avaje.jsonb;
 
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
+import dev.relism.flash.ext.serde.Codec;
 import io.avaje.jsonb.Jsonb;
 
 /**
@@ -28,6 +29,6 @@ public class JsonModule implements Module {
 
     @Override
     public void install(App app) {
-        app.add(Json.class, new Json(jsonb)).install(JsonbDocs.module());
+        app.install(Codec.module(Json.class, new Json(jsonb)));
     }
 }

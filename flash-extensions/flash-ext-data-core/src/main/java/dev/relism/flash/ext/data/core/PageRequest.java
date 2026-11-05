@@ -3,6 +3,7 @@ package dev.relism.flash.ext.data.core;
 import dev.relism.flash.ext.serde.FromRequest;
 
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * The page a client asked for: how many items, in which order, after which one. Made by
@@ -30,10 +31,13 @@ public final class PageRequest<T> {
         this.after = after;
     }
 
-    /** At most {@code size} of {@code rows}, read with one more than that, and the token of the page after. */
-    Page<T> page(List<T> rows) {
+    /**
+     * At most {@code size} of {@code rows}, read with one more than that, and the token of the page
+     * after, from the values {@code loaded} gives for the last row.
+     */
+    Page<T> page(List<T> rows, Function<? super T, Object> loaded) {
         if (rows.size() <= size) return new Page<>(rows, null);
         List<T> content = rows.subList(0, size);
-        return new Page<>(content, pager.token(sort, content.get(size - 1)));
+        return new Page<>(content, pager.token(sort, loaded.apply(content.get(size - 1))));
     }
 }

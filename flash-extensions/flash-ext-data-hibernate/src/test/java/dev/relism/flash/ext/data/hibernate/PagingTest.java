@@ -13,6 +13,8 @@ import dev.relism.flash.http.Request;
 import dev.relism.flash.http.RequestLine;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import org.hibernate.Hibernate;
+import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** Keyset pages in HQL: the entity's {@code @Id} is the tie-breaker, and a nullable column pages its nulls last. */
 class PagingTest {
@@ -46,6 +49,7 @@ class PagingTest {
 
     private static SessionFactory sessions;
     private static HibernateTxManager manager;
+    private static Data data;
     private static Repository<Item, Long> items;
     private static final Pager<Item> PAGER = Pager.of(Item.class);
 
@@ -58,7 +62,7 @@ class PagingTest {
                 .build();
         sessions = new MetadataSources(registry).addAnnotatedClass(Item.class).buildMetadata().buildSessionFactory();
         manager = new HibernateTxManager(sessions);
-        Data data = HibernateData.create(manager);
+        data = HibernateData.create(manager);
         items = data.repository(Item.class);
         data.write(() -> {
             items.save(new Item(1, "b", 2));
@@ -87,6 +91,26 @@ class PagingTest {
         assertEquals(List.of(5L, 4L, 3L, 2L, 1L), visit("-code", 1));
     }
 
+    /** A row the session already holds as a proxy: its token still carries its real label. */
+    @Test
+    void aProxyAtTheEndOfAPageGivesItsRealValues() {
+        List<Long> codes = data.read(() -> {
+            data.tx().resource(Session.class).getReference(Item.class, 2L);
+            return visit("label", 1);
+        });
+        assertEquals(List.of(2L, 4L, 1L, 3L, 5L), codes);
+    }
+
+    public static class Composite {
+        @Id Long tenant;
+        @Id Long code;
+    }
+
+    @Test
+    void anEntityWithTwoIdsCannotBePaged() {
+        assertThrows(IllegalStateException.class, () -> Pager.of(Composite.class));
+    }
+
     @Test
     void aScopeAndACountSpeakHql() {
         Page<Item> page = items.findPage(PAGER.read(request("sort=priority")), SpecBuilder.<Item, String>field("label").eq("a"));
@@ -100,7 +124,7 @@ class PagingTest {
         do {
             Page<Item> page = items.findPage(PAGER.read(request("sort=" + sort + "&size=" + size
                     + (after == null ? "" : "&after=" + after))));
-            page.content().forEach(item -> codes.add(item.code));
+            page.content().forEach(item -> codes.add(((Item) Hibernate.unproxy(item)).code));   // a proxy's own fields are empty
             after = page.next();
         } while (after != null);
         return codes;

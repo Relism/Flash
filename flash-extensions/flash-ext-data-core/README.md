@@ -19,7 +19,8 @@ classes. The access library is a
 TxManager manager = new HibernateTxManager(sessionFactory);
 app.install(new DataModule(manager, HibernateData.create(manager)));
 
-record User(long id, @Sortable String name) {}
+@Entity
+class User { @Id long id; @Sortable String name; }
 
 @GET("/users")
 final class ListUsers extends JsonHandler<PageRequest<User>, Page<User>> {

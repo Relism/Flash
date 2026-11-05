@@ -139,6 +139,14 @@ public abstract class Repository<T, ID> {
     }
 
     /**
+     * The object whose fields hold {@code entity}'s values, for the token of a page: the entity
+     * itself, or for a backend that hands out proxies, the instance a proxy stands for.
+     */
+    protected Object loaded(T entity) {
+        return entity;
+    }
+
+    /**
      * Keyset paging over {@link #doFind}: the rows after the last item of the previous page, in the
      * page's order with the id as the tie-breaker, one more than the page holds. Rows whose sort
      * value is null come after all the others, ordered by id, so a nullable column pages in two
@@ -153,26 +161,26 @@ public abstract class Repository<T, ID> {
         Object[] last = request.after;
         int rows = request.size + 1;
 
+        List<T> found;
         if (key == 0) {
-            Spec<T> where = last == null ? scope : scope.and(c -> id + after + c.bind(last[1]));
-            return request.page(find(where, byId, rows));
-        }
-        if (last != null && last[0] == null)    // already among the nulls
-            return request.page(find(scope.and(c -> field + " is null and " + id + after + c.bind(last[1])), byId, rows));
-
-        boolean nullable = request.pager.keys[key].nullable;
-        Spec<T> where = nullable ? scope.and(c -> field + " is not null") : scope;
-        if (last != null) where = where.and(c -> "(" + field + after + c.bind(last[0]) + " or (" + field + " = "
-                + c.bind(last[0]) + " and " + id + after + c.bind(last[1]) + "))");
-        List<T> found = find(where, plan.ordered[request.sort], rows);
-        if (nullable && found.size() < rows) {
-            List<T> nulls = find(scope.and(c -> field + " is null"), byId, rows - found.size());
-            if (!nulls.isEmpty()) {
-                found = new ArrayList<>(found);
-                found.addAll(nulls);
+            found = find(last == null ? scope : scope.and(c -> id + after + c.bind(last[1])), byId, rows);
+        } else if (last != null && last[0] == null) {   // already among the nulls
+            found = find(scope.and(c -> field + " is null and " + id + after + c.bind(last[1])), byId, rows);
+        } else {
+            boolean nullable = request.pager.keys[key].nullable;
+            Spec<T> where = nullable ? scope.and(c -> field + " is not null") : scope;
+            if (last != null) where = where.and(c -> "(" + field + after + c.bind(last[0]) + " or (" + field + " = "
+                    + c.bind(last[0]) + " and " + id + after + c.bind(last[1]) + "))");
+            found = find(where, plan.ordered[request.sort], rows);
+            if (nullable && found.size() < rows) {
+                List<T> nulls = find(scope.and(c -> field + " is null"), byId, rows - found.size());
+                if (!nulls.isEmpty()) {
+                    found = new ArrayList<>(found);
+                    found.addAll(nulls);
+                }
             }
         }
-        return request.page(found);
+        return request.page(found, this::loaded);
     }
 
     private List<T> find(Spec<T> where, Sort sort, int rows) {

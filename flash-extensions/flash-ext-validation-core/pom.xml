@@ -22,6 +22,11 @@
             <artifactId>flash-ext-openapi</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>dev.relism</groupId>
+            <artifactId>flash-ext-serde</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>

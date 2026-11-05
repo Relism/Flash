@@ -12,7 +12,7 @@ import java.util.Map;
 
 public final class OpenApiOperationContribution {
     private static final OpenApiOperationContribution EMPTY =
-            new OpenApiOperationContribution(List.of(), Map.of(), null, null, null, null, null, List.of());
+            new OpenApiOperationContribution(List.of(), Map.of(), null, null, null, null, null, null, List.of());
 
     private final List<Map<String, List<String>>> security;
     private final Map<Integer, OpenApiResponseContribution> responses;
@@ -20,6 +20,7 @@ public final class OpenApiOperationContribution {
     private final ContentType consumes;
     private final ContentType produces;
     private final Type requestType;
+    private final Type requestParameters;
     private final Type responseType;
     private final List<Map<String, Object>> parameters;
 
@@ -29,6 +30,7 @@ public final class OpenApiOperationContribution {
                                          ContentType consumes,
                                          ContentType produces,
                                          Type requestType,
+                                         Type requestParameters,
                                          Type responseType,
                                          List<Map<String, Object>> parameters) {
         this.security = List.copyOf(security);
@@ -37,6 +39,7 @@ public final class OpenApiOperationContribution {
         this.consumes = consumes;
         this.produces = produces;
         this.requestType = requestType;
+        this.requestParameters = requestParameters;
         this.responseType = responseType;
         this.parameters = List.copyOf(parameters);
     }
@@ -68,6 +71,14 @@ public final class OpenApiOperationContribution {
         return requestType;
     }
 
+    /**
+     * The type the operation reads from the request itself rather than its body. Its parameters are
+     * said by the contributor that describes it, through {@link OpenApiContributor#parameters}.
+     */
+    public Type requestParameters() {
+        return requestParameters;
+    }
+
     /** The type the operation answers with, same. */
     public Type responseType() {
         return responseType;
@@ -81,7 +92,7 @@ public final class OpenApiOperationContribution {
     public boolean isEmpty() {
         return security.isEmpty() && responses.isEmpty() && allResponses == null
                 && consumes == null && produces == null
-                && requestType == null && responseType == null && parameters.isEmpty();
+                && requestType == null && requestParameters == null && responseType == null && parameters.isEmpty();
     }
 
     public static OpenApiOperationContribution empty() {
@@ -99,6 +110,7 @@ public final class OpenApiOperationContribution {
         private ContentType consumes;
         private ContentType produces;
         private Type requestType;
+        private Type requestParameters;
         private Type responseType;
         private final List<Map<String, Object>> parameters = new ArrayList<>();
 
@@ -132,6 +144,11 @@ public final class OpenApiOperationContribution {
             return this;
         }
 
+        public Builder requestParameters(Type type) {
+            this.requestParameters = type;
+            return this;
+        }
+
         public Builder responseType(Type type) {
             this.responseType = type;
             return this;
@@ -145,7 +162,7 @@ public final class OpenApiOperationContribution {
 
         public OpenApiOperationContribution build() {
             return new OpenApiOperationContribution(security, responses, allResponses,
-                    consumes, produces, requestType, responseType, parameters);
+                    consumes, produces, requestType, requestParameters, responseType, parameters);
         }
     }
 }

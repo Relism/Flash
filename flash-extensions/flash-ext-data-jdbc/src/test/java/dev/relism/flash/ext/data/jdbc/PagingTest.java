@@ -79,7 +79,9 @@ class PagingTest {
             new Person(4, "ada", 20, LocalDate.of(2000, 1, 1)),
             new Person(5, "eve", null, LocalDate.of(1990, 2, 2)),
             new Person(6, "bob", 10, null),
-            new Person(7, "fay", 30, LocalDate.of(2001, 3, 3)));
+            new Person(7, "fay", 30, LocalDate.of(2001, 3, 3)),
+            new Person(8, "gus", null, LocalDate.of(1990, 2, 2)),
+            new Person(9, "hal", null, null));
 
     private static final JdbcDataSource SOURCE = new JdbcDataSource();
     private static final People people;
@@ -117,19 +119,20 @@ class PagingTest {
     @Test
     void aScopeNarrowsEveryPage() {
         Spec<Person> highIds = SpecBuilder.<Person, Long>field("id").gt(2L);
-        assertEquals(List.of(7L, 4L, 6L, 3L, 5L), visit(Pager.of(Person.class), "-score", 2, highIds));
+        // pages [7, 4] [6, 3] [9, 8] [5]: the third ends among the nulls, so the fourth continues there, scoped
+        assertEquals(List.of(7L, 4L, 6L, 3L, 9L, 8L, 5L), visit(Pager.of(Person.class), "-score", 2, highIds));
     }
 
     @Test
     void countsWithACondition() {
-        assertEquals(7, people.count());
-        assertEquals(2, people.count(SpecBuilder.<Person, Integer>field("score").isNull()));
+        assertEquals(9, people.count());
+        assertEquals(4, people.count(SpecBuilder.<Person, Integer>field("score").isNull()));
     }
 
     @Test
     void aLimitCapsTheRowsRead() {
-        assertEquals(List.of(7L, 6L), ids(people.findAll(Query.<Person>all().orderBy(Sort.desc("id")).limit(2))));
-        assertEquals(7, people.findAll(Query.<Person>all().limit(0)).size(), "0 is no limit");
+        assertEquals(List.of(9L, 8L), ids(people.findAll(Query.<Person>all().orderBy(Sort.desc("id")).limit(2))));
+        assertEquals(9, people.findAll(Query.<Person>all().limit(0)).size(), "0 is no limit");
         assertEquals(List.of(5L), ids(people.findOne(SpecBuilder.<Person, String>field("full_name").eq("eve")).stream().toList()));
     }
 

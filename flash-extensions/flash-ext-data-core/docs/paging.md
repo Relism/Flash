@@ -3,7 +3,8 @@
 A list is served in pages that a client walks with a token: each page says where the next one starts.
 The client chooses the size and the order among the fields the type allows; the position travels in
 `after`. Pages are keyset pages: a page costs the same wherever it is in the list, no count is run,
-and rows inserted between two requests are neither repeated nor skipped.
+and no row is repeated when rows are inserted between two requests. A row inserted between two
+requests appears only if it sorts after the last item already read.
 
 ```java
 public record User(long id, @Sortable String name, @Sortable Instant lastLogin) {}
@@ -61,18 +62,24 @@ fails there, whichever sort it belongs to.
 in the database, so mark the fields that have an index. A field without it cannot be sorted by, nor
 can a client learn anything about its values through the order.
 
-The id is the field annotated `jakarta.persistence.Id`, or else the field named `id`. Fields of superclasses count, theirs first.
+The id is the one field carrying an annotation named `Id` (`jakarta.persistence.Id`, or the same of
+another persistence API), or else the field named `id`. Fields of superclasses count, theirs first.
 
-A key is a `String`, a primitive or its wrapper, `BigDecimal`, `BigInteger`, `UUID`, `Instant`,
-`LocalDate`, `LocalTime`, `LocalDateTime` or `OffsetDateTime`. Building the pager fails with
-`IllegalStateException` for a type without an id, a key of another type, a static `@Sortable` field or
-two keys with one wire name.
+A key is a `String`, a `boolean`, `byte`, `short`, `int`, `long`, `float` or `double` or its wrapper,
+`BigDecimal`, `BigInteger`, `UUID`, `Instant`, `LocalDate`, `LocalTime`, `LocalDateTime` or
+`OffsetDateTime`. Building the pager fails with `IllegalStateException` for a type without an id or
+with two `@Id` fields, a key of another type, a static `@Sortable` field, a key the names function
+gives no name (a field the codec does not write), two keys with one wire name, or a wire name that
+starts with `-`.
 
 ## The token
 
-`next` is opaque: it holds the sort it was issued for and the text form (`toString`) of the last
-item's field value and id, encoded in base64url. It is not signed: its values are bound as query parameters, so changing one only moves
-the position in the list. A token stays valid as long as the type's sortable fields do not change.
+`next` is opaque: it holds a fingerprint of its format, the type and its keys, the sort it was issued for, and
+the text form (`toString`) of the last item's field value and id, encoded in base64url. A token of
+another type, or from before its sortable fields or its format changed, is a `400`. It is not signed: its values are
+bound as query parameters, so changing one only moves the position in the list. The text form of a
+key holds at most 65535 bytes: a longer value at the end of a page fails with
+`IllegalStateException`.
 
 ## Pager
 
@@ -109,8 +116,10 @@ for a raw `PageRequest`, and for one over a type that cannot be paged.
 
 ## With flash-ext-openapi
 
-For such a handler the document lists `size`, `sort` (with every accepted value) and `after`, a `400`
-response, and no request body. `Page<User>` is the schema `PageUser`, with `content` required and
+For such a handler the document lists `size`, `sort` (with every accepted value, under the names the
+document gives the fields) and `after`, a `400` response, and no request body. The handler's codecs
+say that the input is read from the request; `DataModule` answers for `PageRequest`, wherever an
+operation reads one. `Page<User>` is the schema `PageUser`, with `content` required and
 `next` nullable.
 
 A handler that calls `Pager.read` itself is not seen: declare its parameters with `@Parameter`.

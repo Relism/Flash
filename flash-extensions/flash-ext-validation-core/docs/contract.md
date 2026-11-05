@@ -5,16 +5,22 @@
 ```java
 public interface Validation {
     void verify(Object value);
+    default boolean checks(Class<?> type) { return true; }
     default void describe(Constraints constraints) {}
+    static Module module(Validation engine) { ... }
 }
 ```
 
 `verify` checks a value against the rules its own type declares and throws `ValidationException`
 when it breaks any. Which annotations exist and how they are enforced is the engine's business.
 
-Engines are registered as `Validation` services (`app.add(Validation.class, engine)`). A second
-engine added the same way fails the boot, because codecs look the service up with `find` and
-`find` fails on several.
+`checks` says whether the engine has rules for a type. It is asked once per decoded type, at boot,
+and a type no engine checks is decoded with no call at all. An engine answers `true` for a type
+whose values may be of a subclass with rules: an interface or an abstract class.
+
+Engines install themselves through `Validation.module(engine)`, so several live in one app. Each
+decoded type is checked by the one engine that checks it; two engines that both check a type fail
+the boot at the handler that decodes it, naming both.
 
 ## ValidationException
 
@@ -39,9 +45,13 @@ The exception carries every violation the engine reported, in the engine's order
 
 ## Who calls it
 
-The codecs do: the Jackson JSON and XML codecs and the Avaje Jsonb codec call `verify` on each body
-they parse. The protobuf codec calls a protobuf engine, see [engines.md](engines.md#codec-families).
-A handler that wants to check a value it built itself takes `Validation` as a constructor parameter
-and calls `verify`.
+No codec does. With flash-ext-serde on the classpath, `Validation.module` adds a serde `Check`, and
+every protocol decodes through `Decoder.of`: a typed handler's body, an NDJSON line and a gRPC
+message are all checked, whatever the codec. A collection or an array is checked by the engine of its
+element type. See [serde's codecs.md](../../flash-ext-serde/docs/codecs.md#checks).
 
-Without an engine installed, codecs parse and do not check, and log one info line at boot.
+A handler that wants to check a value it built itself takes `List<Validation>` as a constructor
+parameter and calls `verify` on the engine that `checks` the value's type, or `Validation` when the
+app installs one engine.
+
+Without an engine installed, values are parsed and not checked.

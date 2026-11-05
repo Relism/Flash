@@ -39,9 +39,10 @@ At boot, in `onInit`:
    them open (a type variable) fails the boot, as does a codec type that is not a `Codec`.
 2. Each codec is looked up as a service with `services.get(CI)` and `services.get(CO)`. One that was
    never installed fails the boot.
-3. Unless `I` is `Void`, the input codec prepares a `Decoder` for `I`. When `I` is `@FromRequest`,
-   each `InputBinder` service is asked for a reader of it instead, the first one given is used, and
-   none fails the boot. The output codec prepares an `Encoder` for `O`.
+3. Unless `I` is `Void`, the input codec prepares a `Decoder` for `I` through `Decoder.of`, so the
+   installed checks apply ([codecs.md](codecs.md#checks)). When `I` is `@FromRequest`, each
+   `InputBinder` service is asked for a reader of it instead, the first one given is used, and none
+   fails the boot. The output codec prepares an `Encoder` for `O`.
 4. `onCodecInit()` runs, for your own boot work. `onInit` itself is final.
 
 At request time:
@@ -49,8 +50,8 @@ At request time:
 1. The binder's reader, or else `decoder.decode(request)`, produces `I`. A decoder reads
    `request.body().bytes()` by default; a codec may override it to parse from the stream.
 2. `handle(request, response, input)` runs. The decoder's failure is a normal exception: a codec
-   raises `HttpException.badRequest` for a malformed body and a `ValidationException` (422) when a
-   validation engine rejects it. Neither reaches your method.
+   raises `HttpException.badRequest` for a malformed body, and a validation engine's check a
+   `ValidationException` (422) for a value that breaks a rule. Neither reaches your method.
 3. The answer is written, unless `null`.
 
 ### Answers that are not encoded
@@ -73,7 +74,8 @@ public interface InputBinder {
 
 `codec` is the handler's input codec, for a binder that names fields as the format does. Paging in
 [flash-ext-data-core](../../flash-ext-data-core/docs/paging.md) is one: it reads `PageRequest<T>`.
-OpenAPI documents no request body for a `@FromRequest` input.
+OpenAPI documents no request body for a `@FromRequest` input: the operation names the type as
+`requestParameters`, and the contributor that describes the type says its parameters.
 
 ## CodecDuplexHandler
 

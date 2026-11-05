@@ -13,7 +13,7 @@ import java.util.logging.Logger;
  * outside the two {@code getConnection} overloads throws: nothing under test calls them, and a
  * loud failure beats a silent stub if that ever changes.
  */
-final class TestDataSource implements DataSource {
+class TestDataSource implements DataSource {
 
     static final String URL = "jdbc:h2:mem:tx-jdbc;DB_CLOSE_DELAY=-1";
 

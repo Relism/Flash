@@ -80,7 +80,6 @@ public class OpenApiModule implements Module {
 
         app.add(OpenApiBuilder.class, spec)
                 .add(RouteHook.class, new Collector(spec))
-                .add(OpenApiContributor.class, CodecDocs.class)
                 .get(jsonPath, (req, res) -> { res.type(ContentType.JSON).body(asJson.bytes()); return null; })
                 .get(basePath + ".yaml", (req, res) -> { res.type(YAML_CONTENT_TYPE).body(asYaml.bytes()); return null; });
         if (ui == null) return;

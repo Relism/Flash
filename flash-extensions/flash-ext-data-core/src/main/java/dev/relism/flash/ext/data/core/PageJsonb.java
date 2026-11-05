@@ -1,6 +1,7 @@
 package dev.relism.flash.ext.data.core;
 
 import io.avaje.json.JsonAdapter;
+import io.avaje.json.JsonDataException;
 import io.avaje.json.JsonReader;
 import io.avaje.json.JsonWriter;
 import io.avaje.json.PropertyNames;
@@ -20,8 +21,8 @@ public final class PageJsonb implements JsonbComponent {
 
     @Override
     public void register(Jsonb.Builder builder) {
-        builder.add((type, jsonb) -> type == Page.class ? new Adapter<>(jsonb, Object.class)
-                : Types.isGenericTypeOf(type, Page.class) ? new Adapter<>(jsonb, Types.typeArguments(type)[0]) : null);
+        builder.add((type, jsonb) -> type == Page.class ? new Adapter<>(jsonb, Object.class).nullSafe()
+                : Types.isGenericTypeOf(type, Page.class) ? new Adapter<>(jsonb, Types.typeArguments(type)[0]).nullSafe() : null);
     }
 
     private static final class Adapter<T> implements JsonAdapter<Page<T>> {
@@ -50,7 +51,7 @@ public final class PageJsonb implements JsonbComponent {
 
         @Override
         public Page<T> fromJson(JsonReader reader) {
-            List<T> items = List.of();
+            List<T> items = null;
             String after = null;
             reader.beginObject(names);
             while (reader.hasNextField()) {
@@ -61,6 +62,7 @@ public final class PageJsonb implements JsonbComponent {
                 }
             }
             reader.endObject();
+            if (items == null) throw new JsonDataException("A page has no content");
             return new Page<>(items, after);
         }
     }

@@ -8,15 +8,18 @@ import com.google.protobuf.Message;
 import dev.relism.flash.App;
 import dev.relism.flash.Module;
 import dev.relism.flash.ext.openapi.OpenApiContributor;
-import dev.relism.flash.ext.protobuf.Protobuf;
-import dev.relism.flash.ext.protobuf.ProtobufValidation;
+import dev.relism.flash.ext.validation.Validation;
 import dev.relism.flash.ext.validation.ValidationException;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
-/** Validates protobuf messages with rules declared in their descriptors: the engine {@code flash-ext-protobuf-java} asks for. */
-public final class ProtovalidateValidation implements Module, ProtobufValidation {
+/**
+ * Validates protobuf messages with rules declared in their descriptors, whichever codec decoded them.
+ * It checks only messages, so it lives beside an engine for everything else.
+ */
+public final class ProtovalidateValidation implements Module, Validation {
 
     private final Validator validator;
 
@@ -31,34 +34,41 @@ public final class ProtovalidateValidation implements Module, ProtobufValidation
 
     @Override
     public void install(App app) {
-        app.add(ProtobufValidation.class, this)
-                .onStart(services -> {
-                    if (services.find(Protobuf.class).isEmpty()) throw new IllegalStateException(
-                            "ProtovalidateValidation checks the bodies the protobuf codec reads, and no ProtobufModule is installed");
-                })
-                .install(Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor",
-                        () -> docs -> docs.add(OpenApiContributor.class, ProtovalidateDocs.class)));
+        app.install(Validation.module(this), Module.ifPresent("dev.relism.flash.ext.openapi.OpenApiContributor",
+                () -> docs -> docs.add(OpenApiContributor.class, ProtovalidateDocs.class)));
     }
 
     @Override
-    public void verify(Object value) {
-        if (!(value instanceof Message message)) return;
+    public boolean checks(Class<?> type) {
+        return Message.class.isAssignableFrom(type);
+    }
 
+    /** A collection is checked element by element, each failure's path prefixed with its index. */
+    @Override
+    public void verify(Object value) {
+        List<ValidationException.Violation> failures = new ArrayList<>();
+        if (value instanceof Collection<?> items) {
+            int index = 0;
+            for (Object item : items) check(item, "[" + index++ + "].", failures);
+        } else {
+            check(value, "", failures);
+        }
+        if (!failures.isEmpty()) throw new ValidationException(failures);
+    }
+
+    private void check(Object value, String prefix, List<ValidationException.Violation> failures) {
+        if (!(value instanceof Message message)) return;
         ValidationResult result;
         try {
             result = validator.validate(message);
         } catch (build.buf.protovalidate.exceptions.ValidationException failure) {
             throw new IllegalStateException("Could not evaluate protobuf validation rules", failure);
         }
-        if (result.isSuccess()) return;
-
-        List<ValidationException.Violation> failures = new ArrayList<>(result.getViolations().size());
         for (build.buf.protovalidate.Violation violation : result.getViolations()) {
             build.buf.validate.Violation detail = violation.toProto();
-            failures.add(new ValidationException.Violation(path(detail),
+            failures.add(new ValidationException.Violation(prefix + path(detail),
                     detail.hasMessage() ? detail.getMessage() : "is invalid"));
         }
-        throw new ValidationException(failures);
     }
 
     private static String path(build.buf.validate.Violation violation) {

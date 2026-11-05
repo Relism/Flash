@@ -75,6 +75,16 @@ class PagerTest {
         assertEquals("after belongs to a page with another sort", other.getMessage());
     }
 
+    record Order(long id, @Sortable String name, @Sortable Instant lastLogin) {}
+
+    /** Same keys, same sort index, another type: its position means nothing here. */
+    @Test
+    void aTokenOfAnotherTypeIsRefused() {
+        String foreign = Pager.of(Order.class).token(2, new Order(7, "ada", null));
+        assertEquals("after is not a value this API issued",
+                assertThrows(HttpException.class, () -> pager.read(request("sort=name&after=" + foreign))).getMessage());
+    }
+
     @Test
     void namesComeFromTheFunctionGiven() {
         Pager<User> snake = Pager.of(User.class, field -> field.getName().equals("lastLogin") ? "last_login" : field.getName());
@@ -86,11 +96,12 @@ class PagerTest {
     void aPageIsTheRowsItHoldsAndTheTokenOfTheLast() {
         PageRequest<User> request = pager.read(request("size=2"));
         List<User> rows = List.of(user(1), user(2), user(3));
-        Page<User> page = request.page(rows);
+        Page<User> page = request.page(rows, row -> row);
         assertEquals(List.of(user(1), user(2)), page.content());
         assertEquals(pager.token(0, user(2)), page.next());
-        assertNull(request.page(rows.subList(0, 2)).next(), "no row beyond the page: the last one");
-        assertEquals(Map.of(1L, "1"), Map.of(page.map(User::id).content().get(0), page.content().get(0).name()));
+        assertNull(request.page(rows.subList(0, 2), row -> row).next(), "no row beyond the page: the last one");
+        assertEquals(List.of(1L, 2L), page.map(User::id).content());
+        assertEquals(page.next(), page.map(User::id).next(), "a mapped page keeps its next");
     }
 
     record NoId(long key, @Sortable String name) {}
@@ -101,6 +112,8 @@ class PagerTest {
     void aTypeThatCannotBePagedFailsWhenItsPagerIsBuilt() {
         assertTrue(assertThrows(IllegalStateException.class, () -> Pager.of(NoId.class)).getMessage().contains("no id"));
         assertTrue(assertThrows(IllegalStateException.class, () -> Pager.of(Unsupported.class)).getMessage().contains("tags"));
+        assertTrue(assertThrows(IllegalStateException.class, () -> Pager.of(Twice.class, f -> f.getName().equals("other") ? "-name" : f.getName()))
+                .getMessage().contains("- reverses a sort"));
         assertTrue(assertThrows(IllegalStateException.class, () -> Pager.of(Twice.class, f -> f.getName().equals("id") ? "id" : "same"))
                 .getMessage().contains("two sortable fields named same"));
     }

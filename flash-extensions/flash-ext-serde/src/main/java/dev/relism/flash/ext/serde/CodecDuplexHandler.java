@@ -12,7 +12,7 @@ public abstract class CodecDuplexHandler<CI extends Codec, I, CO extends Codec, 
     @Override
     protected final void onInit() {
         CodecBinding binding = CodecBinding.resolve(services(), getClass(), CodecDuplexHandler.class);
-        decoder = binding.inType == Void.class ? null : binding.in.decoder(binding.inType);
+        decoder = binding.inType == Void.class ? null : Decoder.of(binding.in, binding.inType, services());
         encoder = binding.outType == Void.class ? null : binding.out.encoder(binding.outType);
         onCodecInit();
     }

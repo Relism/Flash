@@ -25,6 +25,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -54,10 +55,18 @@ public class JakartaValidation implements Module, Validation {
         this.delegate = delegate;
     }
 
-    /** Adds itself as the app's {@link Validation}, and its rules to the published document. */
+    /** Adds itself as a {@link Validation}, checking what codecs decode, and its rules to the published document. */
     @Override
     public void install(App app) {
-        app.add(Validation.class, this).install(Validation.docs());
+        app.install(Validation.module(this));
+    }
+
+    /** A type that declares a constraint or a cascade, or one whose values may be of a subclass that does. */
+    @Override
+    public boolean checks(Class<?> type) {
+        if (type.isPrimitive()) return false;
+        return type.isInterface() || Modifier.isAbstract(type.getModifiers())
+                || delegate.getConstraintsForClass(type).isBeanConstrained();
     }
 
     /** A collection is checked element by element, each failure's path prefixed with its index. */

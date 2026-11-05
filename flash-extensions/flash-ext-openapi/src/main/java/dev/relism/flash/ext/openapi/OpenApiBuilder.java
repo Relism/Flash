@@ -1,14 +1,11 @@
 package dev.relism.flash.ext.openapi;
 
 import dev.relism.flash.http.ContentType;
-import dev.relism.flash.http.HttpMethod;
 import dev.relism.flash.http.HttpStatus;
 import dev.relism.flash.http.Request;
 import dev.relism.flash.http.Response;
 import dev.relism.flash.routing.Route;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -185,7 +182,12 @@ public final class OpenApiBuilder {
             parameters.add(parameter);
         }
 
-        for (OpenApiOperationContribution contribution : contributions(handlerClass)) parameters.addAll(contribution.parameters());
+        // A declared parameter wins over a contributed one with its name and location, as a declared response does.
+        Set<String> declared = new HashSet<>();
+        for (Map<String, Object> parameter : parameters) declared.add(parameter.get("in") + " " + parameter.get("name"));
+        for (OpenApiOperationContribution contribution : contributions(handlerClass))
+            for (Map<String, Object> parameter : contribution.parameters())
+                if (declared.add(parameter.get("in") + " " + parameter.get("name"))) parameters.add(parameter);
 
         if (!parameters.isEmpty()) operation.put("parameters", parameters);
     }
@@ -316,7 +318,7 @@ public final class OpenApiBuilder {
         if (returned == null) returned = returnTypeOf(handlerClass);
         Class<?> raw = Schemas.rawType(returned);
         if (raw == null || raw == Object.class || raw == Void.class || raw == void.class) return null;
-        if (raw.getName().equals("dev.relism.flash.http.Response")) return null;
+        if (Response.class.isAssignableFrom(raw)) return null;
 
         Map<String, Object> schema = schemas.schemaForType(returned);
         return schema == null || schema.isEmpty() ? null : schema;
@@ -359,6 +361,17 @@ public final class OpenApiBuilder {
             for (OpenApiContributor contributor : contributors) {
                 OpenApiOperationContribution contribution = contributor.operationFor(handler);
                 if (contribution != null) said.add(contribution);
+            }
+            // An input read from the request is described by whoever describes its type.
+            for (int i = 0, stated = said.size(); i < stated; i++) {
+                Type input = said.get(i).requestParameters();
+                if (input == null) continue;
+                for (OpenApiContributor contributor : contributors) {
+                    OpenApiOperationContribution described = contributor.parameters(input, schemas::name);
+                    if (described == null) continue;
+                    said.add(described);
+                    break;
+                }
             }
             return said;
         });

@@ -2,6 +2,7 @@ package dev.relism.flash.ext.data.hibernate;
 
 import dev.relism.flash.ext.data.core.*;
 import jakarta.persistence.TypedQuery;
+import org.hibernate.Hibernate;
 import org.hibernate.Session;
 import org.hibernate.query.MutationQuery;
 
@@ -40,6 +41,12 @@ public abstract class HibernateRepository<T, ID extends Serializable> extends Re
         return q.getResultList();
     }
 
+    /** A row the session already held as a proxy has its values on the instance behind it. */
+    @Override
+    protected Object loaded(T entity) {
+        return Hibernate.unproxy(entity);
+    }
+
     @Override
     protected boolean doExistsById(ID id) {
         return doFindById(id).isPresent();
@@ -51,7 +58,7 @@ public abstract class HibernateRepository<T, ID extends Serializable> extends Re
         TypedQuery<Long> q = session().createQuery("select count(*) from " + type.getSimpleName()
                 + " where " + spec.toFragment(ctx), Long.class);
         ctx.applyParameters(q);
-        return q.getResultStream().findFirst().orElse(0L);
+        return q.getSingleResult();
     }
 
     @Override

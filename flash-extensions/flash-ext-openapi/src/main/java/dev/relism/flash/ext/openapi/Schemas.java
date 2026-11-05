@@ -16,8 +16,8 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +48,8 @@ final class Schemas {
 
     private final Map<Type, String> names = new LinkedHashMap<>();
     private final Map<String, Map<String, Object>> docs = new LinkedHashMap<>();
-    private final Set<Type> resolving = new HashSet<>();
+    /** The classes whose schemas are being built, outermost first. */
+    private final List<Class<?>> expanding = new ArrayList<>();
 
     Map<String, Object> referenceFor(Class<?> type) {
         return schemaFor(type);
@@ -105,18 +106,19 @@ final class Schemas {
     private String registerPojo(Type type, Class<?> cls) {
         String existing = names.get(type);
         if (existing != null) return existing;
+        // Node<T> with a field Node<List<T>> names a new type at every level: stop at the raw class.
+        if (type != cls && Collections.frequency(expanding, cls) > 1) return registerPojo(cls, cls);
 
         String base = schemaName(type);
         String name = base;
         int i = 2;
         while (docs.containsKey(name)) name = base + i++;
         names.put(type, name);
+        docs.put(name, Map.of());   // taken now: a type met while building this one gets another name
 
-        if (resolving.contains(type)) return name;
-
-        resolving.add(type);
+        expanding.add(cls);
         docs.put(name, buildPojoSchema(cls, bindings(type, cls)));
-        resolving.remove(type);
+        expanding.remove(expanding.size() - 1);
         return name;
     }
 
@@ -133,9 +135,8 @@ final class Schemas {
         for (Field f : cls.getDeclaredFields()) {
             int mod = f.getModifiers();
             if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) continue;
-            if (ignored(f)) continue;
-
-            String name = wireName(f);
+            String name = name(f);
+            if (name == null) continue;
 
             Schema ps = f.getAnnotation(Schema.class);
             SchemaProperty sp = f.getAnnotation(SchemaProperty.class);
@@ -167,13 +168,9 @@ final class Schemas {
         this.contributors = contributors;
     }
 
-    private boolean ignored(Field field) {
-        for (OpenApiContributor contributor : contributors) if (contributor.ignored(field)) return true;
-        return false;
-    }
-
-    /** The first name a contributor gives the field, or its own. */
-    private String wireName(Field field) {
+    /** The first name a contributor gives the field, or its own; null when a contributor leaves it out. */
+    String name(Field field) {
+        for (OpenApiContributor contributor : contributors) if (contributor.ignored(field)) return null;
         for (OpenApiContributor contributor : contributors) {
             String name = contributor.name(field);
             if (name != null) return name;
@@ -239,6 +236,7 @@ final class Schemas {
         }
         Class<?> cls = rawType(type);
         if (cls == null) return "Object";
+        if (cls.isArray()) return schemaName(cls.getComponentType()) + "Array";
         Schema schema = cls.getAnnotation(Schema.class);
         if (schema != null && !schema.name().isEmpty()) return schema.name();
         return cls.getSimpleName();
@@ -247,6 +245,7 @@ final class Schemas {
     private static Map<TypeVariable<?>, Type> bindings(Type type, Class<?> cls) {
         if (!(type instanceof ParameterizedType p)) return Map.of();
         Map<TypeVariable<?>, Type> bindings = new HashMap<>();
+        if (p.getOwnerType() instanceof ParameterizedType owner) bindings.putAll(bindings(owner, (Class<?>) owner.getRawType()));
         TypeVariable<?>[] variables = cls.getTypeParameters();
         Type[] arguments = p.getActualTypeArguments();
         for (int i = 0; i < variables.length; i++) bindings.put(variables[i], arguments[i]);
@@ -257,6 +256,8 @@ final class Schemas {
     private static Type bind(Type type, Map<TypeVariable<?>, Type> bindings) {
         if (bindings.isEmpty()) return type;
         if (type instanceof TypeVariable<?> variable) return bindings.getOrDefault(variable, variable);
+        if (type instanceof GenericArrayType array)
+            return bind(array.getGenericComponentType(), bindings) instanceof Class<?> component ? component.arrayType() : type;
         if (!(type instanceof ParameterizedType p)) return type;
         Type[] arguments = p.getActualTypeArguments();
         boolean changed = false;

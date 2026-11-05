@@ -41,7 +41,7 @@ class ValidationDocsTest {
     /** Verifies nothing, describes one rule: enough to prove the seam. */
     static final class Engine implements Module, Validation {
         @Override public void install(App app) {
-            app.add(Validation.class, this).install(Validation.docs());
+            app.install(Validation.module(this));
         }
         @Override public void verify(Object value) {}
         @Override public void describe(Constraints constraints) {

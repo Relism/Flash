@@ -5,20 +5,7 @@ import dev.relism.flash.ext.jackson.JacksonCodec;
 import dev.relism.flash.http.ContentType;
 
 /**
- * JSON in and out, checked against the body type's own constraints.
- *
- * <pre>{@code
- * public final class CreateItem extends RequestHandler {
- *     private final Json json;
- *     private final Items items;
- *
- *     public CreateItem(Json json, Items items) { this.json = json; this.items = items; }
- *
- *     @Override protected Object handle(Request req, Response res) throws Exception {
- *         return json.write(res, items.create(json.read(req, NewItem.class)));
- *     }
- * }
- * }</pre>
+ * JSON in and out, through this module's mapper.
  *
  * <p>A handler whose whole body is one type has nothing to write at all: see {@link JsonHandler}.
  */

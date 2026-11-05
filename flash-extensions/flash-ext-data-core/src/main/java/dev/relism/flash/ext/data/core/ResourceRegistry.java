@@ -36,6 +36,11 @@ public final class ResourceRegistry {
         SYNCHRONIZATIONS.remove();
     }
 
+    /** {@link #cleanup()} once no manager on this thread holds anything: one manager never clears another's transaction. */
+    public static void cleanupIfIdle() {
+        if (RESOURCES.get().isEmpty()) cleanup();
+    }
+
     public static <R> R get(TxResourceKey key, Class<R> type) {
         Object value = RESOURCES.get().get(key);
         if (value == null) {

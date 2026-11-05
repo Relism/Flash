@@ -50,27 +50,29 @@ public final class Pager<T> {
     /** The most a request may ask for. */
     public static final int MAX_SIZE = 100;
 
-    private static final byte VERSION = 1;
     private static final Base64.Encoder TOKEN = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder TOKENS = Base64.getUrlDecoder();
 
     final Class<T> type;
     /** The id first, then every {@link Sortable} field in declaration order. */
     final Key[] keys;
+    /**
+     * The token format, the type and its keys a token belongs to: one from another API, from before
+     * the keys changed, or in an older format, is refused.
+     */
+    private final int fingerprint;
     private final PageRequest<T> first;
 
     private Pager(Class<T> type, Function<Field, String> names) {
         this.type = type;
         this.keys = keys(type, names);
+        StringBuilder signature = new StringBuilder("2 ").append(type.getName());   // 2: the token format
+        for (Key key : keys) signature.append(' ').append(key.property);
+        this.fingerprint = signature.toString().hashCode();
         this.first = new PageRequest<>(this, DEFAULT_SIZE, 0, null);
     }
 
-    /**
-     * The pager of {@code type}, its fields named as in Java.
-     *
-     * @throws IllegalStateException if the type has no id, an unsupported key type, a static
-     *         {@link Sortable} field, or duplicate key names
-     */
+    /** The pager of {@code type}, its fields named as in Java: {@code of(type, Field::getName)}. */
     public static <T> Pager<T> of(Class<T> type) {
         return of(type, Field::getName);
     }
@@ -78,8 +80,9 @@ public final class Pager<T> {
     /**
      * The pager of {@code type}, its fields named by {@code names}: a codec's wire names.
      *
-     * @throws IllegalStateException if the type has no id, an unsupported key type, a static
-     *         {@link Sortable} field, or duplicate key names
+     * @throws IllegalStateException if the type has no id or two {@code @Id} fields, a key of an
+     *         unsupported type, a static {@link Sortable} field, a key {@code names} gives no name, two
+     *         keys with one wire name, or a wire name that starts with {@code -}
      */
     public static <T> Pager<T> of(Class<T> type, Function<Field, String> names) {
         return new Pager<>(type, names);
@@ -91,8 +94,8 @@ public final class Pager<T> {
      * A leading {@code -} reverses the sort. A continuation token is not signed.
      *
      * @throws HttpException with status 400 for a non-numeric size, a size outside 1 to
-     *         {@link #MAX_SIZE} or more than three digits, an unknown sort, a malformed token,
-     *         or a token for a different sort
+     *         {@link #MAX_SIZE} or more than three digits, an unknown sort, a malformed token, or
+     *         a token of another type or sort
      */
     public PageRequest<T> read(Request request) {
         ByteView query = request.rawQuery();
@@ -183,16 +186,16 @@ public final class Pager<T> {
     }
 
     private Object[] after(Request request, int sort) {
-        int version, issuedFor;
+        int issuedBy, issuedFor;
         DataInputStream in;
         try {
             in = new DataInputStream(new ByteArrayInputStream(TOKENS.decode(value(request, "after"))));
-            version = in.readByte();
+            issuedBy = in.readInt();
             issuedFor = in.readShort();
         } catch (IOException | IllegalArgumentException malformed) {
             throw invalidAfter();
         }
-        if (version != VERSION) throw invalidAfter();
+        if (issuedBy != fingerprint) throw invalidAfter();
         if (issuedFor != sort) throw HttpException.badRequest("after belongs to a page with another sort");
         Key key = keys[sort >> 1];
         try {
@@ -226,12 +229,12 @@ public final class Pager<T> {
     // ── The token after a page ────────────────────────────────────────────────
 
     /** Where the page that ends with {@code last} stops: its sort value and its id, for the next request. */
-    String token(int sort, T last) {
+    String token(int sort, Object last) {
         Key key = keys[sort >> 1];
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(32);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeByte(VERSION);
+            out.writeInt(fingerprint);
             out.writeShort(sort);
             if (key != keys[0]) {
                 Object value = key.get(last);
@@ -259,6 +262,8 @@ public final class Pager<T> {
         Key(Field field, String wire) {
             this.field = field;
             this.property = field.getName();
+            if (wire == null) throw new IllegalStateException(field.getDeclaringClass().getName() + "." + property
+                    + " is not written: a key a client sorts by is one it reads");
             this.wire = wire;
             this.wireBytes = wire.getBytes(StandardCharsets.UTF_8);
             this.nullable = !field.getType().isPrimitive();
@@ -307,6 +312,8 @@ public final class Pager<T> {
                         throw new IllegalStateException(type.getName() + "." + field.getName() + " is static: @Sortable is for fields of the entity");
                     continue;
                 }
+                if (annotatedId(field) && id != null && annotatedId(id))
+                    throw new IllegalStateException(type.getName() + " has two @Id fields: a page is keyed by one");
                 if (identifies(field) && (id == null || !annotatedId(id))) id = field;
                 if (field.isAnnotationPresent(Sortable.class)) declared.add(field);
             }
@@ -319,19 +326,24 @@ public final class Pager<T> {
         for (Field field : sortable) if (field != id) keys.add(new Key(field, names.apply(field)));
         Set<String> seen = new HashSet<>();
         for (Key key : keys)
-            if (!seen.add(key.wire))
+            if (key.wire.startsWith("-"))
+                throw new IllegalStateException(type.getName() + "." + key.property + " is named " + key.wire + ": - reverses a sort");
+            else if (!seen.add(key.wire))
                 throw new IllegalStateException(type.getName() + " has two sortable fields named " + key.wire);
         return keys.toArray(Key[]::new);
     }
 
-    /** {@code @Id} of JPA wins over a field called {@code id}; the annotation is matched by name, so JPA stays optional. */
+    /**
+     * An annotation named {@code Id}, whichever persistence API declares it, wins over a field called
+     * {@code id}: matched by name, so data-core depends on none of them.
+     */
     private static boolean identifies(Field field) {
         return annotatedId(field) || field.getName().equals("id");
     }
 
     private static boolean annotatedId(Field field) {
         for (Annotation annotation : field.getAnnotations())
-            if (annotation.annotationType().getName().equals("jakarta.persistence.Id")) return true;
+            if (annotation.annotationType().getSimpleName().equals("Id")) return true;
         return false;
     }
 }

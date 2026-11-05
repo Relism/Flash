@@ -40,12 +40,12 @@ class JsonTest {
         Json json = new Json(new ObjectMapper());
 
         Request ok = request("{\"id\":\"u1\",\"name\":\"alice\"}");
-        UserDto dto = json.read(ok, UserDto.class);
+        UserDto dto = (UserDto) json.decoder(UserDto.class).decode(ok);
         assertEquals("u1", dto.id);
         assertEquals("alice", dto.name);
 
         Request bad = request("not-json");
-        HttpException ex = assertThrows(HttpException.class, () -> json.read(bad, UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.decoder(UserDto.class).decode(bad));
         assertEquals(400, ex.status());
         assertTrue(ex.getMessage().startsWith("Invalid request body:"));
     }
@@ -54,7 +54,7 @@ class JsonTest {
     void a_truncated_body_is_a_bad_request_too() throws Exception {
         Json json = new Json(new ObjectMapper());
 
-        HttpException ex = assertThrows(HttpException.class, () -> json.read(request("["), UserDto.class));
+        HttpException ex = assertThrows(HttpException.class, () -> json.decoder(UserDto.class).decode(request("[")));
 
         assertEquals(400, ex.status());
     }

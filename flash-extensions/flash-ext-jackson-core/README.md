@@ -13,6 +13,6 @@ those; use this module directly only to add another Jackson data format.
 
 | Page | Content |
 |---|---|
-| [docs/codec.md](docs/codec.md) | `JacksonCodec`: reading, writing, errors, validation |
+| [docs/codec.md](docs/codec.md) | `JacksonCodec`: reading, writing, errors, field names |
 | [docs/openapi.md](docs/openapi.md) | What Jackson annotations contribute to the OpenAPI document |
 | [docs/new-format.md](docs/new-format.md) | Adding a Jackson data format |

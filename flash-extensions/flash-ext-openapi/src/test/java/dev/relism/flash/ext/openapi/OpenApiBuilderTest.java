@@ -687,6 +687,66 @@ class OpenApiBuilderTest {
         assertTrue(schemas.containsKey("Thing"));
     }
 
+    record Shelf<T>(T[] items) {}
+    record Node<T>(T value, Node<List<T>> next) {}
+    record Mine(BoxMine inner) {}
+    record BoxMine(String label) {}
+
+    @GET("/strings") static class StringBoxHandler extends RequestHandler {
+        @Override public Box<String> handle(Request request, Response response) { return null; }
+    }
+    @GET("/shelves") static class ShelfHandler extends RequestHandler {
+        @Override public Shelf<Thing> handle(Request request, Response response) { return null; }
+    }
+    @GET("/nodes") static class NodeHandler extends RequestHandler {
+        @Override public Node<Thing> handle(Request request, Response response) { return null; }
+    }
+    @GET("/arrays") static class ArrayBoxHandler extends RequestHandler {
+        @Override public Box<Thing[]> handle(Request request, Response response) { return null; }
+    }
+    @GET("/mines") static class MineBoxHandler extends RequestHandler {
+        @Override public Box<Mine> handle(Request request, Response response) { return null; }
+    }
+
+    @Test
+    void generic_schemas_keep_their_arguments_apart_and_terminate() {
+        OpenApiBuilder b = new OpenApiBuilder();
+        for (Class<? extends RequestHandler> h : List.of(BoxHandler.class, StringBoxHandler.class, ShelfHandler.class,
+                NodeHandler.class, ArrayBoxHandler.class, MineBoxHandler.class))
+            b.addOperation(routeOf(h), null, h);
+        Map<String, Object> schemas = cast(cast(b.build().get("components"), "schemas"));
+
+        assertEquals(Map.of("type", "string"), cast(cast(schemas.get("BoxString"), "properties"), "first"));
+        assertEquals(Map.of("type", "array", "items", Map.of("$ref", "#/components/schemas/Thing")),
+                cast(cast(schemas.get("ShelfThing"), "properties"), "items"));
+        assertTrue(schemas.containsKey("NodeThing"), "a type that grows at every level stops instead of recursing");
+        assertTrue(schemas.containsKey("BoxThingArray"), schemas.keySet().toString());
+        assertEquals(Map.of("type", "string"), cast(cast(schemas.get("BoxMine"), "properties"), "note"));
+        assertEquals(Map.of("type", "string"), cast(cast(schemas.get("BoxMine2"), "properties"), "label"),
+                "a class met while Box<Mine> is built, named like it, gets a name of its own");
+    }
+
+    @Test
+    void each_contributor_is_asked_once_per_handler_and_a_declared_parameter_wins() {
+        int[] asked = new int[1];
+        OpenApiBuilder b = new OpenApiBuilder();
+        b.contributors(List.of(new OpenApiContributor() {
+            @Override public OpenApiOperationContribution operationFor(Class<?> handlerClass) {
+                asked[0]++;
+                return OpenApiOperationContribution.builder()
+                        .parameter(Map.of("name", "expand", "in", "query", "schema", Map.of("type", "integer")))
+                        .build();
+            }
+        }));
+        b.addOperation(routeOf(GetUserHandler.class), null, GetUserHandler.class);
+        b.build();
+        b.build();
+        assertEquals(1, asked[0]);
+        List<Map<String, Object>> parameters = cast(getOperation(b.build(), "/users/{id}", "get").get("parameters"));
+        assertEquals(List.of("id", "expand"), parameters.stream().map(p -> p.get("name")).toList());
+        assertEquals("string", ((Map<?, ?>) parameters.get(1).get("schema")).get("type"), "the declared one");
+    }
+
     @Test
     void a_contributor_adds_parameters_after_the_path_s_own() {
         OpenApiBuilder b = new OpenApiBuilder();

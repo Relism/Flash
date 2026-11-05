@@ -127,7 +127,9 @@ class CodecBindingTest {
     void aFromRequestInputIsReadByItsBinderAndNoOtherIsOffered() throws Exception {
         Probe probe = new Probe();
         FromQuery binder = new FromQuery();
-        Server server = start(App.create().add(Probe.class, probe).add(InputBinder.class, binder)
+        InputBinder declines = (type, codec) -> null;
+        Server server = start(App.create().add(Probe.class, probe)
+                .add(InputBinder.class, declines).add(InputBinder.class, binder)
                 .route(HttpMethod.GET, "/echo", Echo.class)
                 .route(HttpMethod.POST, "/request", Strings.class));
         try {

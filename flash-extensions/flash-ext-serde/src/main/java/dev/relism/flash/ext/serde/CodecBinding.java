@@ -32,7 +32,7 @@ final class CodecBinding {
      */
     InputBinder.Reader input(Services services, Class<?> handler) {
         if (inType == Void.class) return null;
-        if (!fromRequest(inType)) return in.decoder(inType)::decode;
+        if (!fromRequest(inType)) return Decoder.of(in, inType, services)::decode;
         for (InputBinder binder : services.all(InputBinder.class)) {
             InputBinder.Reader reader = binder.reader(inType, in);
             if (reader != null) return reader;

@@ -16,6 +16,7 @@ import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -56,10 +57,17 @@ public class AvajeValidation implements Module, Validation {
         this.delegate = delegate;
     }
 
-    /** Adds itself as the app's {@link Validation}, and its rules to the published document. */
+    /** Adds itself as a {@link Validation}, checking what codecs decode, and its rules to the published document. */
     @Override
     public void install(App app) {
-        app.add(Validation.class, this).install(Validation.docs());
+        app.install(Validation.module(this));
+    }
+
+    /** A type that declares a constraint, or one whose values may be of a subclass that does. */
+    @Override
+    public boolean checks(Class<?> type) {
+        if (type.isPrimitive()) return false;
+        return type.isInterface() || Modifier.isAbstract(type.getModifiers()) || constrained(type);
     }
 
     /**
