@@ -4,7 +4,7 @@
     <parent>
         <groupId>dev.relism</groupId>
         <artifactId>flash-extensions</artifactId>
-        <version>4.0.0</version>
+        <version>4.1.0</version>
     </parent>
     <artifactId>flash-ext-security-basic</artifactId>
     <name>flash-ext-security-basic</name>

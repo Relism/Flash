@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.1.0](https://github.com/Relism/Flash/compare/v4.0.0...v4.1.0) (2026-11-06)
+
+
+### Features
+
+* **ext-saml:** SAML 2.0 service provider, with Single Logout, encrypted assertions and providers registered at runtime ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+* **ext-security:** Principal.claim and ClaimRoles for any principal; SessionLogout builds the logout at the identity provider when the session ends ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
+
+### Bug Fixes
+
+* **core:** a header name must be a token and a value visible ASCII, spaces and tabs; a line break, or a character cut to one, no longer reaches the wire ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+* **ext-security:** Redirects.localPath percent-encodes control characters and non-ASCII, so a return path cannot add a header ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
+
+### Documentation
+
+* **ext-cache-core:** CacheManager is taken as a constructor parameter ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
 ## [4.0.0](https://github.com/Relism/Flash/compare/v3.0.4...v4.0.0) (2026-11-05)
 
 
