@@ -152,9 +152,13 @@ public class Response {
     return this;
   }
 
-  /** A content type encoded once, typically at boot: the array is kept, not copied, so it must not change. */
+  /**
+   * A content type encoded once, typically at boot: the array is kept, not copied, so it must not
+   * change. Checked as {@link #type(String)} is.
+   */
   public Response type(byte[] ct) {
     checkHead();
+    Fields.check("Content-Type", ct);
     this.contentType = ct;
     return this;
   }

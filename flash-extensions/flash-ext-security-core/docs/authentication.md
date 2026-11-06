@@ -43,8 +43,8 @@ public interface Principal {
 `claim(name)` is what the credential says about the caller under that name: a token claim, an
 assertion's attribute. `ClaimRoles` reads roles from it.
 
-Each mechanism has its own principal type: `OidcPrincipal`, `SamlPrincipal`, `ApiKeyPrincipal`, `OAuthPrincipal`.
-Read it back with `identity.principal(OidcPrincipal.class)`.
+Each mechanism has its own principal type: `OidcPrincipal`, `SamlPrincipal`, `ApiKeyPrincipal`,
+`OAuthPrincipal`. Read it back with `identity.principal(OidcPrincipal.class)`.
 
 ## Failures
 

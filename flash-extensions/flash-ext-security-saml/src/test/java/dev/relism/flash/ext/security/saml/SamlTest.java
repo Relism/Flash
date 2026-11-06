@@ -13,9 +13,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.ByteArrayInputStream;
+import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.Signature;
+import java.security.cert.CertificateFactory;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.RSAPrivateCrtKeySpec;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +154,14 @@ class SamlTest {
         post(idp.respond(login.location()), login.cookie()).expectStatus(400);
     }
 
+    /** A browser that altered its own flow cookie is sent to the root, not answered with an error after its session began. */
+    @Test
+    void anAlteredReturnPathFallsBackToTheRoot() throws Exception {
+        Login login = login("corp");
+        String altered = login.cookie().substring(0, login.cookie().indexOf('.') + 1) + "!!!";
+        post(idp.respond(login.location()), altered).expectStatus(303).expectHeader("Location", "/");
+    }
+
     @Test
     void aResponseIsConsumedOnce() throws Exception {
         Login login = login("corp");
@@ -238,6 +255,7 @@ class SamlTest {
                 xml -> xml.replaceAll("NotOnOrAfter=\"[^\"]+\"", "NotOnOrAfter=\"2020-01-01T00:00:00Z\""),
                 xml -> xml.replaceAll("NotBefore=\"[^\"]+\"", "NotBefore=\"" + Instant.now().plusSeconds(3600) + "\""),
                 xml -> xml.replace("cm:bearer", "cm:holder-of-key"),
+                xml -> xml.replaceFirst("(<saml:SubjectConfirmationData NotOnOrAfter=\")[^\"]+", "$1" + Instant.now().plusSeconds(7200)),
                 xml -> xml.replace("</saml:Conditions>", "<saml:Condition/></saml:Conditions>"),
                 xml -> xml.replace("Destination=\"" + ACS, "Destination=\"https://other.test/acs"),
                 xml -> xml.replaceFirst("(Destination=\"[^\"]+\") InResponseTo=\"[^\"]+\"", "$1 InResponseTo=\"_other\""),
@@ -274,8 +292,8 @@ class SamlTest {
     void anAlgorithmLeftOutOfTheAllowedOnesIsRefused() throws Exception {
         Login login = login("corp");
         org.w3c.dom.Element response = Xml.parse(Base64.getDecoder().decode(idp.respond(login.location()))).getDocumentElement();
-        var key = java.security.cert.CertificateFactory.getInstance("X.509").generateCertificate(
-                new java.io.ByteArrayInputStream(idp.credential().certificatePem().getBytes(StandardCharsets.US_ASCII))).getPublicKey();
+        var key = CertificateFactory.getInstance("X.509").generateCertificate(
+                new ByteArrayInputStream(idp.credential().certificatePem().getBytes(StandardCharsets.US_ASCII))).getPublicKey();
         assertTrue(Xml.verify(response, List.of(key), Saml.ALGORITHMS));
         assertThrows(IllegalArgumentException.class, () -> Xml.verify(response, List.of(key), java.util.Set.of(Xml.SHA256)));
     }
@@ -294,6 +312,9 @@ class SamlTest {
     void aPairwiseIdIsTheNameBeforeTheNameId() throws Exception {
         idp.signInAs("transient-123", Map.of("urn:oasis:names:tc:SAML:attribute:pairwise-id", List.of("x7f@corp.test")));
         app.request().header("Cookie", session(idp, "corp")).get("/me").expectStatus(200).expectBody("x7f@corp.test null");
+        idp.signInAs("transient-123", Map.of("urn:oasis:names:tc:SAML:attribute:pairwise-id", List.of("x7f@")));
+        Login login = login("corp");
+        post(idp.respond(login.location()), login.cookie()).expectStatus(400);
     }
 
     @Test
@@ -345,6 +366,10 @@ class SamlTest {
 
         String back = idp.logoutResponse(location, SLO);
         app.get(back.substring(ORIGIN.length())).expectStatus(302).expectHeader("Location", "/");
+
+        idp.rewrite(xml -> xml.replace("status:Success", "status:Responder"));
+        app.get(idp.logoutResponse(location, SLO).substring(ORIGIN.length())).expectStatus(400)
+                .expectBodyContains("The identity provider did not complete the logout");
     }
 
     @Test
@@ -364,7 +389,7 @@ class SamlTest {
         String signed = idp.logoutRequest(SLO, "alice").substring(ORIGIN.length());
         app.get(signed.substring(0, signed.indexOf("&SigAlg="))).expectStatus(400);
         app.get(signed.replace("RelayState=relay", "RelayState=other")).expectStatus(400);
-        idp.rewrite(xml -> xml.replaceFirst("IssueInstant=\"[^\"]+\"", "IssueInstant=\"" + Instant.now().minusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS) + "\""));
+        idp.rewrite(xml -> xml.replaceFirst("IssueInstant=\"[^\"]+\"", "IssueInstant=\"" + Instant.now().minusSeconds(3600).truncatedTo(ChronoUnit.SECONDS) + "\""));
         app.get(idp.logoutRequest(SLO, "alice").substring(ORIGIN.length())).expectStatus(400);
         idp.rewrite(xml -> xml.replaceFirst(" ID=\"[^\"]+\"", ""));
         app.get(idp.logoutRequest(SLO, "alice").substring(ORIGIN.length())).expectStatus(400);
@@ -390,7 +415,7 @@ class SamlTest {
     /** Metadata is fetched again before its validUntil, not after: past it, the provider would be refused until then. */
     @Test
     void metadataIsRefreshedBeforeItExpires() throws Exception {
-        Instant validUntil = Instant.now().plusSeconds(1800).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        Instant validUntil = Instant.now().plusSeconds(1800).truncatedTo(ChronoUnit.SECONDS);
         IdentityProvider read = new IdentityProvider(SamlIdp.fromXml("soon", idp.signedMetadata(validUntil)), false, Saml.ALGORITHMS);
         assertEquals(validUntil.minusSeconds(600), read.refreshAt);
     }
@@ -427,8 +452,9 @@ class SamlTest {
             FlashResponse posted = app.get("/auth/saml/posted/login").expectStatus(200);
             assertTrue(posted.header("Content-Type").startsWith("text/html"), posted.header("Content-Type"));
             String page = posted.body();
-            String request = new String(Base64.getDecoder().decode(page.replaceFirst("(?s).*name=\"SAMLRequest\" value=\"([^\"]+)\".*", "$1")), StandardCharsets.UTF_8);
-            assertTrue(request.contains("<ds:Signature") && request.contains("AuthnRequest"), request);
+            byte[] request = Base64.getDecoder().decode(page.replaceFirst("(?s).*name=\"SAMLRequest\" value=\"([^\"]+)\".*", "$1"));
+            var spKey = SamlKeys.of(sp.privateKeyPem(), sp.certificatePem()).certificate.getPublicKey();
+            assertTrue(Xml.verify(Xml.parse(request).getDocumentElement(), List.of(spKey), Saml.ALGORITHMS), "the posted request is signed with the application's key");
         } finally {
             samlModule.saml().unregister("posted");
             posting.close();
@@ -509,8 +535,8 @@ class SamlTest {
             session = session(ecdsa, "ecdsa");
             String query = ecdsa.logoutRequest(SLO, "alice");
             query = query.substring(query.indexOf('?') + 1, query.indexOf("&Signature="));
-            var der = java.security.Signature.getInstance("SHA256withECDSA");
-            der.initSign(java.security.KeyFactory.getInstance("EC").generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(
+            var der = Signature.getInstance("SHA256withECDSA");
+            der.initSign(KeyFactory.getInstance("EC").generatePrivate(new PKCS8EncodedKeySpec(
                     Base64.getMimeDecoder().decode(credential.privateKeyPem().replaceAll("-----[A-Z ]+-----", "")))));
             der.update(query.getBytes(StandardCharsets.US_ASCII));
             String signed = "/auth/saml/slo?" + query + "&Signature=" + URLEncoder.encode(Base64.getEncoder().encodeToString(der.sign()), StandardCharsets.UTF_8);
@@ -529,6 +555,8 @@ class SamlTest {
         assertThrows(IllegalArgumentException.class, () -> guarded.register(SamlIdp.of("plain", idp.metadataUrl())));
         assertThrows(IllegalArgumentException.class, () -> guarded.register(SamlIdp.of("loopback", "https://127.0.0.1/metadata")));
         assertThrows(IllegalArgumentException.class, () -> guarded.register(SamlIdp.of("private", "https://10.0.0.1/metadata")));
+        String huge = idp.metadata().replace("http://127.0.0.1", "https://127.0.0.1").replace("</md:EntityDescriptor>", "<!--" + "x".repeat(1 << 20) + "--></md:EntityDescriptor>");
+        assertThrows(IllegalArgumentException.class, () -> guarded.register(SamlIdp.fromXml("huge", huge)), "inline metadata is bounded like a download");
     }
 
     @Test
@@ -537,6 +565,24 @@ class SamlTest {
         Throwable failure = assertThrows(Exception.class, () -> broken.get("/auth/saml/metadata"));
         while (failure.getCause() != null && !String.valueOf(failure.getMessage()).contains("origin")) failure = failure.getCause();
         assertTrue(String.valueOf(failure.getMessage()).contains("SecurityModule.origin"), String.valueOf(failure));
+    }
+
+    @Test
+    void whatTheModulePublishesOrAcceptsIsChecked() {
+        SamlModule module = new SamlModule(SamlKeys.of(sp.privateKeyPem(), sp.certificatePem()));
+        assertThrows(IllegalArgumentException.class, () -> module.logo("http://app.test/logo.png", 80, 60));
+        module.logo("https://app.test/logo.png", 80, 60).logo("data:image/png;base64,iVBORw0KGgo=", 80, 60);
+        assertThrows(IllegalArgumentException.class, () -> module.algorithms(Xml.SHA256, Xml.RSA_SHA256, Xml.AES256_GCM, Xml.RSA_1_5));
+    }
+
+    /** Same modulus, wrong CRT exponent: the pair cannot sign what the certificate verifies, and is refused when configured. */
+    @Test
+    void aKeyThatOnlySharesTheCertificatesModulusIsRefused() throws Exception {
+        var key = (RSAPrivateCrtKey) SamlKeys.of(sp.privateKeyPem(), sp.certificatePem()).privateKeys.getFirst();
+        var broken = KeyFactory.getInstance("RSA").generatePrivate(new RSAPrivateCrtKeySpec(key.getModulus(), key.getPublicExponent(), key.getPrivateExponent(),
+                key.getPrimeP(), key.getPrimeQ(), key.getPrimeExponentP().add(BigInteger.ONE), key.getPrimeExponentQ(), key.getCrtCoefficient()));
+        String pem = "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder().encodeToString(broken.getEncoded()) + "\n-----END PRIVATE KEY-----\n";
+        assertThrows(IllegalArgumentException.class, () -> SamlKeys.of(pem, sp.certificatePem()));
     }
 
     @Test

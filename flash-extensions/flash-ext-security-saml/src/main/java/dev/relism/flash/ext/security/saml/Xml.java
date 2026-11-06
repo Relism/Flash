@@ -45,6 +45,7 @@ final class Xml {
     static final String AES128_GCM = "http://www.w3.org/2009/xmlenc11#aes128-gcm";
     static final String RSA_OAEP_MGF1P = "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p";
     static final String RSA_OAEP = "http://www.w3.org/2009/xmlenc11#rsa-oaep";
+    static final String RSA_1_5 = "http://www.w3.org/2001/04/xmlenc#rsa-1_5";
 
     private static volatile boolean cbcWarned;
 

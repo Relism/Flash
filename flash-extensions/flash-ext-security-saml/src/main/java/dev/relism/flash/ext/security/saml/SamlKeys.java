@@ -2,8 +2,10 @@ package dev.relism.flash.ext.security.saml;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPrivateCrtKey;
@@ -27,6 +29,8 @@ import java.util.List;
  * provider supports. The certificate only carries the key, so a self-signed one is the norm.
  */
 public final class SamlKeys {
+
+    private static final byte[] PROBE = "flash-saml-key-pair".getBytes(StandardCharsets.US_ASCII);
 
     final List<PrivateKey> privateKeys;
     /** The first key's: the only one published. */
@@ -53,10 +57,9 @@ public final class SamlKeys {
         } catch (Exception invalid) {
             throw new IllegalArgumentException("Not a PKCS#8 RSA private key and an X.509 certificate in PEM", invalid);
         }
-        if (!(certificate.getPublicKey() instanceof RSAPublicKey rsa) || !rsa.getModulus().equals(key.getModulus())) {
-            throw new IllegalArgumentException("The private key is not the certificate's");
-        }
+        if (!(certificate.getPublicKey() instanceof RSAPublicKey rsa)) throw new IllegalArgumentException("The certificate's key is not RSA");
         if (rsa.getModulus().bitLength() < 2048) throw new IllegalArgumentException("An RSA key needs at least 2048 bits");
+        if (!pair(key, rsa)) throw new IllegalArgumentException("The private key is not the certificate's");
         List<PrivateKey> keys = new ArrayList<>(privateKeys);
         keys.add(key);
         return new SamlKeys(List.copyOf(keys), this.certificate != null ? this.certificate : certificate);
@@ -64,6 +67,21 @@ public final class SamlKeys {
 
     PrivateKey signing() {
         return privateKeys.getFirst();
+    }
+
+    /** Whether what {@code key} signs, the certificate's key verifies: a shared modulus alone does not prove it. */
+    private static boolean pair(PrivateKey key, RSAPublicKey certificate) {
+        try {
+            Signature signature = Signature.getInstance("SHA256withRSA");
+            signature.initSign(key);
+            signature.update(PROBE);
+            byte[] signed = signature.sign();
+            signature.initVerify(certificate);
+            signature.update(PROBE);
+            return signature.verify(signed);
+        } catch (GeneralSecurityException mismatched) {
+            return false;
+        }
     }
 
     private static byte[] pem(String pem) {

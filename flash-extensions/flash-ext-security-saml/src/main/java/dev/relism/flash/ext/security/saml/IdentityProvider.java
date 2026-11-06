@@ -76,7 +76,9 @@ final class IdentityProvider {
         Element entity;
         Instant validUntil;
         try {
-            Element root = Xml.parse(config.metadataXml != null ? config.metadataXml.getBytes(StandardCharsets.UTF_8) : fetch(config.metadataUrl, guarded)).getDocumentElement();
+            byte[] xml = config.metadataXml != null ? config.metadataXml.getBytes(StandardCharsets.UTF_8) : fetch(config.metadataUrl, guarded);
+            if (guarded && xml.length > MAX_GUARDED) throw new IllegalArgumentException("Metadata larger than " + MAX_GUARDED + " bytes");
+            Element root = Xml.parse(xml).getDocumentElement();
             validUntil = Xml.instant(root, "validUntil");
             if (config.metadataSigner != null) {
                 PublicKey signer = CertificateFactory.getInstance("X.509")

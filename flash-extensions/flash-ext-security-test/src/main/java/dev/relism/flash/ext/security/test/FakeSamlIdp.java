@@ -69,10 +69,12 @@ public final class FakeSamlIdp implements AutoCloseable {
 
         /** A new key of {@code algorithm}, {@code RSA} (2048 bits) or {@code EC} (P-256). */
         public static Credential generate(String algorithm) {
+            Path store = null;
+            Process keytool = null;
             try {
-                Path store = Files.createTempFile("fake-saml", ".p12");
-                Files.delete(store);
-                Process keytool = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "keytool").toString(),
+                store = Files.createTempFile("fake-saml", ".p12");
+                Files.delete(store); // keytool creates it, and refuses one that exists
+                keytool = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "keytool").toString(),
                         "-genkeypair", "-alias", "k", "-keyalg", algorithm, "-keysize", "EC".equals(algorithm) ? "256" : "2048", "-validity", "3650", "-dname", "CN=fake",
                         "-storetype", "PKCS12", "-keystore", store.toString(), "-storepass", "changeit").redirectErrorStream(true).start();
                 if (keytool.waitFor() != 0) throw new IllegalStateException(new String(keytool.getInputStream().readAllBytes()));
@@ -80,11 +82,20 @@ public final class FakeSamlIdp implements AutoCloseable {
                 try (FileInputStream in = new FileInputStream(store.toFile())) {
                     keys.load(in, "changeit".toCharArray());
                 }
-                Files.delete(store);
                 return new Credential(pem("PRIVATE KEY", keys.getKey("k", "changeit".toCharArray()).getEncoded()),
                         pem("CERTIFICATE", keys.getCertificate("k").getEncoded()));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while keytool ran", interrupted);
             } catch (Exception e) {
                 throw new IllegalStateException("Could not generate a key with keytool", e);
+            } finally {
+                if (keytool != null) keytool.destroy();
+                try {
+                    if (store != null) Files.deleteIfExists(store); // it holds a private key
+                } catch (IOException ignored) {
+                    // a temporary file the system cleans up
+                }
             }
         }
 
@@ -223,7 +234,7 @@ public final class FakeSamlIdp implements AutoCloseable {
         String xml = "<samlp:LogoutResponse xmlns:samlp=\"" + SAMLP + "\" xmlns:saml=\"" + SAML + "\" ID=\"_" + UUID.randomUUID()
                 + "\" Version=\"2.0\" IssueInstant=\"" + now(0) + "\" Destination=\"" + slo + "\" InResponseTo=\"" + request.getAttribute("ID")
                 + "\"><saml:Issuer>" + entityId() + "</saml:Issuer><samlp:Status><samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/></samlp:Status></samlp:LogoutResponse>";
-        return slo + "?" + redirect("SAMLResponse", xml, null);
+        return slo + "?" + redirect("SAMLResponse", rewrite.apply(xml), null);
     }
 
     /** The XML a redirect in {@code location} carries as {@code parameter}. */

@@ -61,6 +61,15 @@ class ResponseTest {
         }
     }
 
+    /** A content type kept as bytes is checked too: an array may come from a request as easily as a string. */
+    @Test
+    void aContentTypeGivenAsBytesIsCheckedLikeAString() {
+        Response r = new Response(200, new byte[0], ContentType.TEXT_PLAIN);
+        r.type("text/plain".getBytes(StandardCharsets.US_ASCII));
+        assertThrows(IllegalArgumentException.class, () -> r.type("text/plain\r\nSet-Cookie: x=1".getBytes(StandardCharsets.US_ASCII)));
+        assertThrows(IllegalArgumentException.class, () -> r.type("caf\u00E9".getBytes(StandardCharsets.UTF_8)));
+    }
+
     /** The message names the header and where, never the value: a header may carry a secret. */
     @Test
     void theRefusalDoesNotRepeatTheValue() {

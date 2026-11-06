@@ -43,10 +43,10 @@ committed.
 | `type(String)`, `type(byte[])` | Any media type. A `byte[]` is kept, not copied |
 
 A name must be a token and a value visible ASCII, spaces and tabs (RFC 9110). Anything else throws
-`IllegalArgumentException`, from `header`, `type(String)`, `trailer` and the `PreEncodedHeader`
-constructor alike, so text taken from a request cannot end a field early and start a header of its
-own. The message names the header and the position of the character, not the value. Percent-encode
-what does not fit, such as a non-ASCII path in a `Location`.
+`IllegalArgumentException`, from `header`, `type(String)`, `type(byte[])`, `trailer` and the
+`PreEncodedHeader` constructor alike, so text taken from a request cannot end a field early and start a
+header of its own. The message names the header and the position of the character, not the value.
+Percent-encode what does not fit, such as a non-ASCII path in a `Location`.
 
 `header` adds; it does not replace. Calling it twice with the same name sends two fields. A response
 accepts at most 1,000 header calls and 65,536 bytes of header names and values; beyond that

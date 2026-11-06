@@ -32,19 +32,27 @@ public final class ClaimRoles implements RoleResolver {
         return new ClaimRoles(name);
     }
 
-    /** The roles {@code principal}'s credential carries; none when it carries no list there. */
+    /** The roles {@code principal}'s credential carries; none when it carries no collection of strings there. */
     @SuppressWarnings("unchecked")
     public List<String> of(Principal principal) {
+        Collection<?> roles = roles(principal);
+        return roles instanceof List<?> list ? (List<String>) list : List.copyOf((Collection<String>) roles);
+    }
+
+    @Override
+    public boolean hasRole(SecurityIdentity identity, String role, Target on) {
+        return roles(identity.principal()).contains(role);
+    }
+
+    /** The collection under the name, when every element is a string; otherwise none, and nothing is copied. */
+    private Collection<?> roles(Principal principal) {
         Object value = principal.claim(name);
         if (value == null && path.length > 1) {
             value = principal.claim(path[0]);
             for (int i = 1; i < path.length && value != null; i++) value = value instanceof Map<?, ?> map ? map.get(path[i]) : null;
         }
-        return value instanceof List<?> roles ? (List<String>) roles : value instanceof Collection<?> roles ? List.copyOf((Collection<String>) roles) : List.of();
-    }
-
-    @Override
-    public boolean hasRole(SecurityIdentity identity, String role, Target on) {
-        return of(identity.principal()).contains(role);
+        if (!(value instanceof Collection<?> roles)) return List.of();
+        for (Object role : roles) if (!(role instanceof String)) return List.of();
+        return roles;
     }
 }

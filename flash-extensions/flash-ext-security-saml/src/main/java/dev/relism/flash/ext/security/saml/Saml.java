@@ -61,6 +61,8 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
     private static final String PAIRWISE_ID = "urn:oasis:names:tc:SAML:attribute:pairwise-id";
     private static final String SUBJECT_ID = "urn:oasis:names:tc:SAML:attribute:subject-id";
     private static final String REFUSED = "Sign-in could not be completed; start again";
+    /** The longest a bearer confirmation may be valid: providers give minutes. */
+    private static final Duration MAX_CONFIRMATION = Duration.ofHours(1);
     /** How long after it was issued a logout message is still taken. */
     private static final Duration MESSAGE_LIFETIME = Duration.ofMinutes(5);
 
@@ -227,10 +229,19 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
         }
         // The provider's SessionNotOnOrAfter ends the session sooner, never later than the application's own timeout.
         Instant timeout = Instant.now().plus(security.sessionTimeout());
+        String target = in.solicited ? returnPath(cookie.substring(dot + 1)) : form.get("RelayState");
         security.signIn(req, res, in.principal, in.expiresAt != null && in.expiresAt.isBefore(timeout) ? in.expiresAt : timeout);
-        String target = in.solicited ? new String(Base64.getUrlDecoder().decode(cookie.substring(dot + 1)), StandardCharsets.UTF_8) : form.get("RelayState");
         res.status(303).header("Location", Redirects.localPath(target));
         return null;
+    }
+
+    /** The path the cookie carries, or the root when the browser altered it. */
+    private static String returnPath(String encoded) {
+        try {
+            return new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException altered) {
+            return "/";
+        }
     }
 
     private record SignedIn(SamlPrincipal principal, Instant expiresAt, boolean solicited) {}
@@ -290,7 +301,9 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
             Element data = child(confirmation, SAML, "SubjectConfirmationData");
             Instant notOnOrAfter = data == null ? null : instant(data, "NotOnOrAfter");
             String answers = data == null ? null : attribute(data, "InResponseTo");
+            // Each one is remembered until it expires: one valid for longer is refused, or a provider could fill the memory.
             if (!BEARER.equals(attribute(confirmation, "Method")) || notOnOrAfter == null || !acs.equals(attribute(data, "Recipient"))
+                    || notOnOrAfter.isAfter(now.plus(MAX_CONFIRMATION))
                     || attribute(data, "NotBefore") != null || !now.isBefore(notOnOrAfter.plus(clockSkew))
                     || (answers != null ? !answers.equals(requestId) : !idp.config.unsolicited)) continue;
             until = notOnOrAfter;
@@ -378,7 +391,7 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
         if (values == null || values.size() != 1) return null;
         String value = values.getFirst();
         int at = value.lastIndexOf('@');
-        if (at <= 0) throw new IllegalArgumentException(name + " has no scope: " + value);
+        if (at <= 0 || at == value.length() - 1) throw new IllegalArgumentException(name + " has no scope: " + value);
         if (idp.scopes != null && !idp.scopes.contains(value.substring(at + 1))) throw new IllegalArgumentException(name + " has a scope " + idp.config.id + " may not assert: " + value);
         return value;
     }
@@ -429,6 +442,7 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
         if (req.query(parameter) == null) throw HttpException.badRequest("No SAMLRequest or SAMLResponse");
         IdentityProvider idp;
         Element message;
+        boolean completed;
         try {
             // The issuer picks the keys the signature must verify with; nothing else is read before it does.
             byte[] unverified = Bindings.inflate(req, parameter);
@@ -444,11 +458,14 @@ public final class Saml implements SessionLogout, Bound, AutoCloseable {
             Instant now = Instant.now(), issued = instant(message, "IssueInstant"), notOnOrAfter = instant(message, "NotOnOrAfter");
             if (issued == null || issued.isAfter(now.plus(clockSkew)) || issued.isBefore(now.minus(MESSAGE_LIFETIME).minus(clockSkew))) throw new IllegalArgumentException("Issued at " + issued);
             if (notOnOrAfter != null && !now.isBefore(notOnOrAfter.plus(clockSkew))) throw new IllegalArgumentException("Expired");
+            completed = request || SUCCESS.equals(attribute(required(required(message, SAMLP, "Status"), SAMLP, "StatusCode"), "Value"));
         } catch (Exception invalid) {
             log.warn("SAML logout refused: {}", invalid.getMessage());
             throw HttpException.badRequest("Logout could not be completed");
         }
         if (!request) {
+            // The local session ended already; a provider that could not end its own says so, and so does this answer.
+            if (!completed) throw HttpException.badRequest("The identity provider did not complete the logout");
             res.redirect("/");
             return null;
         }

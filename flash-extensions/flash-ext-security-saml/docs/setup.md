@@ -44,7 +44,7 @@ new SamlModule(keys, SamlIdp.of("corp", metadataUrl).name("Corp SSO"))
 | Method | Default | Meaning |
 |---|---|---|
 | `info(displayName, privacyStatementUrl, technicalContactEmail)` | none | Published in the metadata. Federations require them; a provider configured by hand does not. Any of them may be `null` |
-| `logo(url, width, height)` | none | Published in the metadata. An https URL or a data URI |
+| `logo(url, width, height)` | none | Published in the metadata. An `https://` URL or a `data:image/` URI; anything else throws `IllegalArgumentException` |
 | `clockSkew(Duration)` | 3 minutes | Tolerated difference between this server's clock and a provider's |
 | `algorithms(String... uris)` | see below | Replaces the accepted XML Signature and Encryption algorithms |
 | `allowLocalProviders()` | off | Lets providers registered at runtime use http and private addresses. Development only |
@@ -59,7 +59,8 @@ Accepted algorithms by default:
 | Data encryption | AES-GCM and AES-CBC, 128, 192 and 256 bits. CBC logs a warning once: ask the provider for GCM |
 | Key transport | RSA-OAEP (`xmlenc#rsa-oaep-mgf1p` and `xmlenc11#rsa-oaep`) |
 
-SHA-1 signatures and RSA PKCS#1 v1.5 key transport are refused.
+SHA-1 signatures are refused. RSA PKCS#1 v1.5 key transport is refused always: `algorithms(...)`
+throws `IllegalArgumentException` when given it.
 
 AES-CBC is accepted because some providers encrypt with it by default, but it is open to padding oracle
 attacks: when a provider signs only the assertion, the encrypted assertion is decrypted before any

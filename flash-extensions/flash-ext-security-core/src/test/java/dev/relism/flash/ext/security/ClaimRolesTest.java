@@ -27,6 +27,14 @@ class ClaimRolesTest {
         assertEquals(List.of("editor"), ClaimRoles.at("realm_access.roles").of(keycloak));
     }
 
+    /** A collection holding anything but strings gives no roles, rather than a List<String> that is not one. */
+    @Test
+    void aCollectionWithOtherThanStringsGivesNoRoles() {
+        Claims mixed = new Claims(Map.of("groups", List.of(42, "admin")));
+        assertEquals(List.of(), ClaimRoles.at("groups").of(mixed));
+        assertEquals(false, ClaimRoles.at("groups").hasRole(new SecurityIdentity(mixed, null, null), "admin", Target.NONE));
+    }
+
     @Test
     void aPrincipalWithoutClaimsHasNoRoles() {
         assertEquals(List.of(), ClaimRoles.at("groups").of(() -> "bob"));

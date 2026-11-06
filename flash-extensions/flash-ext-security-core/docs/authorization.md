@@ -52,7 +52,7 @@ new SecurityModule().roles(ClaimRoles.at("groups"))
 ```
 
 `at(name)` takes the claim of that exact name, a URI with dots included, and otherwise walks the
-dot-separated path through nested claims. The value must be a list or another collection; anything else
+dot-separated path through nested claims. The value must be a collection of strings; anything else
 gives no roles. `ClaimRoles.of(principal)` returns the list.
 
 ## Scopes

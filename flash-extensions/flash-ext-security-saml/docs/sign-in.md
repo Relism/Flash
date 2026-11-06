@@ -42,7 +42,8 @@ sign-in started in a second tab replaces the first one's, which then fails.
 1. It parses as XML without a document type declaration.
 2. It is a SAML 2.0 `Response`. A status other than `Success` ends here with a `400` that names the
    provider's status code, when it is one SAML defines (`urn:oasis:names:tc:SAML:2.0:status:...`).
-3. `Destination`, when present, equals the assertion consumer URL exactly. A signed response must have it.
+3. `Destination`, when present, equals the assertion consumer URL exactly. A signed response must have
+   it.
 4. It holds exactly one `Assertion` or `EncryptedAssertion`.
 5. Its `Issuer` (or the assertion's, when the response has none) is a known provider whose metadata
    has not expired.
@@ -52,9 +53,9 @@ sign-in started in a second tab replaces the first one's, which then fails.
 8. An encrypted assertion is decrypted with one of the application's keys.
 9. The assertion is SAML 2.0, from the same issuer. Its signature, when present, must verify. When the
    response was not signed, it must be there.
-10. A bearer `SubjectConfirmation` has `Recipient` equal to the assertion consumer URL, an unexpired
-    `NotOnOrAfter`, no `NotBefore`, and an `InResponseTo` equal to the cookie's ID. Without
-    `InResponseTo` the response is unsolicited.
+10. A bearer `SubjectConfirmation` has `Recipient` equal to the assertion consumer URL, a `NotOnOrAfter`
+    that has not passed and is at most an hour away, no `NotBefore`, and an `InResponseTo` equal to the
+    cookie's ID. Without `InResponseTo` the response is unsolicited.
 11. `Conditions` is within its validity window, and every `AudienceRestriction` names this application.
     A condition other than `AudienceRestriction`, `OneTimeUse` and `ProxyRestriction` is refused.
 12. There is an `AuthnStatement`. With `authnContext(...)`, its class must be one of those requested.
@@ -82,10 +83,10 @@ path with `303`.
 2. the `urn:oasis:names:tc:SAML:attribute:subject-id` attribute,
 3. the `NameID`, decrypted when it is an `EncryptedID`.
 
-An assertion with none of them is refused. A `pairwise-id` or `subject-id` must carry a scope after
-`@`; when the provider's metadata declares `shibmd:Scope` values, the scope must equal one that is not a
-regular expression. Regular expressions are not evaluated, so a provider that declares only those can
-assert no scoped identifier.
+An assertion with none of them is refused. A `pairwise-id` or `subject-id` must carry a non-empty scope
+after `@`; when the provider's metadata declares `shibmd:Scope` values, the scope must equal one that is
+not a regular expression. Regular expressions are not evaluated, so a provider that declares only those
+can assert no scoped identifier.
 
 The name is unique per issuer, never across issuers: two providers can both assert `alice`. Key your
 users by `issuer()` and `name()` together, as `UserResolver` does for OIDC.

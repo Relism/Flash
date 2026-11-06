@@ -34,13 +34,13 @@ A certificate only carries its key: its validity dates and issuer are not checke
 
 Metadata from a URL is fetched when the server starts. The connection has 5 seconds, the response
 headers 10, the whole download 30. Up to 5 redirects are followed, never from https to http. The body
-may be at most 1 MiB for a provider registered at runtime and 256 MiB for a configured one, which may
-be a federation's aggregate. A provider whose metadata cannot be read or does not describe a usable
-provider fails the boot and names it.
+may be at most 1 MiB for a provider registered at runtime, metadata given as XML included, and 256 MiB
+for a configured one, which may be a federation's aggregate. A provider whose metadata cannot be read or
+does not describe a usable provider fails the boot and names it.
 
 Every 5 minutes, metadata older than an hour, or within 10 minutes of its `validUntil`, is fetched
-again, each provider on its own thread. A failed refresh is logged at WARN and the last metadata stays in use until
-it expires.
+again, each provider on its own thread. A failed refresh is logged at WARN and the last metadata stays
+in use until it expires.
 
 ## Aggregates
 

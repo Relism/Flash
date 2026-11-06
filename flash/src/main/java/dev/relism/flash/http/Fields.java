@@ -20,6 +20,14 @@ final class Fields {
         }
     }
 
+    /** A value already encoded, such as a content type kept as bytes: the same rule, byte by byte. */
+    static void check(String name, byte[] value) {
+        for (int i = 0; i < value.length; i++) {
+            byte b = value[i];
+            if (b < 0x20 && b != '\t' || b == 0x7F) throw invalid("value", name, i); // negative: beyond 0x7F
+        }
+    }
+
     private static boolean token(char c) {
         return c > 0x20 && c < 0x7F && "\"(),/:;<=>?@[\\]{}".indexOf(c) < 0;
     }

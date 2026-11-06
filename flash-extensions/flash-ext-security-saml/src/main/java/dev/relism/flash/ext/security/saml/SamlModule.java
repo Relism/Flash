@@ -51,6 +51,7 @@ public final class SamlModule implements Module {
 
     /** The logo of {@link #info}: an https URL or a data URI, and its size in pixels. */
     public SamlModule logo(String url, int width, int height) {
+        if (!url.startsWith("https://") && !url.startsWith("data:image/")) throw new IllegalArgumentException("A logo is an https URL or a data:image URI (SAML2Int SDP-MD10): " + url);
         saml.logo = "<mdui:Logo width=\"" + width + "\" height=\"" + height + "\">" + Xml.escape(url) + "</mdui:Logo>";
         return this;
     }
@@ -63,10 +64,13 @@ public final class SamlModule implements Module {
 
     /**
      * The XML Signature and Encryption algorithm URIs accepted, replacing the defaults (IIP-ALG08):
-     * SHA-2 digests, RSA and ECDSA with SHA-2, AES-GCM and AES-CBC, RSA-OAEP. Anything else is refused.
+     * SHA-2 digests, RSA and ECDSA with SHA-2, AES-GCM and AES-CBC, RSA-OAEP. Anything else is refused,
+     * and RSA PKCS#1 v1.5 key transport cannot be accepted at all: its padding oracle gives the key away.
      */
     public SamlModule algorithms(String... uris) {
-        saml.algorithms = Set.of(uris);
+        Set<String> accepted = Set.of(uris);
+        if (accepted.contains(Xml.RSA_1_5)) throw new IllegalArgumentException("RSA PKCS#1 v1.5 key transport is never accepted: " + Xml.RSA_1_5);
+        saml.algorithms = accepted;
         return this;
     }
 

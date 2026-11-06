@@ -60,5 +60,5 @@ For code that runs before the app starts, `module.security()` returns the same o
 | `schemes()` | The security schemes of all mechanisms |
 | `policy(Class)`, `enforce(policy[, entryPoint[, mechanisms]])` | Build the guard middleware yourself. See [authorization.md](authorization.md#guarding-a-route-by-hand) |
 
-Mechanisms, login methods, session refreshers and session logouts are read once when the app starts: add them to the
-app as services and `Security` finds them.
+Mechanisms, login methods, session refreshers and session logouts are read once when the app starts: add
+them to the app as services and `Security` finds them.
