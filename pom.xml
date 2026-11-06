@@ -314,6 +314,11 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>flash-ext-security-saml</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>flash-ext-view-core</artifactId>
                 <version>${project.version}</version>
             </dependency>

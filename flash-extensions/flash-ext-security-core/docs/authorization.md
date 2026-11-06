@@ -41,8 +41,19 @@ public interface RoleResolver {
 from the path parameter first and then the query parameter, and handed to the resolver as `Target`:
 `on.get("project")`. Without `on`, `Target.NONE` is passed and `get` returns `null`.
 
-With OIDC, `ClaimRoles.at("realm_access.roles")` reads roles from a token claim. See
-[flash-ext-security-oidc](../../flash-ext-security-oidc/docs/tokens.md#roles-from-claims).
+## Roles from claims
+
+`ClaimRoles` is a `RoleResolver` that reads roles from what the identity provider says about the
+caller, `Principal.claim`: an OIDC token claim, a SAML attribute.
+
+```java
+new SecurityModule().roles(ClaimRoles.at("realm_access.roles"))    // nested claims, Keycloak
+new SecurityModule().roles(ClaimRoles.at("groups"))
+```
+
+`at(name)` takes the claim of that exact name, a URI with dots included, and otherwise walks the
+dot-separated path through nested claims. The value must be a list or another collection; anything else
+gives no roles. `ClaimRoles.of(principal)` returns the list.
 
 ## Scopes
 

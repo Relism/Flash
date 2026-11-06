@@ -24,6 +24,7 @@ public record OidcPrincipal(String provider, String name, Map<String, Object> cl
         return (String) claims.get("email");
     }
 
+    @Override
     public Object claim(String name) {
         return claims.get(name);
     }

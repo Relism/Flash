@@ -8,7 +8,9 @@ padding. Use it for session ids, state values and other unguessable identifiers.
 ## Redirects
 
 `Redirects.localPath(path)` returns `path` if it is a same-origin path, otherwise `/`. It refuses an
-absolute URL, a protocol-relative `//host` and `/\host`. Use it before redirecting to a user-supplied
+absolute URL, a protocol-relative `//host` and `/\host`. Control characters, spaces and non-ASCII
+characters come back percent-encoded, so the result is safe in a `Location` header: a line break cannot
+start a header of its own, and a tab, which browsers drop, cannot turn `/<tab>/host` into `//host`. Use it before redirecting to a user-supplied
 `redirect` parameter.
 
 ## PublicUrl

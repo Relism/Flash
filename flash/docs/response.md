@@ -36,11 +36,17 @@ committed.
 
 | Call | Notes |
 |---|---|
-| `header(name, value)` | Adds a header. Names and values are written as ASCII |
+| `header(name, value)` | Adds a header |
 | `header(name, long)` | A decimal value without creating a string |
 | `header(PreEncodedHeader)` | A header encoded once, for example a `static final` constant |
 | `type(ContentType)` | Pre-encoded media type. `ContentType.NONE` removes the `Content-Type` line |
 | `type(String)`, `type(byte[])` | Any media type. A `byte[]` is kept, not copied |
+
+A name must be a token and a value visible ASCII, spaces and tabs (RFC 9110). Anything else throws
+`IllegalArgumentException`, from `header`, `type(String)`, `trailer` and the `PreEncodedHeader`
+constructor alike, so text taken from a request cannot end a field early and start a header of its
+own. The message names the header and the position of the character, not the value. Percent-encode
+what does not fit, such as a non-ASCII path in a `Location`.
 
 `header` adds; it does not replace. Calling it twice with the same name sends two fields. A response
 accepts at most 1,000 header calls and 65,536 bytes of header names and values; beyond that
@@ -72,7 +78,7 @@ written. For `HEAD` no body is written; on HTTP/1.1 `Content-Length` is the one 
 `trailer(name, value)` and `trailer(PreEncodedHeader)` add fields after the body. Over HTTP/1.1 a
 response with trailers is sent chunked. Names that are forbidden in trailers throw
 `IllegalArgumentException`: pseudo-headers (`:name`), `content-length`, `transfer-encoding`,
-`connection`, `host`, `te` and `trailer`, and any name or value containing a line break.
+`connection`, `host`, `te` and `trailer`. Names and values follow the same rules as headers.
 
 ## Content types
 

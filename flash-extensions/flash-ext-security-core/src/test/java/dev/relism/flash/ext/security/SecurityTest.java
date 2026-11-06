@@ -47,6 +47,12 @@ class SecurityTest {
         }
     };
 
+    /** Built as the session ends: what a logout signed and dated at the identity provider needs. */
+    static final SessionLogout LOGOUT = new SessionLogout() {
+        @Override public Class<? extends Principal> type() { return KeyPrincipal.class; }
+        @Override public String logoutUrl(Session ended, Request req) { return "/bye?" + ended.principal().name(); }
+    };
+
     static final SecurityModule module = new SecurityModule()
             .roles((identity, role, on) -> identity.principal().name().equals(role + "@" + on.get("project")));
     static final Security security = module.security();
@@ -57,6 +63,7 @@ class SecurityTest {
             .add(AuthenticationMechanism.class, KEY)
             .add(LoginMethod.class, KEY_LOGIN)
             .add(SessionRefresher.class, REFRESH)
+            .add(SessionLogout.class, LOGOUT)
             .get("/me", (req, res) -> SecurityIdentity.current().principal().name(), security.enforce(SecurityPolicy.AUTHENTICATED))
             .get("/key-only", (req, res) -> SecurityIdentity.current().principal().name(), security.enforce(SecurityPolicy.AUTHENTICATED,
                     (req, res) -> { throw dev.relism.flash.http.HttpException.unauthorized(); }, java.util.List.of(KEY)))
@@ -128,12 +135,12 @@ class SecurityTest {
 
     /** The session is signed in already expired, so reaching /me proves the refresher ran. */
     @Test
-    void aSessionIsRefreshedWhenExpiredAndEndedBySigningOut() {
+    void aSessionIsRefreshedWhenExpiredAndEndedBySigningOutThroughItsLogout() {
         String cookie = app.request().post("/login").expectStatus(200).header("Set-Cookie");
         String session = cookie.substring(0, cookie.indexOf(';'));
 
         app.request().header("Cookie", session).get("/me").expectStatus(200).expectBody("carol");
-        app.request().header("Cookie", session).post("/auth/logout").expectStatus(303).expectHeader("Location", "/");
+        app.request().header("Cookie", session).post("/auth/logout").expectStatus(303).expectHeader("Location", "/bye?carol");
         app.request().header("Cookie", session).get("/me").expectStatus(401);
     }
 

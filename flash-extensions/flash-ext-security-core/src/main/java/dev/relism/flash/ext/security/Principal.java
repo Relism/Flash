@@ -9,6 +9,12 @@ public interface Principal {
     /** Unique within the mechanism that produced it. */
     String name();
 
+    /**
+     * What the credential says about the caller under {@code name} — a token claim, an assertion's
+     * attribute — or {@code null}. {@link ClaimRoles} reads roles from it.
+     */
+    default Object claim(String name) { return null; }
+
     /** Whether the credential grants {@code scope}. One that carries no scopes grants every scope. */
     default boolean hasScope(String scope) { return true; }
 

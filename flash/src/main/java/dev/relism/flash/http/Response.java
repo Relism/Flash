@@ -161,7 +161,8 @@ public class Response {
 
   public Response type(String ct) {
     checkHead();
-    this.contentType = ct.getBytes(StandardCharsets.UTF_8);
+    Fields.check("Content-Type", ct);
+    this.contentType = ct.getBytes(StandardCharsets.US_ASCII);
     return this;
   }
 
@@ -240,7 +241,7 @@ public class Response {
     checkActive();
     validateTrailer(name, value);
     byte[] nameBytes = name.getBytes(StandardCharsets.US_ASCII);
-    byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
+    byte[] valueBytes = value.getBytes(StandardCharsets.US_ASCII);
     trailers.add(nameBytes, 0, nameBytes.length, valueBytes, 0, valueBytes.length);
     return this;
   }
@@ -258,10 +259,7 @@ public class Response {
   }
 
   private static void validateTrailer(String name, String value) {
-    if (name.isEmpty() || name.charAt(0) == ':' || containsLineBreak(name)
-        || containsLineBreak(value)) {
-      throw new IllegalArgumentException("invalid response trailer");
-    }
+    Fields.check(name, value);
     if (name.equalsIgnoreCase("content-length")
         || name.equalsIgnoreCase("transfer-encoding")
         || name.equalsIgnoreCase("connection")
@@ -270,10 +268,6 @@ public class Response {
         || name.equalsIgnoreCase("trailer")) {
       throw new IllegalArgumentException("field is not permitted in response trailers: " + name);
     }
-  }
-
-  private static boolean containsLineBreak(String value) {
-    return value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0;
   }
 
   /**
@@ -310,8 +304,12 @@ public class Response {
   /**
    * Adds a header. Name and value are written as ASCII straight into the response's reused byte
    * region: no intermediate {@code String}, no re-encoding.
+   *
+   * @throws IllegalArgumentException the name is not a token, or the value holds a character other
+   *     than visible ASCII, space and tab (RFC 9110): a line break would start a header of its own
    */
   public Response header(String name, String value) {
+    Fields.check(name, value);
     int nameOff = beginField();
     headerRegion.writeAscii(name);
     int valOff = headerRegion.length();
@@ -321,6 +319,7 @@ public class Response {
 
   /** Adds a header whose value is {@code value}'s decimal digits, written without a {@code String}; non-negative. */
   public Response header(String name, long value) {
+    Fields.check(name, "");
     int nameOff = beginField();
     headerRegion.writeAscii(name);
     int valOff = headerRegion.length();

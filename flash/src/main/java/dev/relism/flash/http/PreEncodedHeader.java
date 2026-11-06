@@ -11,7 +11,9 @@ public final class PreEncodedHeader {
   private final byte[] nameBytes;
   private final byte[] valueBytes;
 
+  /** @throws IllegalArgumentException as {@link Response#header(String, String)} does */
   public PreEncodedHeader(String name, String value) {
+    Fields.check(name, value);
     this.nameBytes = name.getBytes(StandardCharsets.US_ASCII);
     this.valueBytes = value.getBytes(StandardCharsets.US_ASCII);
   }

@@ -17,7 +17,8 @@ Set-Cookie: flash_session=<id>; Path=/; HttpOnly; SameSite=Lax[; Secure]
 ```
 
 The id is 24 random bytes in base64url. `Secure` is added when the origin starts with `https`.
-`signOut` deletes the session, expires the cookie and returns the principal's `logoutUrl()`, or `/`.
+`signOut` deletes the session, expires the cookie and returns where the browser goes next (see
+[Logout at the identity provider](#logout-at-the-identity-provider)).
 
 ## Expiry and refresh
 
@@ -34,6 +35,26 @@ public interface SessionRefresher {
 ```
 
 Register with `app.add(SessionRefresher.class, refresher)`.
+
+## Logout at the identity provider
+
+`signOut` returns the principal's `logoutUrl()`, or `/`. When the way out must be built as the user
+leaves, such as a logout request signed and dated at that moment, a module registers a `SessionLogout`
+for its principal type, and `signOut` asks it instead:
+
+```java
+public interface SessionLogout {
+    Class<? extends Principal> type();
+    String logoutUrl(Session ended, Request req);    // null for /
+}
+```
+
+Register with `app.add(SessionLogout.class, logout)`. `flash-ext-security-saml` provides one. If it
+throws, the failure is logged at WARN and the browser goes to `/`: the local session has ended
+regardless.
+
+`endSession(req, res)` ends the session and expires the cookie without asking anyone where to go next,
+and returns the ended `Session` or `null`.
 
 ## Stores
 

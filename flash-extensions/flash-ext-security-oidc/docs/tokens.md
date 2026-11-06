@@ -26,15 +26,15 @@ final class ListOrders extends RequestHandler { ... }
 
 ## Roles from claims
 
-`ClaimRoles` is a `RoleResolver` that reads roles from the token:
+`ClaimRoles`, in `flash-ext-security-core`, reads roles from `OidcPrincipal.claim`:
 
 ```java
 new SecurityModule().roles(ClaimRoles.at("realm_access.roles"))    // Keycloak
 new SecurityModule().roles(ClaimRoles.at("groups"))
 ```
 
-The path is dot-separated through nested claims. The value must be a list. For a principal that is
-not an `OidcPrincipal`, the roles are empty. `ClaimRoles.of(principal)` returns the list.
+A bearer caller's claims are the access token's, a session's are the ID token's. See
+[authorization.md](../../flash-ext-security-core/docs/authorization.md#roles-from-claims).
 
 ## OpenAPI
 
