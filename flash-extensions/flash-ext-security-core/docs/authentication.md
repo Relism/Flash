@@ -33,14 +33,18 @@ caller is anonymous; for others the `401` is answered.
 ```java
 public interface Principal {
     String name();                              // unique within the mechanism
+    default Object claim(String name)         { return null; }
     default boolean hasScope(String scope)    { return true; }
     default boolean hasAudience(String a)     { return true; }
     default String logoutUrl()                { return null; }
 }
 ```
 
-Each mechanism has its own principal type: `OidcPrincipal`, `ApiKeyPrincipal`, `OAuthPrincipal`.
-Read it back with `identity.principal(OidcPrincipal.class)`.
+`claim(name)` is what the credential says about the caller under that name: a token claim, an
+assertion's attribute. `ClaimRoles` reads roles from it.
+
+Each mechanism has its own principal type: `OidcPrincipal`, `SamlPrincipal`, `ApiKeyPrincipal`,
+`OAuthPrincipal`. Read it back with `identity.principal(OidcPrincipal.class)`.
 
 ## Failures
 

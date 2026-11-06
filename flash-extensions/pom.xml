@@ -28,6 +28,7 @@
         <module>flash-ext-openapi</module>
         <module>flash-ext-security-core</module>
         <module>flash-ext-security-oidc</module>
+        <module>flash-ext-security-saml</module>
         <module>flash-ext-security-apikey</module>
         <module>flash-ext-security-form</module>
         <module>flash-ext-security-basic</module>
@@ -195,6 +196,16 @@
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
                 <version>10.10</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>flash-ext-security-saml</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.santuario</groupId>
+                <artifactId>xmlsec</artifactId>
+                <version>4.0.4</version>
             </dependency>
             <dependency>
                 <groupId>net.minidev</groupId>

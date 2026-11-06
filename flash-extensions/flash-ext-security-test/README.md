@@ -22,4 +22,4 @@ static final TestSecurity users = new TestSecurity();
 
 | Page | Content |
 |---|---|
-| [docs/usage.md](docs/usage.md) | `TestSecurity`, `FakeOidcProvider`, `OAuthTestClient`, `OidcTokens` |
+| [docs/usage.md](docs/usage.md) | `TestSecurity`, `FakeOidcProvider`, `FakeSamlIdp`, `OAuthTestClient`, `OidcTokens` |

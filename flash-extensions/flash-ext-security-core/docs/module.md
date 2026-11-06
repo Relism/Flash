@@ -37,7 +37,7 @@ For a request that needs a caller and has no credential:
 
 | Route | Behavior |
 |---|---|
-| `POST /auth/logout` | Ends the session and answers `303` to the principal's `logoutUrl()`, or `/` |
+| `POST /auth/logout` | Ends the session and answers `303` to what `signOut` returns |
 | `GET /auth/methods` | JSON array of login methods: `[{"id","name","url","kind"}]` with `kind` `redirect` or `form` |
 
 Login methods come from the `LoginMethod` services other modules add. The JSON is encoded once at
@@ -52,10 +52,13 @@ For code that runs before the app starts, `module.security()` returns the same o
 |---|---|
 | `authenticate(Request)` | The `SecurityIdentity`, or `null`. Throws `AuthenticationFailedException` for a rejected credential |
 | `signIn(req, res, principal)`, `signIn(..., expiresAt)` | Start a session and set its cookie |
-| `signOut(req, res)` | End the session; returns where the browser should go |
+| `signOut(req, res)` | End the session; returns where the browser should go. See [sessions.md](sessions.md#logout-at-the-identity-provider) |
+| `endSession(req, res)` | End the session only; returns it, or `null` |
+| `origin()` | The configured origin, or `null` |
+| `sessionTimeout()` | The configured session lifetime |
 | `origin(req)` | The configured origin, or the request's |
 | `schemes()` | The security schemes of all mechanisms |
 | `policy(Class)`, `enforce(policy[, entryPoint[, mechanisms]])` | Build the guard middleware yourself. See [authorization.md](authorization.md#guarding-a-route-by-hand) |
 
-Mechanisms, login methods and session refreshers are read once when the app starts: add them to the
-app as services and `Security` finds them.
+Mechanisms, login methods, session refreshers and session logouts are read once when the app starts: add
+them to the app as services and `Security` finds them.

@@ -39,6 +39,40 @@ try (FakeOidcProvider idp = new FakeOidcProvider().signInAs("alice", Map.of("ema
 Because the fake runs on a loopback `http` address, use `OidcModule.allowLocalProviders()` only when
 registering such a provider at runtime; configured providers are not restricted.
 
+## FakeSamlIdp
+
+A SAML identity provider on `127.0.0.1` and a random port, serving its metadata at `metadataUrl()`.
+Sign-in is approved immediately: `respond(location)` answers the request the application redirected the
+browser to with the `SAMLResponse` the browser would post back.
+
+```java
+FakeSamlIdp.Credential sp = FakeSamlIdp.Credential.generate();
+try (FakeSamlIdp idp = new FakeSamlIdp().signInAs("alice", Map.of("groups", List.of("admin")))) {
+    SamlModule saml = new SamlModule(SamlKeys.of(sp.privateKeyPem(), sp.certificatePem()), SamlIdp.of("test", idp.metadataUrl()));
+    ...
+    FlashResponse login = app.get("/auth/saml/test/login");
+    String response = idp.respond(login.header("Location"));
+    // POST SAMLResponse=<response> to /auth/saml/acs with login's flash_saml cookie
+}
+```
+
+| Method | Effect |
+|---|---|
+| `Credential.generate()` | A new RSA 2048 key and self-signed certificate in PEM, made with the JDK's `keytool` |
+| `new FakeSamlIdp(credential)` | A provider signing with that credential. Without one, a new credential |
+| `metadataUrl()`, `entityId()`, `metadata()` | Its metadata: SSO and logout by HTTP-Redirect, its signing certificate |
+| `signedMetadata(validUntil)` | The metadata signed with its key, valid until `validUntil` when not `null` |
+| `signInAs(nameId, attributes)` | Who sign-in vouches for, as a persistent `NameID` |
+| `sign(response, assertion)` | Which elements are signed. Both by default |
+| `encryptTo(certificatePem, algorithm)` | Encrypts the assertion with RSA-OAEP and that data algorithm URI. `null` stops |
+| `rewrite(operator)` | Rewrites each response before it is signed: a provider configured wrongly |
+| `respond(location)` | The `SAMLResponse` answering the request in a login redirect |
+| `unsolicited(acs, audience)` | A `SAMLResponse` answering no request |
+| `logoutRequest(slo, nameId)` | The application's logout URL carrying a signed `LogoutRequest`, `RelayState=relay` |
+| `logoutResponse(location, slo)` | The application's logout URL carrying a signed `LogoutResponse` to the request in `location` |
+| `redirected(location, parameter)` | The XML a redirect URL carries |
+| `close()` | Stops the server |
+
 ## OAuthTestClient
 
 Drives the app's own authorization server as an OAuth client would: discovery, registration,

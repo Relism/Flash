@@ -3,12 +3,12 @@ package dev.relism.flash.ext.cache;
 import java.util.function.Consumer;
 
 /**
- * Creates and hands back named caches. Resolve it with {@code require(CacheManager.class)}; a
- * backend extension such as {@code flash-ext-cache-caffeine} provides the implementation.
+ * Creates and hands back named caches. Take it as a constructor parameter; a backend extension
+ * such as {@code flash-ext-cache-caffeine} provides the implementation.
  *
  * <pre>{@code
- * @Override protected void onInit() {
- *     users = require(CacheManager.class).build("users", spec -> spec
+ * UserLookup(CacheManager caches) {
+ *     this.users = caches.build("users", spec -> spec
  *             .maxSize(10_000)
  *             .ttl(Duration.ofMinutes(10)));
  * }

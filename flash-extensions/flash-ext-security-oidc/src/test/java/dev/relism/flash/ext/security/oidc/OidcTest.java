@@ -1,5 +1,6 @@
 package dev.relism.flash.ext.security.oidc;
 
+import dev.relism.flash.ext.security.ClaimRoles;
 import dev.relism.flash.ext.security.RolesAllowed;
 import dev.relism.flash.ext.security.ScopesAllowed;
 import dev.relism.flash.App;

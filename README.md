@@ -94,6 +94,7 @@ groupId `dev.relism.Flash` and the release version as its version, which is the 
 |---|---|
 | [flash-ext-security-core](flash-extensions/flash-ext-security-core/README.md) | Authentication chain, annotations, sessions |
 | [flash-ext-security-oidc](flash-extensions/flash-ext-security-oidc/README.md) | OpenID Connect |
+| [flash-ext-security-saml](flash-extensions/flash-ext-security-saml/README.md) | SAML 2.0 service provider |
 | [flash-ext-security-apikey](flash-extensions/flash-ext-security-apikey/README.md) | API keys |
 | [flash-ext-security-form](flash-extensions/flash-ext-security-form/README.md) | Password sign-in |
 | [flash-ext-security-basic](flash-extensions/flash-ext-security-basic/README.md) | HTTP Basic over the password sign-in accounts |

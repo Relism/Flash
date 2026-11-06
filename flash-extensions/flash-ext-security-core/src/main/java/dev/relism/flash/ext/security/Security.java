@@ -25,10 +25,13 @@ import java.util.Map;
  * handler demand of them, and their session. Installed by {@link SecurityModule}; a handler or a
  * module takes it as a constructor parameter.
  *
- * <p>Every {@link AuthenticationMechanism}, {@link LoginMethod} and {@link SessionRefresher} the
- * app adds is read once, when it starts: nothing registers with this service by hand.
+ * <p>Every {@link AuthenticationMechanism}, {@link LoginMethod}, {@link SessionRefresher} and
+ * {@link SessionLogout} the app adds is read once, when it starts: nothing registers with this
+ * service by hand.
  */
 public final class Security implements Bound, RouteHook {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Security.class);
 
     /** The node security annotations mount under, for middleware that must run before or after it. */
     public static final MiddlewareKey POLICY = MiddlewareKey.of("flash.security.policy");
@@ -49,6 +52,7 @@ public final class Security implements Bound, RouteHook {
     private List<SecurityScheme> schemes = List.of();
     private LoginMethod[] loginMethods = {};
     private final Map<Class<?>, SessionRefresher> refreshers = new HashMap<>();
+    private final Map<Class<?>, SessionLogout> logouts = new HashMap<>();
     private String challenges;
     private byte[] methodsJson;
 
@@ -70,6 +74,7 @@ public final class Security implements Bound, RouteHook {
         mechanisms = services.all(AuthenticationMechanism.class).toArray(AuthenticationMechanism[]::new);
         loginMethods = services.all(LoginMethod.class).toArray(LoginMethod[]::new);
         for (SessionRefresher refresher : services.all(SessionRefresher.class)) refreshers.put(refresher.type(), refresher);
+        for (SessionLogout logout : services.all(SessionLogout.class)) logouts.put(logout.type(), logout);
 
         List<SecurityScheme> all = new ArrayList<>();
         StringBuilder challenge = new StringBuilder();
@@ -102,6 +107,18 @@ public final class Security implements Bound, RouteHook {
     /** The schemes of every mechanism, in the order the mechanisms were added. */
     public List<SecurityScheme> schemes() {
         return schemes;
+    }
+
+    // Read from the module, not from the fields bind() fills: a module's own bind may run before this one's.
+
+    /** The configured origin, such as {@code https://app.example}; {@code null} when none is. */
+    public String origin() {
+        return config.origin;
+    }
+
+    /** How long a session started without an explicit expiry lasts. */
+    public Duration sessionTimeout() {
+        return config.sessionTimeout;
     }
 
     /** The configured origin, or the one {@code req} names when none is. */
@@ -209,14 +226,32 @@ public final class Security implements Bound, RouteHook {
         res.header("Set-Cookie", COOKIE + "=" + session.id() + "; Path=/; HttpOnly; SameSite=Lax" + (origin(req).startsWith("https") ? "; Secure" : ""));
     }
 
-    /** Ends the caller's session and returns where the browser goes next. */
+    /**
+     * Ends the caller's session and returns where the browser goes next: the {@link SessionLogout} of
+     * its principal's type, else {@link Principal#logoutUrl()}, else {@code /}.
+     */
     public String signOut(Request req, Response res) {
+        Session ended = endSession(req, res);
+        if (ended == null) return "/";
+        SessionLogout logout = logouts.get(ended.principal().getClass());
+        String next;
+        try {
+            next = logout != null ? logout.logoutUrl(ended, req) : ended.principal().logoutUrl();
+        } catch (RuntimeException failed) {
+            // The session is gone already; the identity provider's is the one left open.
+            log.warn("Logout at the identity provider failed for {}: {}", ended.principal().getClass().getSimpleName(), failed.toString());
+            next = null;
+        }
+        return next == null ? "/" : next;
+    }
+
+    /** Ends the caller's session and expires its cookie; the session ended, or {@code null} when there was none. */
+    public Session endSession(Request req, Response res) {
         String id = req.cookie(COOKIE);
         Session session = id == null ? null : sessions.find(id);
         if (session != null) sessions.delete(id);
         res.header("Set-Cookie", COOKIE + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
-        String next = session == null ? null : session.principal().logoutUrl();
-        return next == null ? "/" : next;
+        return session;
     }
 
     /** The ways in, as the JSON {@code /auth/methods} answers: encoded once, at start. */

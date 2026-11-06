@@ -59,6 +59,10 @@ class HttpServerTest {
 
         app.post("/api/refuse", (req, res) -> res.status(413).body("refused"));
 
+        // What a handler copying input into a header would send: a line break, and one that only the byte cut makes.
+        app.get("/api/injected", (req, res) -> res.redirect("/next\r\nSet-Cookie: forged=1"));
+        app.get("/api/injected-wide", (req, res) -> res.body("ok").header("X-Next", "/next\u010D\u010ASet-Cookie: forged=1"));
+
         server = Server.start(app, config1);
         port = server.port();
     }
@@ -198,6 +202,16 @@ class HttpServerTest {
         String res = sendRawRequest(req);
         assertTrue(res.startsWith("HTTP/1.1 200 OK"));
         assertTrue(res.contains("X-Flash: works\r\n"));
+    }
+
+    /** A value a field cannot carry fails the handler: the response is a 500, never one with a header the input chose. */
+    @Test
+    void aHeaderValueWithALineBreakIsRefusedNotSent() throws Exception {
+        for (String path : new String[]{"/api/injected", "/api/injected-wide"}) {
+            String res = sendRawRequest("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            assertTrue(res.startsWith("HTTP/1.1 500"), res);
+            assertFalse(res.contains("forged"), res);
+        }
     }
 
     @Test
