@@ -27,6 +27,13 @@ public interface OpenApiContributor {
         return Map.of();
     }
 
+    /** The application's error body and media type for this handler; null keeps Flash's defaults. */
+    default ErrorResponse errors(Class<?> handlerClass) {
+        return null;
+    }
+
+    record ErrorResponse(Type type, String contentType) {}
+
     default OpenApiOperationContribution operationFor(Class<?> handlerClass) {
         return OpenApiOperationContribution.empty();
     }

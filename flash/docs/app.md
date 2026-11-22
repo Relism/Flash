@@ -99,3 +99,16 @@ Everything Flash can check without a request is checked in `start`:
 - `scan` of a package that contains no annotated handler.
 - A middleware key declared twice on a route, a required ordering target that is absent, and an
   ordering cycle.
+
+## Embedded applications
+
+`App.prepare(ServerConfig)` compiles routes, initializes services and runs `onStart` without opening a
+listener. The returned `PreparedApp.handle(Exchange)` dispatches the original path on the existing
+exchange. Register a delegating middleware on the parent route; the parent transport still executes
+streaming and duplex responses. The child has its own services and route hooks. Authentication may
+remain on the parent mount. After requests and streams have drained, close the prepared app to close
+its services. Do not register parent-owned closeable services in the child.
+
+`app.routes()` returns the declared method, mounted path and handler class without building handlers
+or starting services. Its middleware lists are empty; middleware is resolved only when the app boots.
+Use it for build-time schema export from the same `scan` and mounts as the runtime.

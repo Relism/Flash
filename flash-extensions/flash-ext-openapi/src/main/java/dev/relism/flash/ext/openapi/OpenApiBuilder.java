@@ -61,11 +61,15 @@ public final class OpenApiBuilder {
     public OpenApiBuilder title(String title) { this.title = title; return this; }
     public OpenApiBuilder version(String version) { this.version = version; return this; }
     public OpenApiBuilder description(String description) { this.description = description; return this; }
-    /** Whoever adds to the document: security schemes, rate-limit headers, a validation engine's rules. */
-    void contributors(List<OpenApiContributor> contributors) {
+    /**
+     * Whoever adds to the document: security schemes, rate-limit headers, a validation engine's rules. The module
+     * passes the app's own when it starts; a builder made without the module takes them here.
+     */
+    public OpenApiBuilder contributors(List<OpenApiContributor> contributors) {
         this.contributors = List.copyOf(contributors);
         this.contributions.clear();
         schemas.contributors(this.contributors);
+        return this;
     }
 
     /** Bumped by every operation added, so a rendering of this document knows whether it is still current. */
@@ -97,6 +101,38 @@ public final class OpenApiBuilder {
         paths.computeIfAbsent(path, p -> new LinkedHashMap<>()).put(method, operation);
         operationHandlers.computeIfAbsent(path, p -> new LinkedHashMap<>()).put(method, handlerClass);
         revision++;
+    }
+
+    /**
+     * {@code type} as a standalone JSON Schema, described the way this document describes a body (wire
+     * names, validation bounds): the type's own schema, with every schema it refers to under {@code $defs}.
+     * For a schema that travels outside the document, a form generated from it say. Call it once the app
+     * has started, when the contributors are known.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> jsonSchema(Type type) {
+        Schemas own = new Schemas();
+        own.contributors(contributors);
+        Map<String, Object> root = own.schemaForType(type);
+        Map<String, Object> defs = own.render();
+        Object ref = root.get("$ref");
+        Map<String, Object> out = new LinkedHashMap<>(ref instanceof String r
+                ? (Map<String, Object>) defs.get(r.substring(r.lastIndexOf('/') + 1)) : root);
+        if (!defs.isEmpty()) out.put("$defs", defs);
+        return (Map<String, Object>) localRefs(out);
+    }
+
+    /** {@code #/components/schemas/X} to {@code #/$defs/X}, everywhere in {@code node}. */
+    @SuppressWarnings("unchecked")
+    private static Object localRefs(Object node) {
+        if (node instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            ((Map<String, Object>) map).forEach((key, value) -> copy.put(key, "$ref".equals(key) && value instanceof String ref
+                    ? ref.replace("#/components/schemas/", "#/$defs/") : localRefs(value)));
+            return copy;
+        }
+        if (node instanceof List<?> list) return list.stream().map(OpenApiBuilder::localRefs).toList();
+        return node;
     }
 
     public Map<String, Object> build() {
@@ -234,6 +270,15 @@ public final class OpenApiBuilder {
         if (byStatus.isEmpty()) byStatus.put(200, inferredResponse(handlerClass));
 
         applyContributorResponses(byStatus, handlerClass, declaredStatuses);
+        for (OpenApiContributor contributor : contributors) {
+            OpenApiContributor.ErrorResponse error = contributor.errors(handlerClass);
+            if (error == null) continue;
+            Map<String, Object> content = Map.of(error.contentType(), Map.of("schema", schemas.schemaForType(error.type())));
+            byStatus.forEach((status, response) -> {
+                if (status >= 400) response.put("content", content);
+            });
+            break;
+        }
 
         Map<String, Object> responses = new LinkedHashMap<>();
         byStatus.entrySet().stream()

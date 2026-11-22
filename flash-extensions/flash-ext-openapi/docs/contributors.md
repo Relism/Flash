@@ -22,6 +22,7 @@ Every method has a default that contributes nothing:
 | `schema(Type)` | Describe a type completely. Return `null` to leave it to the next contributor and then the default model. The first non-null answer wins |
 | `used(Type)` | Told about every type a schema is asked for, so a contributor that only adds to others' schemas knows which types are in the document |
 | `componentContributions()` | Fragments merged into `components`. Maps merge deeply; lists are concatenated without duplicates; for other values the last contributor wins |
+| `errors(Class<?> handler)` | The application error `ErrorResponse(type, contentType)` for every documented status from 400 on, including contributed statuses. First non-null wins; null retains Flash defaults |
 | `operationFor(Class<?> handler)` | An `OpenApiOperationContribution` for one handler class |
 | `parameters(Type, Function<Field, String> names)` | The contribution (parameters, responses) of an input of that type that an operation reads from the request, as another contributor's `requestParameters` names it. `names` gives a field the name whatever reads the input gives it, `null` for one it does not read. Return `null` to leave the type to the next; the first non-null wins |
 | `name(Field)` | A field's wire name, or `null`. The first non-null wins |
