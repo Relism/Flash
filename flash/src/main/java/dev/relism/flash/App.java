@@ -224,20 +224,27 @@ public final class App {
     public PreparedApp prepare(ServerConfig config) {
         if (shared.compiled) throw new IllegalStateException("An app is compiled once");
         try {
-            Router router = compile(config);
+            Router router = compile(config, false);
             started();
             return new PreparedApp(router, shared.services);
-        } catch (RuntimeException failed) {
-            shared.services.close();
+        } catch (RuntimeException | Error failed) {
+            try {
+                shared.services.close();
+            } catch (RuntimeException | Error closing) {
+                if (closing != failed) failed.addSuppressed(closing);
+            }
             throw failed;
         }
     }
 
     // -- Boot, through Server ----------------------------------------------------
 
-    /** Builds every service and handler and freezes the routes. */
     /** Builds every route; {@code config} becomes a service, so what the app builds can read it. */
     Router compile(ServerConfig config) {
+        return compile(config, true);
+    }
+
+    private Router compile(ServerConfig config, boolean executeDeferred) {
         if (shared.compiled) throw new IllegalStateException("An app runs on one server");
         shared.compiled = true;
         boolean dev = config.isDev();
@@ -269,7 +276,7 @@ public final class App {
                 throw new IllegalStateException(label + ": " + built.getClass().getSimpleName() + " is not a Handler");
             handler.initialize(services);
             Next prepared = MiddlewareGraph.compose(handler::prepare, chain);
-            Next exchange = boundary(prepared, errors);
+            Next exchange = boundary(prepared, errors, executeDeferred);
             if (!interceptors.isEmpty()) exchange = intercept(compiled, exchange, interceptors);
             if (route.any) router.any(route.path, exchange);
             else router.add(route.method, route.path, exchange);
@@ -289,7 +296,8 @@ public final class App {
         };
         List<MiddlewareNode> nodes = new ArrayList<>();
         collect(nodes);
-        Next fallback = boundary(MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes)), errors);
+        Next fallback = boundary(MiddlewareGraph.compose(miss, MiddlewareGraph.order("fallback", nodes)),
+                errors, executeDeferred);
         if (!interceptors.isEmpty()) fallback = interceptFallback(fallback, interceptors);
         router.compile(fallback);
         return router;
@@ -325,15 +333,15 @@ public final class App {
         return MiddlewareNode.of(MiddlewareKey.of("flash.inline." + position), middleware);
     }
 
-    private static Next boundary(Next prepared, ErrorHandler errors) {
+    private static Next boundary(Next prepared, ErrorHandler errors, boolean executeDeferred) {
         return exchange -> {
             try {
                 prepared.handle(exchange);
-                exchange.execute();
+                if (executeDeferred) exchange.execute();
             } catch (Exception failure) {
                 if (exchange.response().isCommitted()) throw failure;
                 exchange.recover(Errors.recover(errors, failure, exchange.request(), exchange.response()));
-                exchange.execute();
+                if (executeDeferred) exchange.execute();
             }
         };
     }

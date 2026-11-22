@@ -65,7 +65,8 @@ Explicit values from `@Schema` and `@SchemaProperty` win over facts a validation
 
 `OpenApiBuilder` is a service of the app. `jsonSchema(type)` returns `type` as a standalone JSON Schema,
 described the way the document describes a body (wire names, validation bounds), with every schema it
-refers to under `$defs`. Use it for a schema that travels outside the document, for example to generate a
+refers to under `$defs`, including schemas supplied through `componentContributions()`. Existing
+local definitions and references are preserved. Use it for a schema that travels outside the document, for example to generate a
 form, once the app has started.
 
 ```java

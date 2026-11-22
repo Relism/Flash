@@ -9,6 +9,7 @@ import dev.relism.flash.routing.Route;
 import dev.relism.flash.routing.Verb;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 
@@ -807,6 +808,48 @@ class OpenApiBuilderTest {
         Map<String, Object> defs = cast(schema.get("$defs"));
         assertTrue(defs.containsKey("Inner"), defs.toString());
         assertFalse(schema.toString().contains("#/components/"), schema.toString());
+    }
+
+    @Test
+    void standaloneSchemasIncludeContributedDefinitionsAndMergeThem() {
+        var builder = new OpenApiBuilder().contributors(List.of(new OpenApiContributor() {
+            @Override public Map<String, Object> schema(Type type) {
+                return type == Inner.class ? Map.of("$ref", "#/components/schemas/Shared") : null;
+            }
+
+            @Override public Map<String, Object> componentContributions() {
+                return Map.of("schemas", Map.of("Shared", Map.of("type", "string", "minLength", 2)));
+            }
+        }, new OpenApiContributor() {
+            @Override public Map<String, Object> componentContributions() {
+                return Map.of("schemas", Map.of("Shared", Map.of("minLength", 3)));
+            }
+        }));
+        Map<String, Object> result = builder.jsonSchema(Outer.class);
+        Map<String, Object> properties = cast(result.get("properties"));
+        Map<String, Object> defs = cast(result.get("$defs"));
+        assertEquals(Map.of("$ref", "#/$defs/Shared"), properties.get("inner"));
+        assertEquals(Map.of("type", "string", "minLength", 3), defs.get("Shared"));
+    }
+
+    @Test
+    void standaloneContributorRootsKeepTheirOwnRefsAndDefinitions() {
+        var root = Map.<String, Object>of(
+                "$ref", "#/$defs/Local",
+                "$defs", Map.of("Local", Map.of("type", "string")));
+        var builder = new OpenApiBuilder().contributors(List.of(new OpenApiContributor() {
+            @Override public Map<String, Object> schema(Type type) {
+                return root;
+            }
+
+            @Override public Map<String, Object> componentContributions() {
+                return Map.of("schemas", Map.of("Shared", Map.of("type", "integer")));
+            }
+        }));
+        assertEquals(Map.of(
+                "$ref", "#/$defs/Local",
+                "$defs", Map.of("Local", Map.of("type", "string"), "Shared", Map.of("type", "integer"))),
+                builder.jsonSchema(Outer.class));
     }
 
     @SuppressWarnings("unchecked")

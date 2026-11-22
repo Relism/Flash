@@ -1,5 +1,8 @@
 package dev.relism.flash.http;
 
+import dev.relism.flash.routing.Router;
+
+import java.util.ArrayList;
 import java.util.concurrent.Callable;
 
 /**
@@ -16,6 +19,8 @@ public final class Exchange {
     private DuplexHandler duplex;
     private boolean switchProtocol;
     private Around around;
+    private ArrayList<Router.Scratch> embeddedScratch;
+    private int embeddedDepth;
 
     /** Encloses the work {@link #execute()} runs after the middleware chain has returned. */
     @FunctionalInterface
@@ -29,6 +34,19 @@ public final class Exchange {
         this.transport = transport;
         clear();
         return this;
+    }
+
+    /** Dispatches an embedded app using matching state owned by this connection or stream. */
+    public void dispatchEmbedded(Router router) throws Exception {
+        if (embeddedScratch == null) embeddedScratch = new ArrayList<>(1);
+        if (embeddedDepth == embeddedScratch.size()) embeddedScratch.add(router.newScratch());
+        Router.Scratch scratch = embeddedScratch.get(embeddedDepth++);
+        try {
+            router.dispatch(this, scratch);
+        } finally {
+            scratch.clearMatch();
+            embeddedDepth--;
+        }
     }
 
     public Request request() {
