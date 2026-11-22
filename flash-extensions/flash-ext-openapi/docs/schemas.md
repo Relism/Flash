@@ -60,3 +60,21 @@ A schema is also shaped by contributors, whichever of these are installed:
   ([protobuf](../../flash-ext-protobuf-java/docs/openapi.md)).
 
 Explicit values from `@Schema` and `@SchemaProperty` win over facts a validation engine adds.
+
+## A schema outside the document
+
+`OpenApiBuilder` is a service of the app. `jsonSchema(type)` returns `type` as a standalone JSON Schema,
+described the way the document describes a body (wire names, validation bounds), with every schema it
+refers to under `$defs`. Use it for a schema that travels outside the document, for example to generate a
+form, once the app has started.
+
+```java
+Map<String, Object> schema = services.get(OpenApiBuilder.class).jsonSchema(NewServer.class);
+```
+
+An app that publishes no document can still build schemas: make a builder and give it the app's
+contributors, which a handler receives by injecting `List<OpenApiContributor>`.
+
+```java
+new OpenApiBuilder().contributors(contributors).jsonSchema(NewServer.class);
+```

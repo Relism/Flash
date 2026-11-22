@@ -46,6 +46,11 @@ public final class DataModule implements Module {
         this.tx = data != null ? data.tx() : new Tx(txManager);
     }
 
+    /** The same transaction runtime the module registers, for repositories built before boot. */
+    public Tx tx() {
+        return tx;
+    }
+
     @Override
     public void install(App app) {
         app.add(TxManager.class, txManager).add(Tx.class, tx).add(RouteHook.class, new RouteHook() {

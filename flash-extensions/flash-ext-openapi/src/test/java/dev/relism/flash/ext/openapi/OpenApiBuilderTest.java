@@ -661,6 +661,27 @@ class OpenApiBuilderTest {
         assertEquals("Authentication required", resp401.get("description"));
     }
 
+    @Test
+    void applicationErrorsReplaceContributedBodiesAndKeepSuccesses() {
+        var builder = new OpenApiBuilder().contributors(List.of(new OpenApiContributor() {
+            @Override public ErrorResponse errors(Class<?> handler) {
+                return new ErrorResponse(Thing.class, "application/problem+json");
+            }
+            @Override public OpenApiOperationContribution operationFor(Class<?> handler) {
+                return OpenApiOperationContribution.builder()
+                    .response(401, OpenApiResponseContribution.of("Sign in"))
+                    .build();
+            }
+        }));
+        builder.addOperation(routeOf(PlainHandler.class), null, PlainHandler.class);
+        Map<String, Object> responses = cast(getOperation(builder.build(), "/plain", "get").get("responses"));
+        Map<String, Object> failure = cast(responses.get("401"));
+        assertEquals("Sign in", failure.get("description"));
+        Map<String, Object> content = cast(failure.get("content"));
+        assertTrue(content.containsKey("application/problem+json"));
+        assertTrue(responses.containsKey("200"));
+    }
+
     record Thing(String name) {}
     record Box<T>(List<T> items, T first, String note) {}
 
@@ -772,6 +793,20 @@ class OpenApiBuilderTest {
         Map<String, Object> paths = cast(spec.get("paths"));
         Map<String, Object> pathItem = cast(paths.get(path));
         return cast(pathItem.get(method));
+    }
+
+    public record Inner(int size) {}
+    public record Outer(String name, Inner inner, List<Inner> more) {}
+
+    @Test
+    void aTypeAsAStandaloneJsonSchema() {
+        Map<String, Object> schema = new OpenApiBuilder().jsonSchema(Outer.class);
+        assertEquals("object", schema.get("type"));
+        Map<String, Object> properties = cast(schema.get("properties"));
+        assertEquals(Map.of("$ref", "#/$defs/Inner"), properties.get("inner"));
+        Map<String, Object> defs = cast(schema.get("$defs"));
+        assertTrue(defs.containsKey("Inner"), defs.toString());
+        assertFalse(schema.toString().contains("#/components/"), schema.toString());
     }
 
     @SuppressWarnings("unchecked")

@@ -7,6 +7,8 @@ app.install(new DataModule(txManager));          // Tx only
 app.install(new DataModule(txManager, data));    // Tx and Data
 ```
 
+`module.tx()` returns the same `Tx` before boot, for constructing repositories and session stores.
+
 Registers `TxManager`, `Tx` and (if given) `Data` as services, and enables `@Transactional` on handler
 classes. The manager is closed when the app stops, which releases its connection pool or session
 factory.

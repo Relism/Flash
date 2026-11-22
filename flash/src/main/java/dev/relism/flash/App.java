@@ -190,6 +190,15 @@ public final class App {
         return this;
     }
 
+    /** Declared route metadata without building handlers or starting services; middleware is resolved at boot. */
+    public List<Route> routes() {
+        return shared.routes.stream().map(route -> {
+            Class<?> type = route.handler instanceof Class<?> declared ? declared : route.handler.getClass();
+            return new Route(route.any ? null : route.method == null ? HttpMethod.GET : route.method,
+                    route.path, type.asSubclass(Handler.class), List.of());
+        }).toList();
+    }
+
     /** The app's services. Readable once the server has started. */
     public Services services() {
         return shared.services;
@@ -209,6 +218,19 @@ public final class App {
     public App onNotFound(RequestAction handler) {
         shared.notFound = RequestHandler.of(handler);
         return this;
+    }
+
+    /** Compiles this app without opening a listener; the caller owns and closes the result. */
+    public PreparedApp prepare(ServerConfig config) {
+        if (shared.compiled) throw new IllegalStateException("An app is compiled once");
+        try {
+            Router router = compile(config);
+            started();
+            return new PreparedApp(router, shared.services);
+        } catch (RuntimeException failed) {
+            shared.services.close();
+            throw failed;
+        }
     }
 
     // -- Boot, through Server ----------------------------------------------------
