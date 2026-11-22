@@ -1,5 +1,26 @@
 # Changelog
 
+## [4.1.0](https://github.com/Relism/Flash/compare/v4.0.0...v4.1.0) (2026-11-22)
+
+
+### Features
+
+* **core:** support embedded applications and schema export ([#34](https://github.com/Relism/Flash/issues/34)) ([191aecf](https://github.com/Relism/Flash/commit/191aecf1532c9c60c11ea37a149702fd58bdd003))
+* **ext-saml:** SAML 2.0 service provider, with Single Logout, encrypted assertions and providers registered at runtime ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+* **ext-security:** Principal.claim and ClaimRoles for any principal; SessionLogout builds the logout at the identity provider when the session ends ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
+
+### Bug Fixes
+
+* **core:** a header name must be a token and a value visible ASCII, spaces and tabs; a line break, or a character cut to one, no longer reaches the wire ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+* **core:** preserve embedded dispatch scopes and standalone schemas ([#35](https://github.com/Relism/Flash/issues/35)) ([9ca385b](https://github.com/Relism/Flash/commit/9ca385b49f6f1e40b4adb4eeb41fdabd3fc1bdd8))
+* **ext-security:** Redirects.localPath percent-encodes control characters and non-ASCII, so a return path cannot add a header ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
+
+### Documentation
+
+* **ext-cache-core:** CacheManager is taken as a constructor parameter ([f51e311](https://github.com/Relism/Flash/commit/f51e3117cb1dae3b7ebf5db9eb8b62c98a17e500))
+
 ## [4.0.0](https://github.com/Relism/Flash/compare/v3.0.4...v4.0.0) (2026-11-05)
 
 
