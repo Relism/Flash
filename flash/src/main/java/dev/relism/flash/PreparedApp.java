@@ -13,9 +13,9 @@ public final class PreparedApp implements AutoCloseable {
         this.services = services;
     }
 
-    /** Prepares the response on the existing exchange; the outer transport executes its deferred body. */
+    /** Prepares the response on the existing exchange; the outer application executes its deferred body. */
     public void handle(Exchange exchange) throws Exception {
-        router.dispatch(exchange, router.newScratch());
+        exchange.dispatchEmbedded(router);
     }
 
     /** Call only after requests using this application have drained. */

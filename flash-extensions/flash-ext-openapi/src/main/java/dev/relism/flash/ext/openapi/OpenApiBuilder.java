@@ -114,10 +114,24 @@ public final class OpenApiBuilder {
         Schemas own = new Schemas();
         own.contributors(contributors);
         Map<String, Object> root = own.schemaForType(type);
-        Map<String, Object> defs = own.render();
+        Map<String, Object> components = new LinkedHashMap<>();
+        components.put("schemas", own.render());
+        mergeContributedComponents(components);
+        var defs = new LinkedHashMap<String, Object>();
+        if (components.get("schemas") instanceof Map<?, ?> contributed) {
+            defs.putAll((Map<String, Object>) contributed);
+        }
         Object ref = root.get("$ref");
-        Map<String, Object> out = new LinkedHashMap<>(ref instanceof String r
-                ? (Map<String, Object>) defs.get(r.substring(r.lastIndexOf('/') + 1)) : root);
+        Map<String, Object> out = new LinkedHashMap<>(root);
+        if (root.size() == 1 && ref instanceof String path && path.startsWith("#/components/schemas/")) {
+            String key = path.substring("#/components/schemas/".length());
+            if (!key.contains("/") && defs.get(key.replace("~1", "/").replace("~0", "~")) instanceof Map<?, ?> schema) {
+                out = new LinkedHashMap<>((Map<String, Object>) schema);
+            }
+        }
+        if (out.get("$defs") instanceof Map<?, ?> local) {
+            deepMergeLastWins(defs, (Map<String, Object>) local);
+        }
         if (!defs.isEmpty()) out.put("$defs", defs);
         return (Map<String, Object>) localRefs(out);
     }
@@ -127,8 +141,9 @@ public final class OpenApiBuilder {
     private static Object localRefs(Object node) {
         if (node instanceof Map<?, ?> map) {
             Map<String, Object> copy = new LinkedHashMap<>();
-            ((Map<String, Object>) map).forEach((key, value) -> copy.put(key, "$ref".equals(key) && value instanceof String ref
-                    ? ref.replace("#/components/schemas/", "#/$defs/") : localRefs(value)));
+            ((Map<String, Object>) map).forEach((key, value) -> copy.put(key,
+                    "$ref".equals(key) && value instanceof String ref && ref.startsWith("#/components/schemas/")
+                            ? "#/$defs/" + ref.substring("#/components/schemas/".length()) : localRefs(value)));
             return copy;
         }
         if (node instanceof List<?> list) return list.stream().map(OpenApiBuilder::localRefs).toList();
@@ -172,15 +187,19 @@ public final class OpenApiBuilder {
         if (errorsDocumented) renderedSchemas.put(ERROR_SCHEMA, ERROR_SHAPE);
         if (!renderedSchemas.isEmpty()) components.put("schemas", renderedSchemas);
         if (!sharedResponses.isEmpty()) components.put("responses", sharedResponses);
-        for (OpenApiContributor contributor : contributors) {
-            Map<String, Object> contributed = contributor.componentContributions();
-            if (contributed != null && !contributed.isEmpty()) deepMergeLastWins(components, contributed);
-        }
+        mergeContributedComponents(components);
         if (!components.isEmpty()) spec.put("components", components);
 
         cachedSpec = spec;
         builtRevision = current;
         return spec;
+    }
+
+    private void mergeContributedComponents(Map<String, Object> components) {
+        for (OpenApiContributor contributor : contributors) {
+            Map<String, Object> contributed = contributor.componentContributions();
+            if (contributed != null && !contributed.isEmpty()) deepMergeLastWins(components, contributed);
+        }
     }
 
     // ── Parameters ────────────────────────────────────────────────────────────

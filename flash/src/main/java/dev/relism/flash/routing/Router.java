@@ -169,6 +169,11 @@ public final class Router {
 
         private Scratch() {}
 
+        /** Drops the matched handler while keeping path parameters available to the deferred response. */
+        public void clearMatch() {
+            result.reset();
+        }
+
         void ensureParamCapacity(int count) {
             if (count <= names.length) return;
             int grown = names.length;

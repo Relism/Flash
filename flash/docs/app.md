@@ -104,8 +104,10 @@ Everything Flash can check without a request is checked in `start`:
 
 `App.prepare(ServerConfig)` compiles routes, initializes services and runs `onStart` without opening a
 listener. The returned `PreparedApp.handle(Exchange)` dispatches the original path on the existing
-exchange. Register a delegating middleware on the parent route; the parent transport still executes
-streaming and duplex responses. The child has its own services and route hooks. Authentication may
+exchange. Register a delegating middleware on the parent route. The request reuses matching state
+from its connection or stream. The outer application executes streaming and duplex responses once,
+after the middleware in both applications registers its scopes. The child has its own services and
+route hooks. Authentication may
 remain on the parent mount. After requests and streams have drained, close the prepared app to close
 its services. Do not register parent-owned closeable services in the child.
 
