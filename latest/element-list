@@ -26,6 +26,7 @@ dev.relism.flash.ext.security.basic
 dev.relism.flash.ext.security.form
 dev.relism.flash.ext.security.oauthserver
 dev.relism.flash.ext.security.oidc
+dev.relism.flash.ext.security.saml
 dev.relism.flash.ext.security.test
 dev.relism.flash.ext.serde
 dev.relism.flash.ext.validation
